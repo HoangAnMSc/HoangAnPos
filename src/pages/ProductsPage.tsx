@@ -289,18 +289,18 @@ type SectionCardProps = {
 
 function SectionCard({ actionLabel = "+ Add", children, icon, subtitle, title }: SectionCardProps) {
   return (
-    <section className="border-t border-zinc-100 bg-white px-5 py-5">
+    <section className="rounded-[1.5rem] border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-50 text-zinc-500">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
             {icon}
           </span>
           <div>
-            <h4 className="text-sm font-extrabold text-zinc-950">{title}</h4>
+            <h4 className="text-base font-extrabold text-zinc-950">{title}</h4>
             <p className="text-xs text-zinc-500">{subtitle}</p>
           </div>
         </div>
-        <span className="text-xs font-extrabold text-zinc-950 underline">{actionLabel}</span>
+        <span className="text-xs font-extrabold text-orange-600 underline">{actionLabel}</span>
       </div>
       {children}
     </section>
@@ -314,9 +314,9 @@ type PhoneInputProps = React.InputHTMLAttributes<HTMLInputElement> & {
 function PhoneInput({ className = "", label, ...props }: PhoneInputProps) {
   return (
     <label className="block">
-      {label ? <span className="mb-2 block text-xs font-extrabold text-zinc-950">{label}</span> : null}
+      {label ? <span className="mb-2 block text-sm font-extrabold text-zinc-950">{label}</span> : null}
       <input
-        className={`w-full rounded-lg border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100 ${className}`}
+        className={`w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100 ${className}`}
         {...props}
       />
     </label>
@@ -396,181 +396,245 @@ function ProductForm({ libraryImages, onCancel, onSubmit, product, submitting }:
 
   return (
     <>
-      <form className="flex h-full flex-col bg-white text-zinc-950" onSubmit={handleSubmit}>
-        <div className="flex items-center border-b border-zinc-100 px-4 py-4">
-          <button
-            aria-label="Đóng"
-            className="rounded-full p-2 text-zinc-950 hover:bg-zinc-100"
-            onClick={onCancel}
-            type="button"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <h2 className="flex-1 pr-9 text-center text-sm font-extrabold">
-            {product ? "Edit Product" : "Create Product"}
-          </h2>
-        </div>
-
-        <div className="flex-1 overflow-y-auto bg-white pb-28">
-          <section className="px-5 py-5">
-            <p className="mb-3 text-xs font-extrabold text-zinc-950">Media</p>
+      <form className="flex h-full min-h-0 flex-col bg-[#f7f2e8] text-zinc-950" onSubmit={handleSubmit}>
+        <div className="sticky top-0 z-20 border-b border-zinc-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-8">
+          <div className="mx-auto flex max-w-7xl items-center gap-4">
             <button
-              className="flex w-full items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 text-left transition hover:border-orange-300 hover:bg-orange-50"
-              onClick={() => setMediaOpen(true)}
+              aria-label="Đóng"
+              className="rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-950 shadow-sm transition hover:bg-zinc-50"
+              onClick={onCancel}
               type="button"
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-50 text-zinc-500">
-                {previewUrl ? (
-                  <img alt="Ảnh sản phẩm" className="h-full w-full rounded-lg object-cover" src={previewUrl} />
-                ) : (
-                  <ImagePlus className="h-4 w-4" />
-                )}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-extrabold text-zinc-950">Add Media</span>
-                <span className="block truncate text-xs text-zinc-500">
-                  {imageFile ? imageFile.name : previewUrl ? "Media selected for this product" : "Add media for this product"}
-                </span>
-              </span>
-              <ChevronRight className="h-4 w-4 text-zinc-500" />
+              <ArrowLeft className="h-5 w-5" />
             </button>
-          </section>
-
-          <section className="space-y-5 px-5 pb-5">
-            <PhoneInput
-              label="Product Title"
-              onChange={(event) => updateField("name", event.target.value)}
-              placeholder="Enter product title"
-              required
-              value={form.name}
-            />
-
-            <div>
-              <p className="mb-3 text-xs font-extrabold text-zinc-950">Status</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-3 text-sm font-bold transition ${
-                    form.is_active
-                      ? "border-zinc-950 bg-white text-zinc-950"
-                      : "border-zinc-200 bg-white text-zinc-500"
-                  }`}
-                  onClick={() => updateField("is_active", true)}
-                  type="button"
-                >
-                  <span
-                    className={`flex h-4 w-4 items-center justify-center rounded-full border ${
-                      form.is_active ? "border-blue-600 bg-blue-600" : "border-zinc-300"
-                    }`}
-                  >
-                    {form.is_active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
-                  </span>
-                  Active
-                </button>
-                <button
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-3 text-sm font-bold transition ${
-                    !form.is_active
-                      ? "border-zinc-950 bg-white text-zinc-950"
-                      : "border-zinc-200 bg-white text-zinc-500"
-                  }`}
-                  onClick={() => updateField("is_active", false)}
-                  type="button"
-                >
-                  <span
-                    className={`flex h-4 w-4 items-center justify-center rounded-full border ${
-                      !form.is_active ? "border-blue-600 bg-blue-600" : "border-zinc-300"
-                    }`}
-                  >
-                    {!form.is_active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
-                  </span>
-                  Inactive
-                </button>
-              </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-extrabold uppercase tracking-[0.24em] text-orange-600">
+                Product Manager
+              </p>
+              <h2 className="font-display text-2xl font-bold sm:text-3xl">
+                {product ? "Sửa sản phẩm" : "Tạo sản phẩm"}
+              </h2>
             </div>
-
-            <label className="block">
-              <span className="mb-2 block text-xs font-extrabold text-zinc-950">Descriptions</span>
-              <textarea
-                className="min-h-28 w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
-                onChange={(event) => updateField("description", event.target.value)}
-                placeholder="Product description"
-                value={form.description}
-              />
-            </label>
-          </section>
-
-          <SectionCard
-            icon={<Layers3 className="h-4 w-4" />}
-            subtitle={form.category || "Add Category"}
-            title="Category"
-          >
-            <PhoneInput
-              onChange={(event) => updateField("category", event.target.value)}
-              placeholder="Ví dụ: Quạt, đồ uống, phụ kiện..."
-              value={form.category}
-            />
-          </SectionCard>
-
-          <SectionCard icon={<DollarSign className="h-4 w-4" />} subtitle="Add Price" title="Price">
-            <div className="grid grid-cols-2 gap-3">
-              <PhoneInput
-                min="0"
-                onChange={(event) => updateField("price", event.target.value)}
-                placeholder="Price"
-                type="number"
-                value={form.price}
-              />
-              <PhoneInput
-                min="0"
-                onChange={(event) => updateField("cost_price", event.target.value)}
-                placeholder="Cost"
-                type="number"
-                value={form.cost_price}
-              />
+            <div className="hidden gap-3 sm:flex">
+              <button
+                className="rounded-2xl border border-zinc-300 bg-white px-5 py-3 text-sm font-extrabold text-zinc-950 transition hover:bg-zinc-50"
+                onClick={onCancel}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-2xl bg-orange-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-orange-600/20 transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={submitting}
+                type="submit"
+              >
+                {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
+              </button>
             </div>
-          </SectionCard>
-
-          <SectionCard icon={<Archive className="h-4 w-4" />} subtitle="SKU and stock" title="Inventory">
-            <div className="grid grid-cols-2 gap-3">
-              <PhoneInput
-                onChange={(event) => updateField("sku", event.target.value)}
-                placeholder="SKU"
-                value={form.sku}
-              />
-              <PhoneInput
-                min="0"
-                onChange={(event) => updateField("stock", event.target.value)}
-                placeholder="Stock"
-                type="number"
-                value={form.stock}
-              />
-            </div>
-          </SectionCard>
-
-          {error ? (
-            <div className="mx-5 mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-              {error}
-            </div>
-          ) : null}
+          </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 border-t border-zinc-100 bg-white/95 px-5 pb-8 pt-4 backdrop-blur">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+          <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+            <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+              <section className="rounded-[1.75rem] border border-zinc-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-extrabold text-zinc-950">Media</p>
+                    <p className="text-xs text-zinc-500">Ảnh đại diện sản phẩm</p>
+                  </div>
+                  <ImagePlus className="h-5 w-5 text-orange-600" />
+                </div>
+
+                <div className="overflow-hidden rounded-[1.5rem] border border-zinc-200 bg-zinc-50">
+                  {previewUrl ? (
+                    <img
+                      alt="Ảnh sản phẩm"
+                      className="aspect-square w-full object-cover"
+                      src={previewUrl}
+                    />
+                  ) : (
+                    <div className="flex aspect-square w-full flex-col items-center justify-center p-8 text-center">
+                      <span className="rounded-3xl bg-white p-5 text-orange-600 shadow-sm">
+                        <ImagePlus className="h-9 w-9" />
+                      </span>
+                      <p className="mt-4 text-sm font-extrabold text-zinc-950">Chưa có ảnh</p>
+                      <p className="mt-1 text-xs leading-5 text-zinc-500">
+                        Chọn từ thư viện hoặc upload ảnh mới.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-4 text-left transition hover:border-orange-300 hover:bg-orange-50"
+                  onClick={() => setMediaOpen(true)}
+                  type="button"
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+                    <ImagePlus className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-extrabold text-zinc-950">Add Media</span>
+                    <span className="block truncate text-xs text-zinc-500">
+                      {imageFile
+                        ? imageFile.name
+                        : previewUrl
+                          ? "Media selected for this product"
+                          : "Add media for this product"}
+                    </span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-zinc-500" />
+                </button>
+              </section>
+
+              <section className="rounded-[1.75rem] border border-zinc-200 bg-white p-5 shadow-sm">
+                <p className="mb-3 text-sm font-extrabold text-zinc-950">Status</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-bold transition ${
+                      form.is_active
+                        ? "border-zinc-950 bg-zinc-950 text-white"
+                        : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
+                    }`}
+                    onClick={() => updateField("is_active", true)}
+                    type="button"
+                  >
+                    <span
+                      className={`flex h-4 w-4 items-center justify-center rounded-full border ${
+                        form.is_active ? "border-blue-500 bg-blue-500" : "border-zinc-300"
+                      }`}
+                    >
+                      {form.is_active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+                    </span>
+                    Active
+                  </button>
+                  <button
+                    className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-bold transition ${
+                      !form.is_active
+                        ? "border-zinc-950 bg-zinc-950 text-white"
+                        : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
+                    }`}
+                    onClick={() => updateField("is_active", false)}
+                    type="button"
+                  >
+                    <span
+                      className={`flex h-4 w-4 items-center justify-center rounded-full border ${
+                        !form.is_active ? "border-blue-500 bg-blue-500" : "border-zinc-300"
+                      }`}
+                    >
+                      {!form.is_active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+                    </span>
+                    Inactive
+                  </button>
+                </div>
+              </section>
+            </aside>
+
+            <section className="space-y-6">
+              <section className="rounded-[1.75rem] border border-zinc-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="mb-5">
+                  <p className="text-sm font-extrabold text-zinc-950">Thông tin sản phẩm</p>
+                  <p className="text-xs text-zinc-500">Nội dung hiển thị trên POS và danh sách sản phẩm.</p>
+                </div>
+                <div className="grid gap-4">
+                  <PhoneInput
+                    label="Product Title"
+                    onChange={(event) => updateField("name", event.target.value)}
+                    placeholder="Enter product title"
+                    required
+                    value={form.name}
+                  />
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-extrabold text-zinc-950">
+                      Descriptions
+                    </span>
+                    <textarea
+                      className="min-h-36 w-full resize-none rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
+                      onChange={(event) => updateField("description", event.target.value)}
+                      placeholder="Product description"
+                      value={form.description}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <div className="grid gap-6 lg:grid-cols-2">
+                <SectionCard
+                  icon={<Layers3 className="h-5 w-5" />}
+                  subtitle={form.category || "Add Category"}
+                  title="Category"
+                >
+                  <PhoneInput
+                    onChange={(event) => updateField("category", event.target.value)}
+                    placeholder="Nhập nhóm hàng"
+                    value={form.category}
+                  />
+                </SectionCard>
+
+                <SectionCard icon={<DollarSign className="h-5 w-5" />} subtitle="Add Price" title="Price">
+                  <div className="grid grid-cols-2 gap-3">
+                    <PhoneInput
+                      min="0"
+                      onChange={(event) => updateField("price", event.target.value)}
+                      placeholder="Price"
+                      type="number"
+                      value={form.price}
+                    />
+                    <PhoneInput
+                      min="0"
+                      onChange={(event) => updateField("cost_price", event.target.value)}
+                      placeholder="Cost"
+                      type="number"
+                      value={form.cost_price}
+                    />
+                  </div>
+                </SectionCard>
+              </div>
+
+              <SectionCard icon={<Archive className="h-5 w-5" />} subtitle="SKU and stock" title="Inventory">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <PhoneInput
+                    onChange={(event) => updateField("sku", event.target.value)}
+                    placeholder="SKU"
+                    value={form.sku}
+                  />
+                  <PhoneInput
+                    min="0"
+                    onChange={(event) => updateField("stock", event.target.value)}
+                    placeholder="Stock"
+                    type="number"
+                    value={form.stock}
+                  />
+                </div>
+              </SectionCard>
+
+              {error ? (
+                <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                  {error}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        </div>
+
+        <div className="border-t border-zinc-200 bg-white/95 px-4 py-4 backdrop-blur sm:hidden">
           <div className="grid grid-cols-2 gap-2">
             <button
-              className="rounded-lg border border-zinc-950 bg-white px-4 py-3 text-sm font-extrabold text-zinc-950"
+              className="rounded-2xl border border-zinc-950 bg-white px-4 py-3 text-sm font-extrabold text-zinc-950"
               onClick={onCancel}
               type="button"
             >
               Cancel
             </button>
             <button
-              className="rounded-lg bg-orange-600 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl bg-orange-600 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={submitting}
               type="submit"
             >
               {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
             </button>
           </div>
-          <div className="mx-auto mt-5 h-1 w-28 rounded-full bg-zinc-950" />
         </div>
       </form>
 
@@ -616,27 +680,14 @@ function ProductEditorModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/55 p-3 backdrop-blur-sm">
-      <div className="relative h-[min(92vh,760px)] w-full max-w-[390px] rounded-[2rem] bg-zinc-950 p-2 shadow-2xl">
-        <div className="flex h-full flex-col overflow-hidden rounded-[1.6rem] bg-white">
-          <div className="flex items-center justify-between bg-zinc-950 px-5 py-2 text-xs font-bold text-white">
-            <span>9:41</span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-4 rounded-sm border border-white" />
-              <span className="h-2 w-2 rounded-full bg-white" />
-            </span>
-          </div>
-          <div className="relative min-h-0 flex-1">
-            <ProductForm
-              libraryImages={libraryImages}
-              onCancel={onCancel}
-              onSubmit={onSubmit}
-              product={product}
-              submitting={submitting}
-            />
-          </div>
-        </div>
-      </div>
+    <div className="fixed inset-0 z-50 h-screen w-screen overflow-hidden bg-[#f7f2e8]">
+      <ProductForm
+        libraryImages={libraryImages}
+        onCancel={onCancel}
+        onSubmit={onSubmit}
+        product={product}
+        submitting={submitting}
+      />
     </div>
   );
 }
