@@ -39,6 +39,7 @@ export type Database = {
           name: string;
           sku: string | null;
           category: string | null;
+          description: string | null;
           price: number;
           cost_price: number;
           stock: number;
@@ -52,6 +53,7 @@ export type Database = {
           name: string;
           sku?: string | null;
           category?: string | null;
+          description?: string | null;
           price: number;
           cost_price?: number;
           stock?: number;
@@ -65,6 +67,7 @@ export type Database = {
           name?: string;
           sku?: string | null;
           category?: string | null;
+          description?: string | null;
           price?: number;
           cost_price?: number;
           stock?: number;

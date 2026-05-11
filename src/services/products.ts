@@ -5,6 +5,7 @@ export type ProductInput = {
   name: string;
   sku?: string | null;
   category?: string | null;
+  description?: string | null;
   price: number;
   cost_price: number;
   stock: number;

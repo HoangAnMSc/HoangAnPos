@@ -13,6 +13,7 @@ create table if not exists public.products (
   name text not null,
   sku text unique,
   category text,
+  description text,
   price numeric(12, 2) not null check (price >= 0),
   cost_price numeric(12, 2) not null default 0 check (cost_price >= 0),
   stock integer not null default 0 check (stock >= 0),
@@ -21,6 +22,9 @@ create table if not exists public.products (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.products
+add column if not exists description text;
 
 create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),

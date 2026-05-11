@@ -1,13 +1,28 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
-import { Boxes, CheckCircle2, Edit3, ImagePlus, PackagePlus, Search, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArrowLeft,
+  Boxes,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  DollarSign,
+  Edit3,
+  ImagePlus,
+  Layers3,
+  PackagePlus,
+  Search,
+  Tag,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Input } from "../components/ui/Input";
-import { Modal } from "../components/ui/Modal";
-import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { formatCurrency } from "../lib/format";
 import { uploadProductImage } from "../lib/cloudinary";
@@ -24,6 +39,7 @@ type ProductFormState = {
   name: string;
   sku: string;
   category: string;
+  description: string;
   price: string;
   cost_price: string;
   stock: string;
@@ -34,6 +50,7 @@ type ProductFormState = {
 const emptyForm: ProductFormState = {
   category: "",
   cost_price: "0",
+  description: "",
   image_url: "",
   is_active: true,
   name: "",
@@ -55,6 +72,7 @@ function productToForm(product?: Product | null): ProductFormState {
   return {
     category: product.category ?? "",
     cost_price: String(product.cost_price),
+    description: product.description ?? "",
     image_url: product.image_url ?? "",
     is_active: product.is_active,
     name: product.name,
@@ -64,30 +82,279 @@ function productToForm(product?: Product | null): ProductFormState {
   };
 }
 
+type MediaPickerSheetProps = {
+  currentImageUrl: string;
+  libraryImages: string[];
+  open: boolean;
+  onClose: () => void;
+  onSave: (value: { imageUrl: string; imageFile: File | null; previewUrl: string }) => void;
+};
+
+function MediaPickerSheet({
+  currentImageUrl,
+  libraryImages,
+  onClose,
+  onSave,
+  open,
+}: MediaPickerSheetProps) {
+  const [activeTab, setActiveTab] = useState<"library" | "upload">("library");
+  const [draftFile, setDraftFile] = useState<File | null>(null);
+  const [draftPreview, setDraftPreview] = useState("");
+  const [selectedUrl, setSelectedUrl] = useState(currentImageUrl);
+
+  useEffect(() => {
+    setSelectedUrl(currentImageUrl);
+  }, [currentImageUrl, open]);
+
+  useEffect(() => {
+    return () => {
+      if (draftPreview.startsWith("blob:")) {
+        URL.revokeObjectURL(draftPreview);
+      }
+    };
+  }, [draftPreview]);
+
+  if (!open) {
+    return null;
+  }
+
+  const selectedCount = activeTab === "upload" && draftFile ? 1 : selectedUrl ? 1 : 0;
+
+  function handleUploadChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextFile = event.target.files?.[0] ?? null;
+
+    if (draftPreview.startsWith("blob:")) {
+      URL.revokeObjectURL(draftPreview);
+    }
+
+    setDraftFile(nextFile);
+    setDraftPreview(nextFile ? URL.createObjectURL(nextFile) : "");
+  }
+
+  function handleSave() {
+    if (activeTab === "upload" && draftFile && draftPreview) {
+      onSave({ imageFile: draftFile, imageUrl: currentImageUrl, previewUrl: draftPreview });
+      return;
+    }
+
+    onSave({ imageFile: null, imageUrl: selectedUrl, previewUrl: "" });
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 px-4 pb-4 backdrop-blur-sm sm:items-center sm:pb-0">
+      <div className="w-full max-w-[390px] overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl sm:rounded-[1.75rem]">
+        <div className="mx-auto mt-3 h-1.5 w-12 rounded-full bg-zinc-200" />
+        <div className="flex items-center justify-between px-5 py-4">
+          <h3 className="flex-1 text-center text-sm font-extrabold text-zinc-950">Add Media</h3>
+          <button
+            aria-label="Đóng chọn ảnh"
+            className="rounded-full p-1 text-zinc-950 hover:bg-zinc-100"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="border-t border-zinc-100 px-5 pb-5 pt-3">
+          <div className="mb-4 flex items-center gap-2">
+            <button
+              className={`rounded-lg border px-3 py-1.5 text-xs font-extrabold transition ${
+                activeTab === "library"
+                  ? "border-zinc-950 bg-zinc-950 text-white"
+                  : "border-zinc-200 bg-white text-zinc-950"
+              }`}
+              onClick={() => setActiveTab("library")}
+              type="button"
+            >
+              Content Library
+            </button>
+            <button
+              className={`rounded-lg border px-3 py-1.5 text-xs font-extrabold transition ${
+                activeTab === "upload"
+                  ? "border-zinc-950 bg-zinc-950 text-white"
+                  : "border-zinc-200 bg-white text-zinc-950"
+              }`}
+              onClick={() => setActiveTab("upload")}
+              type="button"
+            >
+              Upload New
+            </button>
+          </div>
+
+          <div className="mb-3 flex items-center justify-between text-xs">
+            <span className="text-zinc-600">
+              Selected <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-bold text-zinc-950">{selectedCount}</span>
+            </span>
+            <button
+              className="font-bold underline"
+              onClick={() => {
+                setSelectedUrl("");
+                setDraftFile(null);
+                setDraftPreview("");
+              }}
+              type="button"
+            >
+              Unselect all
+            </button>
+          </div>
+
+          {activeTab === "library" ? (
+            libraryImages.length > 0 ? (
+              <div className="grid max-h-72 grid-cols-3 gap-3 overflow-y-auto pr-1">
+                {libraryImages.map((imageUrl) => {
+                  const selected = selectedUrl === imageUrl;
+
+                  return (
+                    <button
+                      className={`relative aspect-square overflow-hidden rounded-xl border-2 bg-zinc-100 transition ${
+                        selected ? "border-blue-500" : "border-transparent hover:border-zinc-300"
+                      }`}
+                      key={imageUrl}
+                      onClick={() => setSelectedUrl(imageUrl)}
+                      type="button"
+                    >
+                      <img alt="Ảnh sản phẩm" className="h-full w-full object-cover" src={imageUrl} />
+                      <span
+                        className={`absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px] ${
+                          selected
+                            ? "border-blue-500 bg-blue-500 text-white"
+                            : "border-zinc-300 bg-white text-transparent"
+                        }`}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl bg-zinc-50 p-5 text-center">
+                <ImagePlus className="h-8 w-8 text-zinc-400" />
+                <p className="mt-3 text-sm font-bold text-zinc-950">Chưa có ảnh trong thư viện</p>
+                <p className="mt-1 text-xs text-zinc-500">Upload ảnh mới để dùng cho sản phẩm.</p>
+              </div>
+            )
+          ) : (
+            <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-5 text-center transition hover:border-orange-500 hover:bg-orange-50">
+              {draftPreview ? (
+                <img
+                  alt="Ảnh upload"
+                  className="mb-4 h-32 w-32 rounded-2xl object-cover"
+                  src={draftPreview}
+                />
+              ) : (
+                <span className="mb-4 rounded-2xl bg-white p-4 text-orange-600 shadow-sm">
+                  <Upload className="h-7 w-7" />
+                </span>
+              )}
+              <span className="text-sm font-extrabold text-zinc-950">
+                {draftFile ? draftFile.name : "Chọn ảnh từ máy"}
+              </span>
+              <span className="mt-1 text-xs text-zinc-500">Ảnh sẽ upload lên Cloudinary khi lưu sản phẩm.</span>
+              <input accept="image/*" className="hidden" onChange={handleUploadChange} type="file" />
+            </label>
+          )}
+
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <button
+              className="rounded-lg border border-zinc-950 bg-white px-4 py-3 text-sm font-extrabold text-zinc-950"
+              onClick={onClose}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="rounded-lg bg-orange-600 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={selectedCount === 0}
+              onClick={handleSave}
+              type="button"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type SectionCardProps = {
+  actionLabel?: string;
+  children: React.ReactNode;
+  icon: React.ReactNode;
+  subtitle: string;
+  title: string;
+};
+
+function SectionCard({ actionLabel = "+ Add", children, icon, subtitle, title }: SectionCardProps) {
+  return (
+    <section className="border-t border-zinc-100 bg-white px-5 py-5">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-50 text-zinc-500">
+            {icon}
+          </span>
+          <div>
+            <h4 className="text-sm font-extrabold text-zinc-950">{title}</h4>
+            <p className="text-xs text-zinc-500">{subtitle}</p>
+          </div>
+        </div>
+        <span className="text-xs font-extrabold text-zinc-950 underline">{actionLabel}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+type PhoneInputProps = React.InputHTMLAttributes<HTMLInputElement> & {
+  label?: string;
+};
+
+function PhoneInput({ className = "", label, ...props }: PhoneInputProps) {
+  return (
+    <label className="block">
+      {label ? <span className="mb-2 block text-xs font-extrabold text-zinc-950">{label}</span> : null}
+      <input
+        className={`w-full rounded-lg border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100 ${className}`}
+        {...props}
+      />
+    </label>
+  );
+}
+
 type ProductFormProps = {
+  libraryImages: string[];
   product?: Product | null;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (input: ProductInput, imageFile: File | null) => Promise<void>;
 };
 
-function ProductForm({ onCancel, onSubmit, product, submitting }: ProductFormProps) {
+function ProductForm({ libraryImages, onCancel, onSubmit, product, submitting }: ProductFormProps) {
   const [form, setForm] = useState<ProductFormState>(() => productToForm(product));
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  const [mediaOpen, setMediaOpen] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     setForm(productToForm(product));
     setImageFile(null);
+    setImagePreviewUrl("");
     setError("");
   }, [product]);
 
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+    };
+  }, [imagePreviewUrl]);
+
   function updateField(field: keyof ProductFormState, value: string | boolean) {
     setForm((current) => ({ ...current, [field]: value }));
-  }
-
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setImageFile(event.target.files?.[0] ?? null);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -113,6 +380,7 @@ function ProductForm({ onCancel, onSubmit, product, submitting }: ProductFormPro
       {
         category: normalizeText(form.category),
         cost_price: costPrice,
+        description: normalizeText(form.description),
         image_url: normalizeText(form.image_url),
         is_active: form.is_active,
         name,
@@ -124,101 +392,252 @@ function ProductForm({ onCancel, onSubmit, product, submitting }: ProductFormPro
     );
   }
 
+  const previewUrl = imagePreviewUrl || form.image_url;
+
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
-      <div className="grid gap-4 md:grid-cols-2">
-        <Input
-          label="Tên sản phẩm"
-          onChange={(event) => updateField("name", event.target.value)}
-          placeholder="Cà phê sữa đá"
-          required
-          value={form.name}
-        />
-        <Input
-          label="Mã SKU"
-          onChange={(event) => updateField("sku", event.target.value)}
-          placeholder="CF-SUA-01"
-          value={form.sku}
-        />
-        <Input
-          label="Nhóm hàng"
-          onChange={(event) => updateField("category", event.target.value)}
-          placeholder="Đồ uống"
-          value={form.category}
-        />
-        <Select
-          label="Trạng thái"
-          onChange={(event) => updateField("is_active", event.target.value === "true")}
-          value={String(form.is_active)}
-        >
-          <option value="true">Đang bán</option>
-          <option value="false">Tạm ẩn</option>
-        </Select>
-        <Input
-          label="Giá bán"
-          min="0"
-          onChange={(event) => updateField("price", event.target.value)}
-          type="number"
-          value={form.price}
-        />
-        <Input
-          label="Giá vốn"
-          min="0"
-          onChange={(event) => updateField("cost_price", event.target.value)}
-          type="number"
-          value={form.cost_price}
-        />
-        <Input
-          label="Tồn kho"
-          min="0"
-          onChange={(event) => updateField("stock", event.target.value)}
-          type="number"
-          value={form.stock}
-        />
-        <Input
-          label="URL ảnh hiện tại"
-          onChange={(event) => updateField("image_url", event.target.value)}
-          placeholder="Tự điền sau khi upload Cloudinary"
-          value={form.image_url}
-        />
+    <>
+      <form className="flex h-full flex-col bg-white text-zinc-950" onSubmit={handleSubmit}>
+        <div className="flex items-center border-b border-zinc-100 px-4 py-4">
+          <button
+            aria-label="Đóng"
+            className="rounded-full p-2 text-zinc-950 hover:bg-zinc-100"
+            onClick={onCancel}
+            type="button"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <h2 className="flex-1 pr-9 text-center text-sm font-extrabold">
+            {product ? "Edit Product" : "Create Product"}
+          </h2>
+        </div>
+
+        <div className="flex-1 overflow-y-auto bg-white pb-28">
+          <section className="px-5 py-5">
+            <p className="mb-3 text-xs font-extrabold text-zinc-950">Media</p>
+            <button
+              className="flex w-full items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 text-left transition hover:border-orange-300 hover:bg-orange-50"
+              onClick={() => setMediaOpen(true)}
+              type="button"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-50 text-zinc-500">
+                {previewUrl ? (
+                  <img alt="Ảnh sản phẩm" className="h-full w-full rounded-lg object-cover" src={previewUrl} />
+                ) : (
+                  <ImagePlus className="h-4 w-4" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-extrabold text-zinc-950">Add Media</span>
+                <span className="block truncate text-xs text-zinc-500">
+                  {imageFile ? imageFile.name : previewUrl ? "Media selected for this product" : "Add media for this product"}
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 text-zinc-500" />
+            </button>
+          </section>
+
+          <section className="space-y-5 px-5 pb-5">
+            <PhoneInput
+              label="Product Title"
+              onChange={(event) => updateField("name", event.target.value)}
+              placeholder="Enter product title"
+              required
+              value={form.name}
+            />
+
+            <div>
+              <p className="mb-3 text-xs font-extrabold text-zinc-950">Status</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-3 text-sm font-bold transition ${
+                    form.is_active
+                      ? "border-zinc-950 bg-white text-zinc-950"
+                      : "border-zinc-200 bg-white text-zinc-500"
+                  }`}
+                  onClick={() => updateField("is_active", true)}
+                  type="button"
+                >
+                  <span
+                    className={`flex h-4 w-4 items-center justify-center rounded-full border ${
+                      form.is_active ? "border-blue-600 bg-blue-600" : "border-zinc-300"
+                    }`}
+                  >
+                    {form.is_active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+                  </span>
+                  Active
+                </button>
+                <button
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-3 text-sm font-bold transition ${
+                    !form.is_active
+                      ? "border-zinc-950 bg-white text-zinc-950"
+                      : "border-zinc-200 bg-white text-zinc-500"
+                  }`}
+                  onClick={() => updateField("is_active", false)}
+                  type="button"
+                >
+                  <span
+                    className={`flex h-4 w-4 items-center justify-center rounded-full border ${
+                      !form.is_active ? "border-blue-600 bg-blue-600" : "border-zinc-300"
+                    }`}
+                  >
+                    {!form.is_active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+                  </span>
+                  Inactive
+                </button>
+              </div>
+            </div>
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-extrabold text-zinc-950">Descriptions</span>
+              <textarea
+                className="min-h-28 w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
+                onChange={(event) => updateField("description", event.target.value)}
+                placeholder="Product description"
+                value={form.description}
+              />
+            </label>
+          </section>
+
+          <SectionCard
+            icon={<Layers3 className="h-4 w-4" />}
+            subtitle={form.category || "Add Category"}
+            title="Category"
+          >
+            <PhoneInput
+              onChange={(event) => updateField("category", event.target.value)}
+              placeholder="Ví dụ: Quạt, đồ uống, phụ kiện..."
+              value={form.category}
+            />
+          </SectionCard>
+
+          <SectionCard icon={<DollarSign className="h-4 w-4" />} subtitle="Add Price" title="Price">
+            <div className="grid grid-cols-2 gap-3">
+              <PhoneInput
+                min="0"
+                onChange={(event) => updateField("price", event.target.value)}
+                placeholder="Price"
+                type="number"
+                value={form.price}
+              />
+              <PhoneInput
+                min="0"
+                onChange={(event) => updateField("cost_price", event.target.value)}
+                placeholder="Cost"
+                type="number"
+                value={form.cost_price}
+              />
+            </div>
+          </SectionCard>
+
+          <SectionCard icon={<Archive className="h-4 w-4" />} subtitle="SKU and stock" title="Inventory">
+            <div className="grid grid-cols-2 gap-3">
+              <PhoneInput
+                onChange={(event) => updateField("sku", event.target.value)}
+                placeholder="SKU"
+                value={form.sku}
+              />
+              <PhoneInput
+                min="0"
+                onChange={(event) => updateField("stock", event.target.value)}
+                placeholder="Stock"
+                type="number"
+                value={form.stock}
+              />
+            </div>
+          </SectionCard>
+
+          {error ? (
+            <div className="mx-5 mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {error}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="absolute inset-x-0 bottom-0 border-t border-zinc-100 bg-white/95 px-5 pb-8 pt-4 backdrop-blur">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className="rounded-lg border border-zinc-950 bg-white px-4 py-3 text-sm font-extrabold text-zinc-950"
+              onClick={onCancel}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="rounded-lg bg-orange-600 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={submitting}
+              type="submit"
+            >
+              {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
+            </button>
+          </div>
+          <div className="mx-auto mt-5 h-1 w-28 rounded-full bg-zinc-950" />
+        </div>
+      </form>
+
+      <MediaPickerSheet
+        currentImageUrl={form.image_url}
+        libraryImages={libraryImages}
+        onClose={() => setMediaOpen(false)}
+        onSave={({ imageFile: nextFile, imageUrl, previewUrl }) => {
+          if (imagePreviewUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(imagePreviewUrl);
+          }
+
+          setImageFile(nextFile);
+          setImagePreviewUrl(previewUrl);
+          updateField("image_url", imageUrl);
+          setMediaOpen(false);
+        }}
+        open={mediaOpen}
+      />
+    </>
+  );
+}
+
+type ProductEditorModalProps = {
+  libraryImages: string[];
+  open: boolean;
+  product?: Product | null;
+  submitting: boolean;
+  onCancel: () => void;
+  onSubmit: (input: ProductInput, imageFile: File | null) => Promise<void>;
+};
+
+function ProductEditorModal({
+  libraryImages,
+  onCancel,
+  onSubmit,
+  open,
+  product,
+  submitting,
+}: ProductEditorModalProps) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/55 p-3 backdrop-blur-sm">
+      <div className="relative h-[min(92vh,760px)] w-full max-w-[390px] rounded-[2rem] bg-zinc-950 p-2 shadow-2xl">
+        <div className="flex h-full flex-col overflow-hidden rounded-[1.6rem] bg-white">
+          <div className="flex items-center justify-between bg-zinc-950 px-5 py-2 text-xs font-bold text-white">
+            <span>9:41</span>
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-4 rounded-sm border border-white" />
+              <span className="h-2 w-2 rounded-full bg-white" />
+            </span>
+          </div>
+          <div className="relative min-h-0 flex-1">
+            <ProductForm
+              libraryImages={libraryImages}
+              onCancel={onCancel}
+              onSubmit={onSubmit}
+              product={product}
+              submitting={submitting}
+            />
+          </div>
+        </div>
       </div>
-
-      <label className="flex cursor-pointer items-center gap-4 rounded-3xl border border-dashed border-coal/15 bg-white/70 p-4 transition hover:border-clay hover:bg-white">
-        <div className="rounded-2xl bg-clay/10 p-3 text-clay">
-          <ImagePlus className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-bold">Tải ảnh lên Cloudinary</p>
-          <p className="truncate text-sm text-coal/55">
-            {imageFile ? imageFile.name : "Chọn ảnh mới nếu muốn thay ảnh sản phẩm."}
-          </p>
-        </div>
-        <input accept="image/*" className="hidden" onChange={handleFileChange} type="file" />
-      </label>
-
-      {form.image_url ? (
-        <img
-          alt={form.name || "Ảnh sản phẩm"}
-          className="h-36 w-full rounded-3xl object-cover"
-          src={form.image_url}
-        />
-      ) : null}
-
-      {error ? (
-        <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
-        </div>
-      ) : null}
-
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-        <Button onClick={onCancel} type="button" variant="secondary">
-          Hủy
-        </Button>
-        <Button isLoading={submitting} type="submit">
-          {product ? "Cập nhật" : "Thêm sản phẩm"}
-        </Button>
-      </div>
-    </form>
+    </div>
   );
 }
 
@@ -312,6 +731,9 @@ export function ProductsPage() {
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedQuery))
   );
+  const libraryImages = Array.from(
+    new Set(products.map((product) => product.image_url).filter(Boolean))
+  ) as string[];
   const activeCount = products.filter((product) => product.is_active).length;
   const stockValue = products.reduce(
     (sum, product) => sum + product.stock * product.cost_price,
@@ -407,14 +829,20 @@ export function ProductsPage() {
                     </div>
                     <div>
                       <p className="font-bold">{product.name}</p>
-                      <Badge tone={product.is_active ? "green" : "neutral"}>
+                      <p className="mt-1 line-clamp-1 max-w-xs text-xs text-coal/50">
+                        {product.description || "Chưa có mô tả"}
+                      </p>
+                      <Badge className="mt-2" tone={product.is_active ? "green" : "neutral"}>
                         {product.is_active ? "Đang bán" : "Tạm ẩn"}
                       </Badge>
                     </div>
                   </div>
                   <div className="text-sm">
                     <p className="font-bold">{product.category || "Chưa phân nhóm"}</p>
-                    <p className="text-coal/50">{product.sku || "Chưa có SKU"}</p>
+                    <div className="mt-1 flex items-center gap-1 text-coal/50">
+                      <Tag className="h-3.5 w-3.5" />
+                      <span>{product.sku || "Chưa có SKU"}</span>
+                    </div>
                   </div>
                   <p className="font-display text-lg font-bold">{formatCurrency(product.price)}</p>
                   <div className="flex items-center gap-2">
@@ -436,18 +864,14 @@ export function ProductsPage() {
         )}
       </Card>
 
-      <Modal
-        onClose={() => setModalOpen(false)}
+      <ProductEditorModal
+        libraryImages={libraryImages}
+        onCancel={() => setModalOpen(false)}
+        onSubmit={handleSave}
         open={modalOpen}
-        title={editingProduct ? "Sửa sản phẩm" : "Thêm sản phẩm"}
-      >
-        <ProductForm
-          onCancel={() => setModalOpen(false)}
-          onSubmit={handleSave}
-          product={editingProduct}
-          submitting={submitting}
-        />
-      </Modal>
+        product={editingProduct}
+        submitting={submitting}
+      />
     </div>
   );
 }
