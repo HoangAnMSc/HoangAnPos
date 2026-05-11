@@ -39,7 +39,8 @@ async function loadProfile(userId: string) {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   const refreshProfile = useCallback(async () => {
     if (!user) {
@@ -47,48 +48,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const nextProfile = await loadProfile(user.id);
-    setProfile(nextProfile);
+    setProfileLoading(true);
+
+    try {
+      const nextProfile = await loadProfile(user.id);
+      setProfile(nextProfile);
+    } finally {
+      setProfileLoading(false);
+    }
   }, [user]);
 
   useEffect(() => {
     let mounted = true;
 
     if (!isSupabaseConfigured) {
-      setLoading(false);
+      setAuthLoading(false);
       return () => {
         mounted = false;
       };
     }
 
     async function hydrateSession() {
-      setLoading(true);
-      const { data } = await supabase.auth.getSession();
-      const sessionUser = data.session?.user ?? null;
+      try {
+        const { data } = await supabase.auth.getSession();
 
-      if (!mounted) {
-        return;
-      }
-
-      setUser(sessionUser);
-
-      if (sessionUser) {
-        try {
-          const nextProfile = await loadProfile(sessionUser.id);
-          if (mounted) {
-            setProfile(nextProfile);
-          }
-        } catch {
-          if (mounted) {
-            setProfile(null);
-          }
+        if (mounted) {
+          setUser(data.session?.user ?? null);
         }
-      } else {
-        setProfile(null);
-      }
-
-      if (mounted) {
-        setLoading(false);
+      } finally {
+        if (mounted) {
+          setAuthLoading(false);
+        }
       }
     }
 
@@ -96,22 +86,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       const sessionUser = session?.user ?? null;
       setUser(sessionUser);
-      setLoading(true);
 
-      if (sessionUser) {
-        try {
-          setProfile(await loadProfile(sessionUser.id));
-        } catch {
-          setProfile(null);
-        }
-      } else {
+      if (!sessionUser) {
         setProfile(null);
       }
-
-      setLoading(false);
     });
 
     return () => {
@@ -120,10 +101,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    if (!isSupabaseConfigured || authLoading) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    if (!user) {
+      setProfile(null);
+      setProfileLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    const currentUser = user;
+
+    async function hydrateProfile() {
+      setProfileLoading(true);
+
+      try {
+        const nextProfile = await loadProfile(currentUser.id);
+        if (mounted) {
+          setProfile(nextProfile);
+        }
+      } catch {
+        if (mounted) {
+          setProfile(null);
+        }
+      } finally {
+        if (mounted) {
+          setProfileLoading(false);
+        }
+      }
+    }
+
+    hydrateProfile();
+
+    return () => {
+      mounted = false;
+    };
+  }, [authLoading, user]);
+
   const signIn = useCallback(async (email: string, password: string) => {
     requireSupabaseConfig();
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -131,6 +157,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) {
       throw error;
     }
+
+    setUser(data.user);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -141,6 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const isAdmin = profile?.role === "admin" || user?.app_metadata?.role === "admin";
+  const loading = authLoading || profileLoading;
 
   const value = useMemo<AuthContextValue>(
     () => ({
