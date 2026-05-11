@@ -45,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshProfile = useCallback(async () => {
     if (!user) {
       setProfile(null);
+      setProfileLoading(false);
       return;
     }
 
@@ -71,9 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async function hydrateSession() {
       try {
         const { data } = await supabase.auth.getSession();
+        const sessionUser = data.session?.user ?? null;
 
         if (mounted) {
-          setUser(data.session?.user ?? null);
+          setUser(sessionUser);
+          setProfileLoading(Boolean(sessionUser));
         }
       } finally {
         if (mounted) {
@@ -92,6 +95,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!sessionUser) {
         setProfile(null);
+        setProfileLoading(false);
+      } else {
+        setProfileLoading(true);
       }
     });
 
@@ -158,6 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw error;
     }
 
+    setProfileLoading(true);
     setUser(data.user);
   }, []);
 

@@ -39,6 +39,7 @@ export function AdminLayout() {
   const location = useLocation();
   const page = pageTitles[location.pathname] ?? pageTitles["/pos"];
   const displayName = profile?.full_name || user?.email || "Admin";
+  const isPosRoute = location.pathname === "/pos";
 
   return (
     <div className="min-h-screen bg-cream text-coal">
@@ -105,29 +106,46 @@ export function AdminLayout() {
       ) : null}
 
       <div className="lg:pl-72">
-        <header className="sticky top-0 z-20 border-b border-white/70 bg-cream/82 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
-          <div className="flex items-center gap-4">
+        {isPosRoute ? (
+          <>
             <button
-              className="rounded-2xl bg-white p-3 text-coal shadow-soft lg:hidden"
+              className="fixed left-4 top-5 z-50 rounded-2xl bg-white p-3 text-coal shadow-soft lg:hidden"
               onClick={() => setSidebarOpen(true)}
               type="button"
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div className="min-w-0 flex-1">
-              <h2 className="font-display text-2xl font-bold sm:text-3xl">{page.title}</h2>
-              <p className="mt-1 text-sm text-coal/60">{page.subtitle}</p>
-            </div>
-            <div className="hidden min-w-72 items-center gap-3 rounded-2xl bg-white px-4 py-3 text-coal/45 shadow-soft xl:flex">
-              <Search className="h-4 w-4" />
-              <span className="text-sm font-semibold">Dữ liệu đồng bộ qua Supabase</span>
-            </div>
-          </div>
-        </header>
+            <main className="min-h-screen bg-[#e8eef6] text-[#111827]">
+              <Outlet />
+            </main>
+          </>
+        ) : (
+          <>
+            <header className="sticky top-0 z-20 border-b border-white/70 bg-cream/82 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
+              <div className="flex items-center gap-4">
+                <button
+                  className="rounded-2xl bg-white p-3 text-coal shadow-soft lg:hidden"
+                  onClick={() => setSidebarOpen(true)}
+                  type="button"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-display text-2xl font-bold sm:text-3xl">{page.title}</h2>
+                  <p className="mt-1 text-sm text-coal/60">{page.subtitle}</p>
+                </div>
+                <div className="hidden min-w-72 items-center gap-3 rounded-2xl bg-white px-4 py-3 text-coal/45 shadow-soft xl:flex">
+                  <Search className="h-4 w-4" />
+                  <span className="text-sm font-semibold">Dữ liệu đồng bộ qua Supabase</span>
+                </div>
+              </div>
+            </header>
 
-        <main className="px-4 py-6 sm:px-6 lg:px-8">
-          <Outlet />
-        </main>
+            <main className="px-4 py-6 sm:px-6 lg:px-8">
+              <Outlet />
+            </main>
+          </>
+        )}
       </div>
     </div>
   );
