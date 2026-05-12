@@ -691,12 +691,6 @@ export function ProductsPage() {
   const categories = Array.from(
     new Set(products.map((product) => product.category).filter(Boolean))
   ) as string[];
-  const activeCount = products.filter((product) => product.is_active).length;
-  const stockValue = products.reduce(
-    (sum, product) => sum + product.stock * product.cost_price,
-    0
-  );
-
   return (
     <div>
       <ConfigNotice />

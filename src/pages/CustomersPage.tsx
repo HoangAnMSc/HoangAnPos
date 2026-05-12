@@ -238,8 +238,6 @@ export function CustomersPage() {
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedQuery))
   );
-  const withPhone = customers.filter((customer) => Boolean(customer.phone)).length;
-  const withEmail = customers.filter((customer) => Boolean(customer.email)).length;
   const customerFormId = editingCustomer
     ? `customer-form-${editingCustomer.id}`
     : "customer-form-create";
