@@ -701,27 +701,6 @@ export function ProductsPage() {
     <div>
       <ConfigNotice />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <p className="text-sm font-extrabold uppercase tracking-wide text-coal/45">
-            Tong san pham
-          </p>
-          <p className="mt-2 font-display text-3xl font-bold">{products.length}</p>
-        </Card>
-        <Card>
-          <p className="text-sm font-extrabold uppercase tracking-wide text-coal/45">
-            Dang ban
-          </p>
-          <p className="mt-2 font-display text-3xl font-bold">{activeCount}</p>
-        </Card>
-        <Card>
-          <p className="text-sm font-extrabold uppercase tracking-wide text-coal/45">
-            Gia tri ton von
-          </p>
-          <p className="mt-2 font-display text-3xl font-bold">{formatCurrency(stockValue)}</p>
-        </Card>
-      </div>
-
       <Card>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative w-full lg:max-w-md">

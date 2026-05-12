@@ -248,27 +248,6 @@ export function CustomersPage() {
     <div className="space-y-6">
       <ConfigNotice />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <p className="text-sm font-extrabold uppercase tracking-wide text-coal/45">
-            Tổng khách
-          </p>
-          <p className="mt-2 font-display text-3xl font-bold">{customers.length}</p>
-        </Card>
-        <Card>
-          <p className="text-sm font-extrabold uppercase tracking-wide text-coal/45">
-            Có số điện thoại
-          </p>
-          <p className="mt-2 font-display text-3xl font-bold">{withPhone}</p>
-        </Card>
-        <Card>
-          <p className="text-sm font-extrabold uppercase tracking-wide text-coal/45">
-            Có email
-          </p>
-          <p className="mt-2 font-display text-3xl font-bold">{withEmail}</p>
-        </Card>
-      </div>
-
       <Card>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative w-full lg:max-w-md">
