@@ -42,6 +42,8 @@ export type Database = {
           description: string | null;
           price: number;
           cost_price: number;
+          import_date: string | null;
+          expiry_date: string | null;
           stock: number;
           image_url: string | null;
           is_active: boolean;
@@ -56,6 +58,8 @@ export type Database = {
           description?: string | null;
           price: number;
           cost_price?: number;
+          import_date?: string | null;
+          expiry_date?: string | null;
           stock?: number;
           image_url?: string | null;
           is_active?: boolean;
@@ -70,6 +74,8 @@ export type Database = {
           description?: string | null;
           price?: number;
           cost_price?: number;
+          import_date?: string | null;
+          expiry_date?: string | null;
           stock?: number;
           image_url?: string | null;
           is_active?: boolean;

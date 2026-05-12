@@ -1,5 +1,16 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Edit3, Mail, MapPin, Phone, Search, Trash2, UserPlus, UsersRound } from "lucide-react";
+import {
+  Edit3,
+  Mail,
+  MapPin,
+  Phone,
+  Search,
+  StickyNote,
+  Trash2,
+  UserPlus,
+  UserRound,
+  UsersRound,
+} from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -33,7 +44,6 @@ const emptyForm: CustomerFormState = {
   note: "",
   phone: "",
 };
-const renderLegacyModalActions = false;
 
 function normalizeText(value: string) {
   const trimmed = value.trim();
@@ -54,15 +64,17 @@ function customerToForm(customer?: Customer | null): CustomerFormState {
   };
 }
 
+function getCustomerInitial(name: string) {
+  return name.trim().charAt(0).toUpperCase() || "K";
+}
+
 type CustomerFormProps = {
   customer?: Customer | null;
   formId: string;
-  submitting: boolean;
-  onCancel: () => void;
   onSubmit: (input: CustomerInput) => Promise<void>;
 };
 
-function CustomerForm({ customer, formId, onCancel, onSubmit, submitting }: CustomerFormProps) {
+function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
   const [form, setForm] = useState<CustomerFormState>(() => customerToForm(customer));
   const [error, setError] = useState("");
 
@@ -81,31 +93,35 @@ function CustomerForm({ customer, formId, onCancel, onSubmit, submitting }: Cust
 
     const name = form.name.trim();
     if (!name) {
-      setError("Tên khách hàng là bắt buộc.");
+      setError("Ten khach hang la bat buoc.");
       return;
     }
 
-    await onSubmit({
-      address: normalizeText(form.address),
-      email: normalizeText(form.email),
-      name,
-      note: normalizeText(form.note),
-      phone: normalizeText(form.phone),
-    });
+    try {
+      await onSubmit({
+        address: normalizeText(form.address),
+        email: normalizeText(form.email),
+        name,
+        note: normalizeText(form.note),
+        phone: normalizeText(form.phone),
+      });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Luu khach hang that bai.");
+    }
   }
 
   return (
     <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
       <div className="grid gap-4 md:grid-cols-2">
         <Input
-          label="Tên khách hàng"
+          label="Ten khach hang"
           onChange={(event) => updateField("name", event.target.value)}
-          placeholder="Nguyễn Hoàng An"
+          placeholder="Nguyen Hoang An"
           required
           value={form.name}
         />
         <Input
-          label="Số điện thoại"
+          label="So dien thoai"
           onChange={(event) => updateField("phone", event.target.value)}
           placeholder="090..."
           value={form.phone}
@@ -118,33 +134,22 @@ function CustomerForm({ customer, formId, onCancel, onSubmit, submitting }: Cust
           value={form.email}
         />
         <Input
-          label="Địa chỉ"
+          label="Dia chi"
           onChange={(event) => updateField("address", event.target.value)}
-          placeholder="Quận/Huyện, Tỉnh/Thành"
+          placeholder="Quan/Huyen, Tinh/Thanh"
           value={form.address}
         />
       </div>
       <Textarea
-        label="Ghi chú"
+        label="Ghi chu"
         onChange={(event) => updateField("note", event.target.value)}
-        placeholder="Sở thích, lịch sử chăm sóc, lưu ý giao hàng..."
+        placeholder="So thich, lich su cham soc, luu y giao hang..."
         value={form.note}
       />
 
       {error ? (
         <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
           {error}
-        </div>
-      ) : null}
-
-      {renderLegacyModalActions ? (
-        <div className="hidden">
-        <Button onClick={onCancel} type="button" variant="secondary">
-          Hủy
-        </Button>
-        <Button isLoading={submitting} type="submit">
-          {customer ? "Cập nhật" : "Thêm khách hàng"}
-        </Button>
         </div>
       ) : null}
     </form>
@@ -168,9 +173,7 @@ export function CustomersPage() {
       setCustomers(await fetchCustomers());
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Không tải được danh sách khách hàng."
+        requestError instanceof Error ? requestError.message : "Khong tai duoc danh sach khach hang."
       );
     } finally {
       setLoading(false);
@@ -206,16 +209,17 @@ export function CustomersPage() {
       setEditingCustomer(null);
       await loadCustomers();
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Lưu khách hàng thất bại."
-      );
+      const message =
+        requestError instanceof Error ? requestError.message : "Luu khach hang that bai.";
+      setError(message);
+      throw new Error(message);
     } finally {
       setSubmitting(false);
     }
   }
 
   async function handleDelete(customer: Customer) {
-    const confirmed = window.confirm(`Xóa khách hàng "${customer.name}"?`);
+    const confirmed = window.confirm(`Xoa khach hang "${customer.name}"?`);
     if (!confirmed) {
       return;
     }
@@ -226,9 +230,7 @@ export function CustomersPage() {
       await deleteCustomer(customer.id);
       setCustomers((current) => current.filter((item) => item.id !== customer.id));
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Xóa khách hàng thất bại."
-      );
+      setError(requestError instanceof Error ? requestError.message : "Xoa khach hang that bai.");
     }
   }
 
@@ -241,90 +243,130 @@ export function CustomersPage() {
   const customerFormId = editingCustomer
     ? `customer-form-${editingCustomer.id}`
     : "customer-form-create";
+  const completeContactCount = customers.filter((customer) => customer.phone || customer.email).length;
 
   return (
     <div className="space-y-6">
       <ConfigNotice />
 
-      <Card>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative w-full lg:max-w-md">
+      <Card className="overflow-hidden p-0">
+        <div className="border-b border-coal/10 p-4 sm:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
+                Ho so khach hang
+              </p>
+              <h2 className="mt-1 font-display text-2xl font-bold text-coal">Khach hang</h2>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge tone="neutral">{customers.length} khach</Badge>
+                <Badge tone="green">{completeContactCount} co lien he</Badge>
+              </div>
+            </div>
+            <Button className="w-full sm:w-auto" onClick={openCreateModal}>
+              <UserPlus className="h-4 w-4" />
+              Them khach hang
+            </Button>
+          </div>
+
+          <div className="relative mt-4 w-full xl:max-w-xl">
             <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
             <Input
               className="pl-11"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm theo tên, SĐT, email, địa chỉ..."
+              placeholder="Tim theo ten, SDT, email, dia chi..."
               value={query}
             />
           </div>
-          <Button onClick={openCreateModal}>
-            <UserPlus className="h-4 w-4" />
-            Thêm khách hàng
-          </Button>
         </div>
 
-        {error ? (
-          <div className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+        {error && !modalOpen ? (
+          <div className="m-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 sm:m-5">
             {error}
           </div>
         ) : null}
 
         {loading ? (
-          <Spinner />
+          <div className="p-6">
+            <Spinner />
+          </div>
         ) : filteredCustomers.length === 0 ? (
-          <div className="mt-6">
+          <div className="p-5">
             <EmptyState
-              description="Lưu thông tin khách để gắn vào hóa đơn POS và chăm sóc về sau."
+              description="Luu thong tin khach de gan vao hoa don POS va cham soc ve sau."
               icon={UsersRound}
-              title="Chưa có khách hàng phù hợp"
+              title="Chua co khach hang phu hop"
             />
           </div>
         ) : (
-          <div className="mt-6 grid gap-4 xl:grid-cols-2">
-            {filteredCustomers.map((customer) => (
-              <div
-                className="rounded-[1.75rem] border border-coal/10 bg-white/75 p-5 shadow-sm"
-                key={customer.id}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="font-display text-xl font-bold">{customer.name}</h3>
-                    <Badge className="mt-2" tone="amber">
-                      Khách hàng
-                    </Badge>
+          <div className="overflow-hidden">
+            <div className="hidden grid-cols-[1.2fr_1.05fr_1.15fr_1fr_0.55fr] gap-4 border-b border-coal/10 bg-coal px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
+              <span>Khach hang</span>
+              <span>Lien he</span>
+              <span>Dia chi</span>
+              <span>Ghi chu</span>
+              <span className="text-right">Thao tac</span>
+            </div>
+            <div className="divide-y divide-coal/10 bg-white/70">
+              {filteredCustomers.map((customer) => (
+                <div
+                  className="grid gap-4 p-4 transition hover:bg-cream/35 lg:grid-cols-[1.2fr_1.05fr_1.15fr_1fr_0.55fr] lg:items-center lg:px-5"
+                  key={customer.id}
+                >
+                  <div className="flex min-w-0 items-center gap-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-moss/12 text-lg font-extrabold text-moss">
+                      {getCustomerInitial(customer.name)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-display text-lg font-bold">{customer.name}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <UserRound className="h-4 w-4 text-coal/35" />
+                        <Badge tone="amber">Khach hang</Badge>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button className="h-10 w-10 p-0" onClick={() => openEditModal(customer)} variant="secondary">
+
+                  <div className="grid gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm lg:bg-transparent lg:p-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Phone className="h-4 w-4 shrink-0 text-clay" />
+                      <span className="truncate font-semibold text-coal">
+                        {customer.phone || "Chua co SDT"}
+                      </span>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2 text-coal/60">
+                      <Mail className="h-4 w-4 shrink-0 text-clay" />
+                      <span className="truncate">{customer.email || "Chua co email"}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex min-w-0 items-start gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-coal/70 lg:bg-transparent lg:p-0">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-clay" />
+                    <span className="line-clamp-2">{customer.address || "Chua co dia chi"}</span>
+                  </div>
+
+                  <div className="flex min-w-0 items-start gap-2 rounded-2xl bg-cream/60 px-4 py-3 text-sm text-coal/70 lg:bg-transparent lg:p-0">
+                    <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-clay" />
+                    <span className="line-clamp-2">{customer.note || "Chua co ghi chu"}</span>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      className="h-10 w-10 p-0"
+                      onClick={() => openEditModal(customer)}
+                      variant="secondary"
+                    >
                       <Edit3 className="h-4 w-4" />
                     </Button>
-                    <Button className="h-10 w-10 p-0" onClick={() => handleDelete(customer)} variant="danger">
+                    <Button
+                      className="h-10 w-10 p-0"
+                      onClick={() => handleDelete(customer)}
+                      variant="danger"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
-
-                <div className="mt-5 grid gap-3 text-sm text-coal/70">
-                  <div className="flex items-center gap-3">
-                    <Phone className="h-4 w-4 text-clay" />
-                    <span>{customer.phone || "Chưa có số điện thoại"}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Mail className="h-4 w-4 text-clay" />
-                    <span>{customer.email || "Chưa có email"}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <MapPin className="h-4 w-4 text-clay" />
-                    <span>{customer.address || "Chưa có địa chỉ"}</span>
-                  </div>
-                </div>
-
-                {customer.note ? (
-                  <p className="mt-4 rounded-2xl bg-cream px-4 py-3 text-sm leading-6 text-coal/70">
-                    {customer.note}
-                  </p>
-                ) : null}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </Card>
@@ -343,14 +385,12 @@ export function CustomersPage() {
         onClose={() => setModalOpen(false)}
         open={modalOpen}
         size="lg"
-        title={editingCustomer ? "Sửa khách hàng" : "Thêm khách hàng"}
+        title={editingCustomer ? "Sua khach hang" : "Them khach hang"}
       >
         <CustomerForm
           customer={editingCustomer}
           formId={customerFormId}
-          onCancel={() => setModalOpen(false)}
           onSubmit={handleSave}
-          submitting={submitting}
         />
       </Modal>
     </div>

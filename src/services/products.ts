@@ -8,12 +8,21 @@ export type ProductInput = {
   description?: string | null;
   price: number;
   cost_price: number;
+  import_date?: string | null;
+  expiry_date?: string | null;
   stock: number;
   image_url?: string | null;
   is_active: boolean;
 };
 
-const nullableProductFields = ["sku", "category", "description", "image_url"] as const;
+const nullableProductFields = [
+  "sku",
+  "category",
+  "description",
+  "import_date",
+  "expiry_date",
+  "image_url",
+] as const;
 
 function createProductPayload(input: ProductInput) {
   const payload = { ...input };
@@ -36,6 +45,19 @@ function isMissingDescriptionColumn(error: unknown) {
     error.code === "PGRST204" &&
     typeof error.message === "string" &&
     error.message.includes("'description' column")
+  );
+}
+
+function isMissingDateColumn(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    "message" in error &&
+    error.code === "PGRST204" &&
+    typeof error.message === "string" &&
+    (error.message.includes("'import_date' column") ||
+      error.message.includes("'expiry_date' column"))
   );
 }
 
@@ -67,6 +89,12 @@ export async function createProduct(input: ProductInput) {
   const { data, error } = await supabase.from("products").insert(payload).select("*").single();
 
   if (error) {
+    if (isMissingDateColumn(error)) {
+      throw new Error(
+        "Database products chua co cot ngay nhap/ngay het han. Hay chay SQL migration roi thu lai."
+      );
+    }
+
     if (isMissingDescriptionColumn(error)) {
       const retry = await supabase
         .from("products")
@@ -97,6 +125,12 @@ export async function updateProduct(id: string, input: ProductInput) {
     .single();
 
   if (error) {
+    if (isMissingDateColumn(error)) {
+      throw new Error(
+        "Database products chua co cot ngay nhap/ngay het han. Hay chay SQL migration roi thu lai."
+      );
+    }
+
     if (isMissingDescriptionColumn(error)) {
       const retry = await supabase
         .from("products")

@@ -16,6 +16,8 @@ create table if not exists public.products (
   description text,
   price numeric(12, 2) not null check (price >= 0),
   cost_price numeric(12, 2) not null default 0 check (cost_price >= 0),
+  import_date date,
+  expiry_date date,
   stock integer not null default 0 check (stock >= 0),
   image_url text,
   is_active boolean not null default true,
@@ -25,6 +27,12 @@ create table if not exists public.products (
 
 alter table public.products
 add column if not exists description text;
+
+alter table public.products
+add column if not exists import_date date;
+
+alter table public.products
+add column if not exists expiry_date date;
 
 create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),
