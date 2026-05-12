@@ -61,6 +61,7 @@ const emptyCustomerForm: QuickCustomerFormState = {
   note: "",
   phone: "",
 };
+const renderLegacyModalActions = false;
 
 function createLineId(productId: string) {
   return `${productId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -158,12 +159,13 @@ function formatCustomerLabel(customer: Customer) {
 }
 
 type QuickCustomerFormProps = {
+  formId: string;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (input: CustomerInput) => Promise<void>;
 };
 
-function QuickCustomerForm({ onCancel, onSubmit, submitting }: QuickCustomerFormProps) {
+function QuickCustomerForm({ formId, onCancel, onSubmit, submitting }: QuickCustomerFormProps) {
   const [form, setForm] = useState(emptyCustomerForm);
   const [error, setError] = useState("");
 
@@ -185,7 +187,7 @@ function QuickCustomerForm({ onCancel, onSubmit, submitting }: QuickCustomerForm
   }
 
   return (
-    <form className="space-y-4" onSubmit={handleSubmit}>
+    <form className="space-y-4" id={formId} onSubmit={handleSubmit}>
       <Input
         label="Ten khach"
         onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
@@ -210,14 +212,16 @@ function QuickCustomerForm({ onCancel, onSubmit, submitting }: QuickCustomerForm
           {error}
         </div>
       ) : null}
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+      {renderLegacyModalActions ? (
+        <div className="hidden">
         <Button onClick={onCancel} type="button" variant="secondary">
           Huy
         </Button>
         <Button isLoading={submitting} type="submit">
           Luu khach
         </Button>
-      </div>
+        </div>
+      ) : null}
     </form>
   );
 }
@@ -390,6 +394,7 @@ export function PosPage() {
   const displayName = profile?.full_name || user?.email || "Nguoi dung";
   const userInitial = displayName.trim().charAt(0).toUpperCase() || "U";
   const roleLabel = profile?.role === "admin" ? "Quan tri vien" : "Chua phan vai tro";
+  const quickCustomerFormId = "quick-customer-form";
 
   function updateActiveBill(updater: (bill: PosBill) => PosBill) {
     setWorkspace((current) => ({
@@ -1147,11 +1152,27 @@ export function PosPage() {
       </main>
 
       <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button
+              onClick={() => setCustomerModalOpen(false)}
+              type="button"
+              variant="secondary"
+            >
+              Huy
+            </Button>
+            <Button form={quickCustomerFormId} isLoading={submittingCustomer} type="submit">
+              Luu khach
+            </Button>
+          </div>
+        }
         onClose={() => setCustomerModalOpen(false)}
         open={customerModalOpen}
+        size="md"
         title="Them khach nhanh"
       >
         <QuickCustomerForm
+          formId={quickCustomerFormId}
           onCancel={() => setCustomerModalOpen(false)}
           onSubmit={handleCreateCustomer}
           submitting={submittingCustomer}

@@ -33,6 +33,7 @@ const emptyForm: CustomerFormState = {
   note: "",
   phone: "",
 };
+const renderLegacyModalActions = false;
 
 function normalizeText(value: string) {
   const trimmed = value.trim();
@@ -55,12 +56,13 @@ function customerToForm(customer?: Customer | null): CustomerFormState {
 
 type CustomerFormProps = {
   customer?: Customer | null;
+  formId: string;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (input: CustomerInput) => Promise<void>;
 };
 
-function CustomerForm({ customer, onCancel, onSubmit, submitting }: CustomerFormProps) {
+function CustomerForm({ customer, formId, onCancel, onSubmit, submitting }: CustomerFormProps) {
   const [form, setForm] = useState<CustomerFormState>(() => customerToForm(customer));
   const [error, setError] = useState("");
 
@@ -93,7 +95,7 @@ function CustomerForm({ customer, onCancel, onSubmit, submitting }: CustomerForm
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
+    <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
       <div className="grid gap-4 md:grid-cols-2">
         <Input
           label="Tên khách hàng"
@@ -135,14 +137,16 @@ function CustomerForm({ customer, onCancel, onSubmit, submitting }: CustomerForm
         </div>
       ) : null}
 
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+      {renderLegacyModalActions ? (
+        <div className="hidden">
         <Button onClick={onCancel} type="button" variant="secondary">
           Hủy
         </Button>
         <Button isLoading={submitting} type="submit">
           {customer ? "Cập nhật" : "Thêm khách hàng"}
         </Button>
-      </div>
+        </div>
+      ) : null}
     </form>
   );
 }
@@ -236,6 +240,9 @@ export function CustomersPage() {
   );
   const withPhone = customers.filter((customer) => Boolean(customer.phone)).length;
   const withEmail = customers.filter((customer) => Boolean(customer.email)).length;
+  const customerFormId = editingCustomer
+    ? `customer-form-${editingCustomer.id}`
+    : "customer-form-create";
 
   return (
     <div className="space-y-6">
@@ -346,12 +353,24 @@ export function CustomersPage() {
       </Card>
 
       <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button onClick={() => setModalOpen(false)} type="button" variant="secondary">
+              Huy
+            </Button>
+            <Button form={customerFormId} isLoading={submitting} type="submit">
+              {editingCustomer ? "Cap nhat" : "Them khach hang"}
+            </Button>
+          </div>
+        }
         onClose={() => setModalOpen(false)}
         open={modalOpen}
+        size="lg"
         title={editingCustomer ? "Sửa khách hàng" : "Thêm khách hàng"}
       >
         <CustomerForm
           customer={editingCustomer}
+          formId={customerFormId}
           onCancel={() => setModalOpen(false)}
           onSubmit={handleSave}
           submitting={submitting}

@@ -46,7 +46,7 @@ export function AdminLayout() {
       <div className="fixed inset-0 -z-10 bg-grain" />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-white/70 bg-coal p-5 text-white shadow-2xl transition-transform lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-[90] flex w-72 flex-col border-r border-white/70 bg-coal p-5 text-white shadow-2xl transition-transform lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -99,7 +99,7 @@ export function AdminLayout() {
       {sidebarOpen ? (
         <button
           aria-label="Đóng menu"
-          className="fixed inset-0 z-30 bg-coal/45 lg:hidden"
+          className="fixed inset-0 z-[80] bg-coal/45 lg:hidden"
           onClick={() => setSidebarOpen(false)}
           type="button"
         />

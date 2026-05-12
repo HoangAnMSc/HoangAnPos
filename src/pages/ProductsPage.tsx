@@ -361,7 +361,7 @@ function ProductForm({
 
   return (
     <>
-      <form className="space-y-6" id={formId} onSubmit={handleSubmit}>
+      <form id={formId} onSubmit={handleSubmit}>
         <section className="space-y-3">
           <h3 className="text-sm font-extrabold text-slate-950">Media</h3>
           <button
@@ -698,7 +698,7 @@ export function ProductsPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div>
       <ConfigNotice />
 
       <div className="grid gap-4 md:grid-cols-3">
