@@ -13,6 +13,38 @@ export type ProductInput = {
   is_active: boolean;
 };
 
+const nullableProductFields = ["sku", "category", "description", "image_url"] as const;
+
+function createProductPayload(input: ProductInput) {
+  const payload = { ...input };
+
+  nullableProductFields.forEach((field) => {
+    if (payload[field] === null || payload[field] === "") {
+      delete payload[field];
+    }
+  });
+
+  return payload;
+}
+
+function isMissingDescriptionColumn(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    "message" in error &&
+    error.code === "PGRST204" &&
+    typeof error.message === "string" &&
+    error.message.includes("'description' column")
+  );
+}
+
+function withoutDescription(input: ProductInput) {
+  const payload = createProductPayload(input);
+  delete payload.description;
+  return payload;
+}
+
 export async function fetchProducts() {
   requireSupabaseConfig();
 
@@ -31,9 +63,22 @@ export async function fetchProducts() {
 export async function createProduct(input: ProductInput) {
   requireSupabaseConfig();
 
-  const { data, error } = await supabase.from("products").insert(input).select("*").single();
+  const payload = createProductPayload(input);
+  const { data, error } = await supabase.from("products").insert(payload).select("*").single();
 
   if (error) {
+    if (isMissingDescriptionColumn(error)) {
+      const retry = await supabase
+        .from("products")
+        .insert(withoutDescription(input))
+        .select("*")
+        .single();
+
+      if (!retry.error) {
+        return retry.data;
+      }
+    }
+
     throw error;
   }
 
@@ -43,14 +88,28 @@ export async function createProduct(input: ProductInput) {
 export async function updateProduct(id: string, input: ProductInput) {
   requireSupabaseConfig();
 
+  const payload = createProductPayload(input);
   const { data, error } = await supabase
     .from("products")
-    .update(input)
+    .update(payload)
     .eq("id", id)
     .select("*")
     .single();
 
   if (error) {
+    if (isMissingDescriptionColumn(error)) {
+      const retry = await supabase
+        .from("products")
+        .update(withoutDescription(input))
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (!retry.error) {
+        return retry.data;
+      }
+    }
+
     throw error;
   }
 

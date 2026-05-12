@@ -1,21 +1,17 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import {
-  Archive,
-  ArrowLeft,
   Boxes,
   Check,
   CheckCircle2,
   ChevronRight,
-  DollarSign,
   Edit3,
+  Image as ImageIcon,
   ImagePlus,
-  Layers3,
   PackagePlus,
   Search,
   Tag,
   Trash2,
   Upload,
-  X,
 } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -23,6 +19,7 @@ import { Card } from "../components/ui/Card";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Input } from "../components/ui/Input";
+import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
 import { formatCurrency } from "../lib/format";
 import { uploadProductImage } from "../lib/cloudinary";
@@ -59,6 +56,10 @@ const emptyForm: ProductFormState = {
   stock: "0",
 };
 
+const fieldClassName =
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:px-5 sm:py-4 sm:text-base";
+const labelClassName = "mb-2 block text-sm font-extrabold text-slate-950";
+
 function normalizeText(value: string) {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -82,7 +83,11 @@ function productToForm(product?: Product | null): ProductFormState {
   };
 }
 
-type MediaPickerSheetProps = {
+function getSubmitErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Khong luu duoc san pham.";
+}
+
+type MediaPickerModalProps = {
   currentImageUrl: string;
   libraryImages: string[];
   open: boolean;
@@ -90,19 +95,22 @@ type MediaPickerSheetProps = {
   onSave: (value: { imageUrl: string; imageFile: File | null; previewUrl: string }) => void;
 };
 
-function MediaPickerSheet({
+function MediaPickerModal({
   currentImageUrl,
   libraryImages,
   onClose,
   onSave,
   open,
-}: MediaPickerSheetProps) {
+}: MediaPickerModalProps) {
   const [activeTab, setActiveTab] = useState<"library" | "upload">("library");
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [draftPreview, setDraftPreview] = useState("");
   const [selectedUrl, setSelectedUrl] = useState(currentImageUrl);
 
   useEffect(() => {
+    setActiveTab("library");
+    setDraftFile(null);
+    setDraftPreview("");
     setSelectedUrl(currentImageUrl);
   }, [currentImageUrl, open]);
 
@@ -113,10 +121,6 @@ function MediaPickerSheet({
       }
     };
   }, [draftPreview]);
-
-  if (!open) {
-    return null;
-  }
 
   const selectedCount = activeTab === "upload" && draftFile ? 1 : selectedUrl ? 1 : 0;
 
@@ -141,197 +145,154 @@ function MediaPickerSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 px-4 pb-4 backdrop-blur-sm sm:items-center sm:pb-0">
-      <div className="w-full max-w-[390px] overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl sm:rounded-[1.75rem]">
-        <div className="mx-auto mt-3 h-1.5 w-12 rounded-full bg-zinc-200" />
-        <div className="flex items-center justify-between px-5 py-4">
-          <h3 className="flex-1 text-center text-sm font-extrabold text-zinc-950">Add Media</h3>
+    <Modal
+      footer={
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
           <button
-            aria-label="Đóng chọn ảnh"
-            className="rounded-full p-1 text-zinc-950 hover:bg-zinc-100"
+            className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50"
             onClick={onClose}
             type="button"
           >
-            <X className="h-4 w-4" />
+            Cancel
+          </button>
+          <button
+            className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={selectedCount === 0}
+            onClick={handleSave}
+            type="button"
+          >
+            Save
+          </button>
+        </div>
+      }
+      onClose={onClose}
+      open={open}
+      size="md"
+      title="Add Media"
+    >
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <button
+            className={`rounded-xl border px-4 py-2 text-sm font-extrabold transition ${
+              activeTab === "library"
+                ? "border-slate-950 bg-slate-950 text-white"
+                : "border-slate-200 bg-white text-slate-950"
+            }`}
+            onClick={() => setActiveTab("library")}
+            type="button"
+          >
+            Content Library
+          </button>
+          <button
+            className={`rounded-xl border px-4 py-2 text-sm font-extrabold transition ${
+              activeTab === "upload"
+                ? "border-slate-950 bg-slate-950 text-white"
+                : "border-slate-200 bg-white text-slate-950"
+            }`}
+            onClick={() => setActiveTab("upload")}
+            type="button"
+          >
+            Upload New
           </button>
         </div>
 
-        <div className="border-t border-zinc-100 px-5 pb-5 pt-3">
-          <div className="mb-4 flex items-center gap-2">
-            <button
-              className={`rounded-lg border px-3 py-1.5 text-xs font-extrabold transition ${
-                activeTab === "library"
-                  ? "border-zinc-950 bg-zinc-950 text-white"
-                  : "border-zinc-200 bg-white text-zinc-950"
-              }`}
-              onClick={() => setActiveTab("library")}
-              type="button"
-            >
-              Content Library
-            </button>
-            <button
-              className={`rounded-lg border px-3 py-1.5 text-xs font-extrabold transition ${
-                activeTab === "upload"
-                  ? "border-zinc-950 bg-zinc-950 text-white"
-                  : "border-zinc-200 bg-white text-zinc-950"
-              }`}
-              onClick={() => setActiveTab("upload")}
-              type="button"
-            >
-              Upload New
-            </button>
-          </div>
-
-          <div className="mb-3 flex items-center justify-between text-xs">
-            <span className="text-zinc-600">
-              Selected <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-bold text-zinc-950">{selectedCount}</span>
-            </span>
-            <button
-              className="font-bold underline"
-              onClick={() => {
-                setSelectedUrl("");
-                setDraftFile(null);
-                setDraftPreview("");
-              }}
-              type="button"
-            >
-              Unselect all
-            </button>
-          </div>
-
-          {activeTab === "library" ? (
-            libraryImages.length > 0 ? (
-              <div className="grid max-h-72 grid-cols-3 gap-3 overflow-y-auto pr-1">
-                {libraryImages.map((imageUrl) => {
-                  const selected = selectedUrl === imageUrl;
-
-                  return (
-                    <button
-                      className={`relative aspect-square overflow-hidden rounded-xl border-2 bg-zinc-100 transition ${
-                        selected ? "border-blue-500" : "border-transparent hover:border-zinc-300"
-                      }`}
-                      key={imageUrl}
-                      onClick={() => setSelectedUrl(imageUrl)}
-                      type="button"
-                    >
-                      <img alt="Ảnh sản phẩm" className="h-full w-full object-cover" src={imageUrl} />
-                      <span
-                        className={`absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px] ${
-                          selected
-                            ? "border-blue-500 bg-blue-500 text-white"
-                            : "border-zinc-300 bg-white text-transparent"
-                        }`}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl bg-zinc-50 p-5 text-center">
-                <ImagePlus className="h-8 w-8 text-zinc-400" />
-                <p className="mt-3 text-sm font-bold text-zinc-950">Chưa có ảnh trong thư viện</p>
-                <p className="mt-1 text-xs text-zinc-500">Upload ảnh mới để dùng cho sản phẩm.</p>
-              </div>
-            )
-          ) : (
-            <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-5 text-center transition hover:border-orange-500 hover:bg-orange-50">
-              {draftPreview ? (
-                <img
-                  alt="Ảnh upload"
-                  className="mb-4 h-32 w-32 rounded-2xl object-cover"
-                  src={draftPreview}
-                />
-              ) : (
-                <span className="mb-4 rounded-2xl bg-white p-4 text-orange-600 shadow-sm">
-                  <Upload className="h-7 w-7" />
-                </span>
-              )}
-              <span className="text-sm font-extrabold text-zinc-950">
-                {draftFile ? draftFile.name : "Chọn ảnh từ máy"}
-              </span>
-              <span className="mt-1 text-xs text-zinc-500">Ảnh sẽ upload lên Cloudinary khi lưu sản phẩm.</span>
-              <input accept="image/*" className="hidden" onChange={handleUploadChange} type="file" />
-            </label>
-          )}
-
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            <button
-              className="rounded-lg border border-zinc-950 bg-white px-4 py-3 text-sm font-extrabold text-zinc-950"
-              onClick={onClose}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="rounded-lg bg-orange-600 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={selectedCount === 0}
-              onClick={handleSave}
-              type="button"
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-type SectionCardProps = {
-  actionLabel?: string;
-  children: React.ReactNode;
-  icon: React.ReactNode;
-  subtitle: string;
-  title: string;
-};
-
-function SectionCard({ actionLabel = "+ Add", children, icon, subtitle, title }: SectionCardProps) {
-  return (
-    <section className="rounded-[1.5rem] border border-zinc-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-            {icon}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-slate-500">
+            Selected <span className="font-extrabold text-slate-950">{selectedCount}</span>
           </span>
-          <div>
-            <h4 className="text-base font-extrabold text-zinc-950">{title}</h4>
-            <p className="text-xs text-zinc-500">{subtitle}</p>
-          </div>
+          <button
+            className="font-extrabold text-slate-950 underline"
+            onClick={() => {
+              setSelectedUrl("");
+              setDraftFile(null);
+              setDraftPreview("");
+            }}
+            type="button"
+          >
+            Unselect all
+          </button>
         </div>
-        <span className="text-xs font-extrabold text-orange-600 underline">{actionLabel}</span>
+
+        {activeTab === "library" ? (
+          libraryImages.length > 0 ? (
+            <div className="grid max-h-80 grid-cols-3 gap-3 overflow-y-auto pr-1">
+              {libraryImages.map((imageUrl) => {
+                const selected = selectedUrl === imageUrl;
+
+                return (
+                  <button
+                    className={`relative aspect-square overflow-hidden rounded-xl border-2 bg-slate-100 transition ${
+                      selected ? "border-blue-500" : "border-transparent hover:border-slate-300"
+                    }`}
+                    key={imageUrl}
+                    onClick={() => setSelectedUrl(imageUrl)}
+                    type="button"
+                  >
+                    <img alt="Product" className="h-full w-full object-cover" src={imageUrl} />
+                    <span
+                      className={`absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px] ${
+                        selected
+                          ? "border-blue-500 bg-blue-500 text-white"
+                          : "border-slate-300 bg-white text-transparent"
+                      }`}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl bg-slate-50 p-5 text-center">
+              <ImagePlus className="h-8 w-8 text-slate-400" />
+              <p className="mt-3 text-sm font-extrabold text-slate-950">No media yet</p>
+              <p className="mt-1 text-xs text-slate-500">Upload a new image for this product.</p>
+            </div>
+          )
+        ) : (
+          <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center transition hover:border-green-500 hover:bg-green-50">
+            {draftPreview ? (
+              <img
+                alt="Upload preview"
+                className="mb-4 h-32 w-32 rounded-2xl object-cover"
+                src={draftPreview}
+              />
+            ) : (
+              <span className="mb-4 rounded-2xl bg-white p-4 text-green-600 shadow-sm">
+                <Upload className="h-7 w-7" />
+              </span>
+            )}
+            <span className="text-sm font-extrabold text-slate-950">
+              {draftFile ? draftFile.name : "Choose image from device"}
+            </span>
+            <span className="mt-1 text-xs text-slate-500">
+              Image uploads to Cloudinary when the product is saved.
+            </span>
+            <input accept="image/*" className="hidden" onChange={handleUploadChange} type="file" />
+          </label>
+        )}
       </div>
-      {children}
-    </section>
-  );
-}
-
-type PhoneInputProps = React.InputHTMLAttributes<HTMLInputElement> & {
-  label?: string;
-};
-
-function PhoneInput({ className = "", label, ...props }: PhoneInputProps) {
-  return (
-    <label className="block">
-      {label ? <span className="mb-2 block text-sm font-extrabold text-zinc-950">{label}</span> : null}
-      <input
-        className={`w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100 ${className}`}
-        {...props}
-      />
-    </label>
+    </Modal>
   );
 }
 
 type ProductFormProps = {
+  categories: string[];
+  formId: string;
   libraryImages: string[];
   product?: Product | null;
   submitting: boolean;
-  onCancel: () => void;
   onSubmit: (input: ProductInput, imageFile: File | null) => Promise<void>;
 };
 
-function ProductForm({ libraryImages, onCancel, onSubmit, product, submitting }: ProductFormProps) {
+function ProductForm({
+  categories,
+  formId,
+  libraryImages,
+  onSubmit,
+  product,
+  submitting,
+}: ProductFormProps) {
   const [form, setForm] = useState<ProductFormState>(() => productToForm(product));
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
@@ -367,278 +328,195 @@ function ProductForm({ libraryImages, onCancel, onSubmit, product, submitting }:
     const stock = Number(form.stock);
 
     if (!name) {
-      setError("Tên sản phẩm là bắt buộc.");
+      setError("Product title is required.");
       return;
     }
 
     if ([price, costPrice, stock].some((value) => Number.isNaN(value) || value < 0)) {
-      setError("Giá và tồn kho phải là số không âm.");
+      setError("Price, cost and quantity must be non-negative numbers.");
       return;
     }
 
-    await onSubmit(
-      {
-        category: normalizeText(form.category),
-        cost_price: costPrice,
-        description: normalizeText(form.description),
-        image_url: normalizeText(form.image_url),
-        is_active: form.is_active,
-        name,
-        price,
-        sku: normalizeText(form.sku),
-        stock: Math.floor(stock),
-      },
-      imageFile
-    );
+    try {
+      await onSubmit(
+        {
+          category: normalizeText(form.category),
+          cost_price: costPrice,
+          description: normalizeText(form.description),
+          image_url: normalizeText(form.image_url),
+          is_active: form.is_active,
+          name,
+          price,
+          sku: normalizeText(form.sku),
+          stock: Math.floor(stock),
+        },
+        imageFile
+      );
+    } catch (requestError) {
+      setError(getSubmitErrorMessage(requestError));
+    }
   }
 
   const previewUrl = imagePreviewUrl || form.image_url;
 
   return (
     <>
-      <form className="flex h-full min-h-0 flex-col bg-[#f7f2e8] text-zinc-950" onSubmit={handleSubmit}>
-        <div className="sticky top-0 z-20 border-b border-zinc-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-8">
-          <div className="mx-auto flex max-w-7xl items-center gap-4">
-            <button
-              aria-label="Đóng"
-              className="rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-950 shadow-sm transition hover:bg-zinc-50"
-              onClick={onCancel}
-              type="button"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-extrabold uppercase tracking-[0.24em] text-orange-600">
-                Product Manager
-              </p>
-              <h2 className="font-display text-2xl font-bold sm:text-3xl">
-                {product ? "Sửa sản phẩm" : "Tạo sản phẩm"}
-              </h2>
-            </div>
-            <div className="hidden gap-3 sm:flex">
-              <button
-                className="rounded-2xl border border-zinc-300 bg-white px-5 py-3 text-sm font-extrabold text-zinc-950 transition hover:bg-zinc-50"
-                onClick={onCancel}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                className="rounded-2xl bg-orange-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-orange-600/20 transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={submitting}
-                type="submit"
-              >
-                {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
-          <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
-            <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-              <section className="rounded-[1.75rem] border border-zinc-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-extrabold text-zinc-950">Media</p>
-                    <p className="text-xs text-zinc-500">Ảnh đại diện sản phẩm</p>
-                  </div>
-                  <ImagePlus className="h-5 w-5 text-orange-600" />
-                </div>
-
-                <div className="overflow-hidden rounded-[1.5rem] border border-zinc-200 bg-zinc-50">
-                  {previewUrl ? (
-                    <img
-                      alt="Ảnh sản phẩm"
-                      className="aspect-square w-full object-cover"
-                      src={previewUrl}
-                    />
-                  ) : (
-                    <div className="flex aspect-square w-full flex-col items-center justify-center p-8 text-center">
-                      <span className="rounded-3xl bg-white p-5 text-orange-600 shadow-sm">
-                        <ImagePlus className="h-9 w-9" />
-                      </span>
-                      <p className="mt-4 text-sm font-extrabold text-zinc-950">Chưa có ảnh</p>
-                      <p className="mt-1 text-xs leading-5 text-zinc-500">
-                        Chọn từ thư viện hoặc upload ảnh mới.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-4 text-left transition hover:border-orange-300 hover:bg-orange-50"
-                  onClick={() => setMediaOpen(true)}
-                  type="button"
-                >
-                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                    <ImagePlus className="h-5 w-5" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-extrabold text-zinc-950">Add Media</span>
-                    <span className="block truncate text-xs text-zinc-500">
-                      {imageFile
-                        ? imageFile.name
-                        : previewUrl
-                          ? "Media selected for this product"
-                          : "Add media for this product"}
-                    </span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-zinc-500" />
-                </button>
-              </section>
-
-              <section className="rounded-[1.75rem] border border-zinc-200 bg-white p-5 shadow-sm">
-                <p className="mb-3 text-sm font-extrabold text-zinc-950">Status</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-bold transition ${
-                      form.is_active
-                        ? "border-zinc-950 bg-zinc-950 text-white"
-                        : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
-                    }`}
-                    onClick={() => updateField("is_active", true)}
-                    type="button"
-                  >
-                    <span
-                      className={`flex h-4 w-4 items-center justify-center rounded-full border ${
-                        form.is_active ? "border-blue-500 bg-blue-500" : "border-zinc-300"
-                      }`}
-                    >
-                      {form.is_active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
-                    </span>
-                    Active
-                  </button>
-                  <button
-                    className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-bold transition ${
-                      !form.is_active
-                        ? "border-zinc-950 bg-zinc-950 text-white"
-                        : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
-                    }`}
-                    onClick={() => updateField("is_active", false)}
-                    type="button"
-                  >
-                    <span
-                      className={`flex h-4 w-4 items-center justify-center rounded-full border ${
-                        !form.is_active ? "border-blue-500 bg-blue-500" : "border-zinc-300"
-                      }`}
-                    >
-                      {!form.is_active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
-                    </span>
-                    Inactive
-                  </button>
-                </div>
-              </section>
-            </aside>
-
-            <section className="space-y-6">
-              <section className="rounded-[1.75rem] border border-zinc-200 bg-white p-5 shadow-sm sm:p-6">
-                <div className="mb-5">
-                  <p className="text-sm font-extrabold text-zinc-950">Thông tin sản phẩm</p>
-                  <p className="text-xs text-zinc-500">Nội dung hiển thị trên POS và danh sách sản phẩm.</p>
-                </div>
-                <div className="grid gap-4">
-                  <PhoneInput
-                    label="Product Title"
-                    onChange={(event) => updateField("name", event.target.value)}
-                    placeholder="Enter product title"
-                    required
-                    value={form.name}
-                  />
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-extrabold text-zinc-950">
-                      Descriptions
-                    </span>
-                    <textarea
-                      className="min-h-36 w-full resize-none rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
-                      onChange={(event) => updateField("description", event.target.value)}
-                      placeholder="Product description"
-                      value={form.description}
-                    />
-                  </label>
-                </div>
-              </section>
-
-              <div className="grid gap-6 lg:grid-cols-2">
-                <SectionCard
-                  icon={<Layers3 className="h-5 w-5" />}
-                  subtitle={form.category || "Add Category"}
-                  title="Category"
-                >
-                  <PhoneInput
-                    onChange={(event) => updateField("category", event.target.value)}
-                    placeholder="Nhập nhóm hàng"
-                    value={form.category}
-                  />
-                </SectionCard>
-
-                <SectionCard icon={<DollarSign className="h-5 w-5" />} subtitle="Add Price" title="Price">
-                  <div className="grid grid-cols-2 gap-3">
-                    <PhoneInput
-                      min="0"
-                      onChange={(event) => updateField("price", event.target.value)}
-                      placeholder="Price"
-                      type="number"
-                      value={form.price}
-                    />
-                    <PhoneInput
-                      min="0"
-                      onChange={(event) => updateField("cost_price", event.target.value)}
-                      placeholder="Cost"
-                      type="number"
-                      value={form.cost_price}
-                    />
-                  </div>
-                </SectionCard>
-              </div>
-
-              <SectionCard icon={<Archive className="h-5 w-5" />} subtitle="SKU and stock" title="Inventory">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <PhoneInput
-                    onChange={(event) => updateField("sku", event.target.value)}
-                    placeholder="SKU"
-                    value={form.sku}
-                  />
-                  <PhoneInput
-                    min="0"
-                    onChange={(event) => updateField("stock", event.target.value)}
-                    placeholder="Stock"
-                    type="number"
-                    value={form.stock}
-                  />
-                </div>
-              </SectionCard>
-
-              {error ? (
-                <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-                  {error}
-                </div>
+      <form className="space-y-6" id={formId} onSubmit={handleSubmit}>
+        <section className="space-y-3">
+          <h3 className="text-sm font-extrabold text-slate-950">Media</h3>
+          <button
+            className="flex w-full items-center gap-4 rounded-2xl bg-white px-4 py-3 text-left transition hover:bg-slate-50 sm:max-w-sm"
+            onClick={() => setMediaOpen(true)}
+            type="button"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-50 text-slate-950">
+              {previewUrl ? (
+                <img alt="Product" className="h-full w-full rounded-xl object-cover" src={previewUrl} />
+              ) : (
+                <ImageIcon className="h-5 w-5" />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-base font-extrabold text-slate-950">Add Media</span>
+              {previewUrl ? (
+                <span className="block truncate text-xs font-semibold text-slate-500">
+                  Media selected
+                </span>
               ) : null}
-            </section>
-          </div>
-        </div>
+            </span>
+            <ChevronRight className="h-5 w-5 text-slate-950" />
+          </button>
+        </section>
 
-        <div className="border-t border-zinc-200 bg-white/95 px-4 py-4 backdrop-blur sm:hidden">
-          <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className={labelClassName}>Product Title</span>
+          <input
+            className={fieldClassName}
+            onChange={(event) => updateField("name", event.target.value)}
+            placeholder="Enter product title"
+            required
+            value={form.name}
+          />
+        </label>
+
+        <section className="space-y-3">
+          <h3 className="text-sm font-extrabold text-slate-950">Status</h3>
+          <div className="grid gap-3 sm:grid-cols-2 sm:gap-40">
             <button
-              className="rounded-2xl border border-zinc-950 bg-white px-4 py-3 text-sm font-extrabold text-zinc-950"
-              onClick={onCancel}
+              className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
+                form.is_active
+                  ? "border-slate-950 bg-white text-slate-950"
+                  : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
+              }`}
+              onClick={() => updateField("is_active", true)}
               type="button"
             >
-              Cancel
+              <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300">
+                {form.is_active ? <span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> : null}
+              </span>
+              Active
             </button>
             <button
-              className="rounded-2xl bg-orange-600 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={submitting}
-              type="submit"
+              className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
+                !form.is_active
+                  ? "border-slate-950 bg-white text-slate-950"
+                  : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
+              }`}
+              onClick={() => updateField("is_active", false)}
+              type="button"
             >
-              {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
+              <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300">
+                {!form.is_active ? <span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> : null}
+              </span>
+              Inactive
             </button>
           </div>
+        </section>
+
+        <label className="block">
+          <span className={labelClassName}>Descriptions</span>
+          <textarea
+            className={`${fieldClassName} min-h-32 resize-none sm:min-h-36`}
+            onChange={(event) => updateField("description", event.target.value)}
+            placeholder="Product description"
+            value={form.description}
+          />
+        </label>
+
+        <label className="block">
+          <span className={labelClassName}>Category</span>
+          <input
+            className={fieldClassName}
+            list="product-category-options"
+            onChange={(event) => updateField("category", event.target.value)}
+            placeholder="Select category"
+            value={form.category}
+          />
+          <datalist id="product-category-options">
+            {categories.map((category) => (
+              <option key={category} value={category} />
+            ))}
+          </datalist>
+        </label>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className={labelClassName}>Price</span>
+            <input
+              className={fieldClassName}
+              min="0"
+              onChange={(event) => updateField("price", event.target.value)}
+              placeholder="0"
+              type="number"
+              value={form.price}
+            />
+          </label>
+          <label className="block">
+            <span className={labelClassName}>Cost</span>
+            <input
+              className={fieldClassName}
+              min="0"
+              onChange={(event) => updateField("cost_price", event.target.value)}
+              placeholder="0"
+              type="number"
+              value={form.cost_price}
+            />
+          </label>
         </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className={labelClassName}>Quantity</span>
+            <input
+              className={fieldClassName}
+              min="0"
+              onChange={(event) => updateField("stock", event.target.value)}
+              placeholder="0"
+              type="number"
+              value={form.stock}
+            />
+          </label>
+          <label className="block">
+            <span className={labelClassName}>SKU</span>
+            <input
+              className={fieldClassName}
+              onChange={(event) => updateField("sku", event.target.value)}
+              placeholder="SKU"
+              value={form.sku}
+            />
+          </label>
+        </div>
+
+        {error ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        {submitting ? <span className="sr-only">Saving product</span> : null}
       </form>
 
-      <MediaPickerSheet
+      <MediaPickerModal
         currentImageUrl={form.image_url}
         libraryImages={libraryImages}
         onClose={() => setMediaOpen(false)}
@@ -659,6 +537,7 @@ function ProductForm({ libraryImages, onCancel, onSubmit, product, submitting }:
 }
 
 type ProductEditorModalProps = {
+  categories: string[];
   libraryImages: string[];
   open: boolean;
   product?: Product | null;
@@ -668,6 +547,7 @@ type ProductEditorModalProps = {
 };
 
 function ProductEditorModal({
+  categories,
   libraryImages,
   onCancel,
   onSubmit,
@@ -675,20 +555,44 @@ function ProductEditorModal({
   product,
   submitting,
 }: ProductEditorModalProps) {
-  if (!open) {
-    return null;
-  }
+  const formId = product ? `product-form-${product.id}` : "product-form-create";
 
   return (
-    <div className="fixed inset-0 z-50 h-screen w-screen overflow-hidden bg-[#f7f2e8]">
+    <Modal
+      bodyClassName="sm:px-8 sm:py-7"
+      footer={
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+          <button
+            className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:min-w-32"
+            onClick={onCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="rounded-2xl bg-green-600 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
+            disabled={submitting}
+            form={formId}
+            type="submit"
+          >
+            {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
+          </button>
+        </div>
+      }
+      onClose={onCancel}
+      open={open}
+      size="wide"
+      title={product ? "Edit Product" : "Create Product"}
+    >
       <ProductForm
+        categories={categories}
+        formId={formId}
         libraryImages={libraryImages}
-        onCancel={onCancel}
         onSubmit={onSubmit}
         product={product}
         submitting={submitting}
       />
-    </div>
+    </Modal>
   );
 }
 
@@ -711,7 +615,7 @@ export function ProductsPage() {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Không tải được danh sách sản phẩm."
+          : "Khong tai duoc danh sach san pham."
       );
     } finally {
       setLoading(false);
@@ -750,16 +654,17 @@ export function ProductsPage() {
       setEditingProduct(null);
       await loadProducts();
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Lưu sản phẩm thất bại."
-      );
+      const message =
+        requestError instanceof Error ? requestError.message : "Luu san pham that bai.";
+      setError(message);
+      throw new Error(message);
     } finally {
       setSubmitting(false);
     }
   }
 
   async function handleDelete(product: Product) {
-    const confirmed = window.confirm(`Xóa sản phẩm "${product.name}"?`);
+    const confirmed = window.confirm(`Xoa san pham "${product.name}"?`);
     if (!confirmed) {
       return;
     }
@@ -770,9 +675,7 @@ export function ProductsPage() {
       await deleteProduct(product.id);
       setProducts((current) => current.filter((item) => item.id !== product.id));
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Xóa sản phẩm thất bại."
-      );
+      setError(requestError instanceof Error ? requestError.message : "Xoa san pham that bai.");
     }
   }
 
@@ -784,6 +687,9 @@ export function ProductsPage() {
   );
   const libraryImages = Array.from(
     new Set(products.map((product) => product.image_url).filter(Boolean))
+  ) as string[];
+  const categories = Array.from(
+    new Set(products.map((product) => product.category).filter(Boolean))
   ) as string[];
   const activeCount = products.filter((product) => product.is_active).length;
   const stockValue = products.reduce(
@@ -798,19 +704,19 @@ export function ProductsPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <p className="text-sm font-extrabold uppercase tracking-wide text-coal/45">
-            Tổng sản phẩm
+            Tong san pham
           </p>
           <p className="mt-2 font-display text-3xl font-bold">{products.length}</p>
         </Card>
         <Card>
           <p className="text-sm font-extrabold uppercase tracking-wide text-coal/45">
-            Đang bán
+            Dang ban
           </p>
           <p className="mt-2 font-display text-3xl font-bold">{activeCount}</p>
         </Card>
         <Card>
           <p className="text-sm font-extrabold uppercase tracking-wide text-coal/45">
-            Giá trị tồn vốn
+            Gia tri ton von
           </p>
           <p className="mt-2 font-display text-3xl font-bold">{formatCurrency(stockValue)}</p>
         </Card>
@@ -823,17 +729,17 @@ export function ProductsPage() {
             <Input
               className="pl-11"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm theo tên, SKU, nhóm hàng..."
+              placeholder="Tim theo ten, SKU, nhom hang..."
               value={query}
             />
           </div>
           <Button onClick={openCreateModal}>
             <PackagePlus className="h-4 w-4" />
-            Thêm sản phẩm
+            Them san pham
           </Button>
         </div>
 
-        {error ? (
+        {error && !modalOpen ? (
           <div className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
             {error}
           </div>
@@ -844,19 +750,19 @@ export function ProductsPage() {
         ) : filteredProducts.length === 0 ? (
           <div className="mt-6">
             <EmptyState
-              description="Thêm sản phẩm đầu tiên để POS có dữ liệu bán hàng."
+              description="Them san pham dau tien de POS co du lieu ban hang."
               icon={Boxes}
-              title="Chưa có sản phẩm phù hợp"
+              title="Chua co san pham phu hop"
             />
           </div>
         ) : (
           <div className="mt-6 overflow-hidden rounded-3xl border border-coal/10">
             <div className="hidden grid-cols-[1.4fr_0.9fr_0.8fr_0.7fr_0.6fr] gap-4 bg-coal px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
-              <span>Sản phẩm</span>
-              <span>Nhóm/SKU</span>
-              <span>Giá bán</span>
-              <span>Tồn</span>
-              <span className="text-right">Thao tác</span>
+              <span>San pham</span>
+              <span>Nhom/SKU</span>
+              <span>Gia ban</span>
+              <span>Ton</span>
+              <span className="text-right">Thao tac</span>
             </div>
             <div className="divide-y divide-coal/10 bg-white/70">
               {filteredProducts.map((product) => (
@@ -881,18 +787,18 @@ export function ProductsPage() {
                     <div>
                       <p className="font-bold">{product.name}</p>
                       <p className="mt-1 line-clamp-1 max-w-xs text-xs text-coal/50">
-                        {product.description || "Chưa có mô tả"}
+                        {product.description || "Chua co mo ta"}
                       </p>
                       <Badge className="mt-2" tone={product.is_active ? "green" : "neutral"}>
-                        {product.is_active ? "Đang bán" : "Tạm ẩn"}
+                        {product.is_active ? "Dang ban" : "Tam an"}
                       </Badge>
                     </div>
                   </div>
                   <div className="text-sm">
-                    <p className="font-bold">{product.category || "Chưa phân nhóm"}</p>
+                    <p className="font-bold">{product.category || "Chua phan nhom"}</p>
                     <div className="mt-1 flex items-center gap-1 text-coal/50">
                       <Tag className="h-3.5 w-3.5" />
-                      <span>{product.sku || "Chưa có SKU"}</span>
+                      <span>{product.sku || "Chua co SKU"}</span>
                     </div>
                   </div>
                   <p className="font-display text-lg font-bold">{formatCurrency(product.price)}</p>
@@ -901,10 +807,18 @@ export function ProductsPage() {
                     <span className="font-bold">{product.stock}</span>
                   </div>
                   <div className="flex justify-end gap-2">
-                    <Button className="h-10 w-10 p-0" onClick={() => openEditModal(product)} variant="secondary">
+                    <Button
+                      className="h-10 w-10 p-0"
+                      onClick={() => openEditModal(product)}
+                      variant="secondary"
+                    >
                       <Edit3 className="h-4 w-4" />
                     </Button>
-                    <Button className="h-10 w-10 p-0" onClick={() => handleDelete(product)} variant="danger">
+                    <Button
+                      className="h-10 w-10 p-0"
+                      onClick={() => handleDelete(product)}
+                      variant="danger"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -916,6 +830,7 @@ export function ProductsPage() {
       </Card>
 
       <ProductEditorModal
+        categories={categories}
         libraryImages={libraryImages}
         onCancel={() => setModalOpen(false)}
         onSubmit={handleSave}
