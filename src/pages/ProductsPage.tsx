@@ -25,8 +25,10 @@ import { Spinner } from "../components/ui/Spinner";
 import { formatCurrency } from "../lib/format";
 import { uploadProductImage } from "../lib/cloudinary";
 import {
+  createProductCategory,
   createProduct,
   deleteProduct,
+  fetchProductCategories,
   fetchProducts,
   updateProduct,
   type ProductInput,
@@ -69,7 +71,7 @@ const dateFormatter = new Intl.DateTimeFormat("vi-VN", {
   month: "2-digit",
   year: "numeric",
 });
-const expiringSoonWindowMs = 1000 * 60 * 60 * 24 * 30;
+const expiringSoonWindowMs = 1000 * 60 * 60 * 24 * 60;
 type ExpiryStatus = "expired" | "soon" | "valid";
 
 function normalizeText(value: string) {
@@ -162,6 +164,26 @@ function productToForm(product?: Product | null): ProductFormState {
 
 function getSubmitErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Khong luu duoc san pham.";
+}
+
+function mergeCategoryNames(values: Array<string | null | undefined>) {
+  const categories = new Map<string, string>();
+
+  values.forEach((value) => {
+    const category = value?.trim();
+    if (!category) {
+      return;
+    }
+
+    const key = category.toLowerCase();
+    if (!categories.has(key)) {
+      categories.set(key, category);
+    }
+  });
+
+  return Array.from(categories.values()).sort((firstCategory, secondCategory) =>
+    firstCategory.localeCompare(secondCategory)
+  );
 }
 
 type MediaPickerModalProps = {
@@ -359,6 +381,7 @@ type ProductFormProps = {
   libraryImages: string[];
   product?: Product | null;
   submitting: boolean;
+  onAddCategory: (name: string) => Promise<string>;
   onSubmit: (input: ProductInput, imageFile: File | null) => Promise<void>;
 };
 
@@ -366,6 +389,7 @@ function ProductForm({
   categories,
   formId,
   libraryImages,
+  onAddCategory,
   onSubmit,
   product,
   submitting,
@@ -375,9 +399,9 @@ function ProductForm({
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
   const [mediaOpen, setMediaOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
-  const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [categoryDraft, setCategoryDraft] = useState("");
   const [categoryError, setCategoryError] = useState("");
+  const [categorySubmitting, setCategorySubmitting] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -386,6 +410,7 @@ function ProductForm({
     setImagePreviewUrl("");
     setCategoryDraft("");
     setCategoryError("");
+    setCategorySubmitting(false);
     setError("");
   }, [product]);
 
@@ -401,9 +426,7 @@ function ProductForm({
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  const categoryOptions = Array.from(
-    new Set([...categories, ...customCategories, form.category].filter(Boolean))
-  ).sort((firstCategory, secondCategory) => firstCategory.localeCompare(secondCategory));
+  const categoryOptions = mergeCategoryNames([...categories, form.category]);
 
   function openCategoryModal() {
     setCategoryDraft("");
@@ -417,8 +440,11 @@ function ProductForm({
     setCategoryError("");
   }
 
-  function handleAddCategory(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveCategoryDraft() {
+    if (categorySubmitting) {
+      return;
+    }
+
     const nextCategory = categoryDraft.trim();
 
     if (!nextCategory) {
@@ -431,12 +457,29 @@ function ProductForm({
     );
     const selectedCategory = existingCategory ?? nextCategory;
 
-    if (!existingCategory) {
-      setCustomCategories((current) => [...current, nextCategory]);
+    if (existingCategory) {
+      updateField("category", selectedCategory);
+      closeCategoryModal();
+      return;
     }
 
-    updateField("category", selectedCategory);
-    closeCategoryModal();
+    setCategorySubmitting(true);
+    setCategoryError("");
+
+    try {
+      const savedCategory = await onAddCategory(nextCategory);
+      updateField("category", savedCategory);
+      closeCategoryModal();
+    } catch (requestError) {
+      setCategoryError(getSubmitErrorMessage(requestError));
+    } finally {
+      setCategorySubmitting(false);
+    }
+  }
+
+  function handleAddCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void saveCategoryDraft();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -706,10 +749,11 @@ function ProductForm({
             </button>
             <button
               className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 sm:min-w-32"
-              form="product-category-form"
-              type="submit"
+              disabled={categorySubmitting}
+              onClick={() => void saveCategoryDraft()}
+              type="button"
             >
-              Add
+              {categorySubmitting ? "Saving..." : "Add"}
             </button>
           </div>
         }
@@ -749,6 +793,7 @@ type ProductEditorModalProps = {
   open: boolean;
   product?: Product | null;
   submitting: boolean;
+  onAddCategory: (name: string) => Promise<string>;
   onCancel: () => void;
   onSubmit: (input: ProductInput, imageFile: File | null) => Promise<void>;
 };
@@ -756,6 +801,7 @@ type ProductEditorModalProps = {
 function ProductEditorModal({
   categories,
   libraryImages,
+  onAddCategory,
   onCancel,
   onSubmit,
   open,
@@ -795,6 +841,7 @@ function ProductEditorModal({
         categories={categories}
         formId={formId}
         libraryImages={libraryImages}
+        onAddCategory={onAddCategory}
         onSubmit={onSubmit}
         product={product}
         submitting={submitting}
@@ -898,6 +945,7 @@ export function ProductsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
+  const [savedCategories, setSavedCategories] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
@@ -907,7 +955,13 @@ export function ProductsPage() {
     setError("");
 
     try {
-      setProducts(await fetchProducts());
+      const [nextProducts, nextCategories] = await Promise.all([
+        fetchProducts(),
+        fetchProductCategories(),
+      ]);
+
+      setProducts(nextProducts);
+      setSavedCategories(nextCategories);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -947,6 +1001,12 @@ export function ProductsPage() {
   function openEditFromDetail(product: Product) {
     setViewingProduct(null);
     openEditModal(product);
+  }
+
+  async function handleAddCategory(name: string) {
+    const savedCategory = await createProductCategory(name);
+    setSavedCategories((current) => mergeCategoryNames([...current, savedCategory]));
+    return savedCategory;
   }
 
   async function handleSave(input: ProductInput, imageFile: File | null) {
@@ -1002,9 +1062,10 @@ export function ProductsPage() {
   const libraryImages = Array.from(
     new Set(products.map((product) => product.image_url).filter(Boolean))
   ) as string[];
-  const categories = Array.from(
-    new Set(products.map((product) => product.category).filter(Boolean))
-  ) as string[];
+  const categories = mergeCategoryNames([
+    ...savedCategories,
+    ...products.map((product) => product.category),
+  ]);
   const expiredCount = products.filter(
     (product) => getExpiryStatus(product.expiry_date) === "expired"
   ).length;
@@ -1170,6 +1231,7 @@ export function ProductsPage() {
       <ProductEditorModal
         categories={categories}
         libraryImages={libraryImages}
+        onAddCategory={handleAddCategory}
         onCancel={() => setModalOpen(false)}
         onSubmit={handleSave}
         open={modalOpen}

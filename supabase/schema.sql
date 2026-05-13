@@ -25,6 +25,16 @@ create table if not exists public.products (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.product_categories (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists product_categories_name_lower_idx
+on public.product_categories (lower(name));
+
 alter table public.products
 add column if not exists description text;
 
@@ -69,9 +79,17 @@ create table if not exists public.order_items (
 );
 
 create index if not exists products_name_idx on public.products using gin (to_tsvector('simple', name));
+create index if not exists product_categories_name_idx on public.product_categories(name);
 create index if not exists customers_name_idx on public.customers using gin (to_tsvector('simple', name));
 create index if not exists orders_customer_id_idx on public.orders(customer_id);
 create index if not exists order_items_order_id_idx on public.order_items(order_id);
+
+insert into public.product_categories (name)
+select distinct trim(category)
+from public.products
+where category is not null
+  and trim(category) <> ''
+on conflict do nothing;
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -91,6 +109,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists set_products_updated_at on public.products;
 create trigger set_products_updated_at
 before update on public.products
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_product_categories_updated_at on public.product_categories;
+create trigger set_product_categories_updated_at
+before update on public.product_categories
 for each row execute function public.set_updated_at();
 
 drop trigger if exists set_customers_updated_at on public.customers;
@@ -279,6 +302,7 @@ $$;
 
 alter table public.profiles enable row level security;
 alter table public.products enable row level security;
+alter table public.product_categories enable row level security;
 alter table public.customers enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
@@ -302,6 +326,12 @@ with check (public.is_admin());
 drop policy if exists "Admins manage products" on public.products;
 create policy "Admins manage products"
 on public.products for all
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "Admins manage product categories" on public.product_categories;
+create policy "Admins manage product categories"
+on public.product_categories for all
 using (public.is_admin())
 with check (public.is_admin());
 

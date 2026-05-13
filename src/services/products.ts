@@ -1,6 +1,9 @@
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { Product } from "../types";
 
+const missingCategoryTableMessage =
+  "Database chua co bang product_categories. Hay chay lai supabase/schema.sql roi thu lai.";
+
 export type ProductInput = {
   name: string;
   sku?: string | null;
@@ -61,6 +64,27 @@ function isMissingDateColumn(error: unknown) {
   );
 }
 
+function isMissingProductCategoriesTable(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    "message" in error &&
+    (error.code === "PGRST205" || error.code === "42P01") &&
+    typeof error.message === "string" &&
+    error.message.includes("product_categories")
+  );
+}
+
+function isDuplicateKey(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505"
+  );
+}
+
 function withoutDescription(input: ProductInput) {
   const payload = createProductPayload(input);
   delete payload.description;
@@ -80,6 +104,58 @@ export async function fetchProducts() {
   }
 
   return data ?? [];
+}
+
+export async function fetchProductCategories() {
+  requireSupabaseConfig();
+
+  const { data, error } = await supabase
+    .from("product_categories")
+    .select("name")
+    .order("name", { ascending: true });
+
+  if (error) {
+    if (isMissingProductCategoriesTable(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+
+  return (data ?? []).map((category) => category.name);
+}
+
+export async function createProductCategory(name: string) {
+  requireSupabaseConfig();
+
+  const nextName = name.trim();
+  if (!nextName) {
+    throw new Error("Nhap ten category.");
+  }
+
+  const { data, error } = await supabase
+    .from("product_categories")
+    .insert({ name: nextName })
+    .select("name")
+    .single();
+
+  if (error) {
+    if (isMissingProductCategoriesTable(error)) {
+      throw new Error(missingCategoryTableMessage);
+    }
+
+    if (isDuplicateKey(error)) {
+      const categories = await fetchProductCategories();
+      return (
+        categories.find((category) => category.toLowerCase() === nextName.toLowerCase()) ??
+        nextName
+      );
+    }
+
+    throw error;
+  }
+
+  return data.name;
 }
 
 export async function createProduct(input: ProductInput) {
