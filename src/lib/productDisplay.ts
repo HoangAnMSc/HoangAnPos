@@ -9,116 +9,59 @@ const dateFormatter = new Intl.DateTimeFormat("vi-VN", {
 });
 const dayMs = 1000 * 60 * 60 * 24;
 const expiringSoonWindowMs = dayMs * 60;
+export const vietnamEanPrefix = "893";
 
-const code128Patterns = [
-  "212222",
-  "222122",
-  "222221",
-  "121223",
-  "121322",
-  "131222",
-  "122213",
-  "122312",
-  "132212",
-  "221213",
-  "221312",
-  "231212",
-  "112232",
-  "122132",
-  "122231",
-  "113222",
-  "123122",
-  "123221",
-  "223211",
-  "221132",
-  "221231",
-  "213212",
-  "223112",
-  "312131",
-  "311222",
-  "321122",
-  "321221",
-  "312212",
-  "322112",
-  "322211",
-  "212123",
-  "212321",
-  "232121",
-  "111323",
-  "131123",
-  "131321",
-  "112313",
-  "132113",
-  "132311",
-  "211313",
-  "231113",
-  "231311",
-  "112133",
-  "112331",
-  "132131",
-  "113123",
-  "113321",
-  "133121",
-  "313121",
-  "211331",
-  "231131",
-  "213113",
-  "213311",
-  "213131",
-  "311123",
-  "311321",
-  "331121",
-  "312113",
-  "312311",
-  "332111",
-  "314111",
-  "221411",
-  "431111",
-  "111224",
-  "111422",
-  "121124",
-  "121421",
-  "141122",
-  "141221",
-  "112214",
-  "112412",
-  "122114",
-  "122411",
-  "142112",
-  "142211",
-  "241211",
-  "221114",
-  "413111",
-  "241112",
-  "134111",
-  "111242",
-  "121142",
-  "121241",
-  "114212",
-  "124112",
-  "124211",
-  "411212",
-  "421112",
-  "421211",
-  "212141",
-  "214121",
-  "412121",
-  "111143",
-  "111341",
-  "131141",
-  "114113",
-  "114311",
-  "411113",
-  "411311",
-  "113141",
-  "114131",
-  "311141",
-  "411131",
-  "211412",
-  "211214",
-  "211232",
-  "2331112",
-];
+const eanLeftOddPatterns: Record<string, string> = {
+  "0": "0001101",
+  "1": "0011001",
+  "2": "0010011",
+  "3": "0111101",
+  "4": "0100011",
+  "5": "0110001",
+  "6": "0101111",
+  "7": "0111011",
+  "8": "0110111",
+  "9": "0001011",
+};
+
+const eanLeftEvenPatterns: Record<string, string> = {
+  "0": "0100111",
+  "1": "0110011",
+  "2": "0011011",
+  "3": "0100001",
+  "4": "0011101",
+  "5": "0111001",
+  "6": "0000101",
+  "7": "0010001",
+  "8": "0001001",
+  "9": "0010111",
+};
+
+const eanRightPatterns: Record<string, string> = {
+  "0": "1110010",
+  "1": "1100110",
+  "2": "1101100",
+  "3": "1000010",
+  "4": "1011100",
+  "5": "1001110",
+  "6": "1010000",
+  "7": "1000100",
+  "8": "1001000",
+  "9": "1110100",
+};
+
+const eanParityPatterns: Record<string, string> = {
+  "0": "OOOOOO",
+  "1": "OOEOEE",
+  "2": "OOEEOE",
+  "3": "OOEEEO",
+  "4": "OEOOEE",
+  "5": "OEEOOE",
+  "6": "OEEEOO",
+  "7": "OEOEOE",
+  "8": "OEOEEO",
+  "9": "OEEOEO",
+};
 
 export function parseDateOnly(value?: string | null) {
   if (!value) {
@@ -251,37 +194,75 @@ export function formatExpiryDays(value?: string | null) {
   return `Con ${days} ngay`;
 }
 
-function normalizeBarcodeText(value?: string | null) {
-  return (value ?? "")
-    .trim()
-    .replace(/[^\x20-\x7F]/g, "")
-    .slice(0, 48);
+export function normalizeEan13Input(value?: string | null) {
+  return (value ?? "").replace(/\D/g, "").slice(0, 13);
 }
 
-export function normalizeBarcodeValue(value?: string | null) {
-  return normalizeBarcodeText(value).toLowerCase();
-}
-
-export function getProductBarcodeValue(product: Product) {
-  const sku = normalizeBarcodeText(product.sku);
-  if (sku) {
-    return sku;
+export function calculateEan13CheckDigit(first12Digits: string) {
+  if (!/^\d{12}$/.test(first12Digits)) {
+    return "";
   }
 
-  const idCode = product.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12).toUpperCase();
-  return `HA${idCode || "000000000000"}`;
+  const sum = Array.from(first12Digits).reduce((total, digit, index) => {
+    const weight = index % 2 === 0 ? 1 : 3;
+    return total + Number(digit) * weight;
+  }, 0);
+
+  return String((10 - (sum % 10)) % 10);
 }
 
-export function findProductByBarcode(products: Product[], value: string) {
-  const barcodeValue = normalizeBarcodeValue(value);
+export function createEan13(first12Digits: string) {
+  const body = first12Digits.replace(/\D/g, "").slice(0, 12).padStart(12, "0");
+  return `${body}${calculateEan13CheckDigit(body)}`;
+}
 
-  if (!barcodeValue) {
+export function isValidEan13(value?: string | null) {
+  const code = normalizeEan13Input(value);
+  return code.length === 13 && calculateEan13CheckDigit(code.slice(0, 12)) === code[12];
+}
+
+function createStableInternalBody(id: string) {
+  return `${vietnamEanPrefix}${createStableDigits(id || "0", 9)}`;
+}
+
+function createStableDigits(value: string, length: number) {
+  const modulo = 10 ** length;
+  let hash = 0;
+
+  Array.from(value || "0").forEach((character) => {
+    hash = (hash * 31 + character.charCodeAt(0)) % modulo;
+  });
+
+  return String(hash).padStart(length, "0").slice(-length);
+}
+
+export function createInternalEan13FromId(id: string) {
+  return createEan13(createStableInternalBody(id));
+}
+
+export function createVietnamEan13FromSeed(seed: string) {
+  return createEan13(`${vietnamEanPrefix}${createStableDigits(seed, 9)}`);
+}
+
+export function getProductEan13Value(product: Product) {
+  const storedEan13 = normalizeEan13Input(product.sku);
+  if (isValidEan13(storedEan13)) {
+    return storedEan13;
+  }
+
+  return createInternalEan13FromId(product.id);
+}
+
+export function findProductByEan13(products: Product[], value: string) {
+  const ean13Value = normalizeEan13Input(value);
+
+  if (!isValidEan13(ean13Value)) {
     return null;
   }
 
   return (
-    products.find((product) => normalizeBarcodeValue(getProductBarcodeValue(product)) === barcodeValue) ??
-    products.find((product) => normalizeBarcodeValue(product.sku) === barcodeValue) ??
+    products.find((product) => getProductEan13Value(product) === ean13Value) ??
+    products.find((product) => normalizeEan13Input(product.sku) === ean13Value) ??
     null
   );
 }
@@ -295,46 +276,60 @@ export function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
-export function getCode128Bars(value: string, moduleWidth = 2) {
-  const text = normalizeBarcodeText(value) || "HA000000000000";
-  const codes = [104, ...Array.from(text).map((char) => char.charCodeAt(0) - 32)];
-  const checksum =
-    codes[0] +
-    codes.slice(1).reduce((sum, code, index) => sum + code * (index + 1), 0);
-
-  codes.push(checksum % 103, 106);
-
-  const bars: Array<{ x: number; width: number }> = [];
-  let x = 0;
-
-  codes.forEach((code) => {
-    const pattern = code128Patterns[code];
-
-    Array.from(pattern).forEach((widthText, index) => {
-      const width = Number(widthText) * moduleWidth;
-
-      if (index % 2 === 0) {
-        bars.push({ x, width });
-      }
-
-      x += width;
-    });
-  });
-
-  return { bars, height: 70, width: x };
-}
-
-export function createCode128SvgMarkup(value: string) {
-  const quietZone = 18;
-  const barcode = getCode128Bars(value);
-  const width = barcode.width + quietZone * 2;
-  const rects = barcode.bars
-    .map((bar) => `<rect x="${bar.x + quietZone}" y="0" width="${bar.width}" height="${barcode.height}" />`)
+function getEan13Pattern(value: string) {
+  const code = isValidEan13(value) ? normalizeEan13Input(value) : createEan13(value);
+  const parity = eanParityPatterns[code[0]];
+  const leftDigits = code.slice(1, 7);
+  const rightDigits = code.slice(7);
+  const leftPattern = Array.from(leftDigits)
+    .map((digit, index) =>
+      parity[index] === "O" ? eanLeftOddPatterns[digit] : eanLeftEvenPatterns[digit]
+    )
+    .join("");
+  const rightPattern = Array.from(rightDigits)
+    .map((digit) => eanRightPatterns[digit])
     .join("");
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Barcode ${escapeHtml(
-    value
-  )}" viewBox="0 0 ${width} ${barcode.height}" preserveAspectRatio="none"><rect width="${width}" height="${
-    barcode.height
+  return `101${leftPattern}01010${rightPattern}101`;
+}
+
+export function getEan13Bars(value: string, moduleWidth = 2) {
+  const pattern = getEan13Pattern(value);
+  const bars: Array<{ x: number; width: number }> = [];
+  let currentBar: { x: number; width: number } | null = null;
+
+  Array.from(pattern).forEach((bit, index) => {
+    const x = index * moduleWidth;
+
+    if (bit === "1" && currentBar) {
+      currentBar.width += moduleWidth;
+      return;
+    }
+
+    if (bit === "1") {
+      currentBar = { x, width: moduleWidth };
+      bars.push(currentBar);
+      return;
+    }
+
+    currentBar = null;
+  });
+
+  return { bars, height: 70, width: pattern.length * moduleWidth };
+}
+
+export function createEan13SvgMarkup(value: string) {
+  const code = isValidEan13(value) ? normalizeEan13Input(value) : createEan13(value);
+  const quietZone = 18;
+  const ean13 = getEan13Bars(code);
+  const width = ean13.width + quietZone * 2;
+  const rects = ean13.bars
+    .map((bar) => `<rect x="${bar.x + quietZone}" y="0" width="${bar.width}" height="${ean13.height}" />`)
+    .join("");
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="EAN-13 ${escapeHtml(
+    code
+  )}" viewBox="0 0 ${width} ${ean13.height}" preserveAspectRatio="none"><rect width="${width}" height="${
+    ean13.height
   }" fill="#fff"/>${rects}</svg>`;
 }

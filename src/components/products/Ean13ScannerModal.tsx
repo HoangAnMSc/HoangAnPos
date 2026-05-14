@@ -3,8 +3,9 @@ import type { IScannerControls } from "@zxing/browser";
 import { Barcode, Camera, Keyboard } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Modal } from "../ui/Modal";
+import { isValidEan13, normalizeEan13Input } from "../../lib/productDisplay";
 
-type BarcodeScannerModalProps = {
+type Ean13ScannerModalProps = {
   description?: string;
   open: boolean;
   title?: string;
@@ -12,13 +13,13 @@ type BarcodeScannerModalProps = {
   onDetected: (value: string) => void;
 };
 
-export function BarcodeScannerModal({
-  description = "Dua ma vach vao khung camera hoac nhap ma thu cong.",
+export function Ean13ScannerModal({
+  description = "Dua ma EAN-13 vao khung camera hoac nhap ma thu cong.",
   onClose,
   onDetected,
   open,
-  title = "Quet barcode",
-}: BarcodeScannerModalProps) {
+  title = "Quet EAN-13",
+}: Ean13ScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [manualCode, setManualCode] = useState("");
   const [status, setStatus] = useState("Dang khoi dong camera...");
@@ -26,9 +27,15 @@ export function BarcodeScannerModal({
 
   const submitCode = useCallback(
     (value: string) => {
-      const code = value.trim();
+      const code = normalizeEan13Input(value);
 
       if (!code) {
+        return;
+      }
+
+      if (!isValidEan13(code)) {
+        setStatus("Dang quet EAN-13...");
+        setError("Ma EAN-13 phai co 13 chu so va dung so kiem tra.");
         return;
       }
 
@@ -59,7 +66,7 @@ export function BarcodeScannerModal({
 
       if (!navigator.mediaDevices?.getUserMedia) {
         setStatus("Trinh duyet khong ho tro camera.");
-        setError("Hay nhap barcode thu cong ben duoi.");
+        setError("Hay nhap EAN-13 thu cong ben duoi.");
         return;
       }
 
@@ -70,8 +77,11 @@ export function BarcodeScannerModal({
       }
 
       try {
-        const { BrowserMultiFormatReader } = await import("@zxing/browser");
-        const reader = new BrowserMultiFormatReader(undefined, {
+        const [{ BarcodeFormat, BrowserMultiFormatReader }, { DecodeHintType }] =
+          await Promise.all([import("@zxing/browser"), import("@zxing/library")]);
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.EAN_13]);
+        const reader = new BrowserMultiFormatReader(hints, {
           delayBetweenScanAttempts: 130,
           delayBetweenScanSuccess: 700,
           tryPlayVideoTimeout: 7000,
@@ -93,28 +103,31 @@ export function BarcodeScannerModal({
             }
 
             if (result) {
-              const value = result.getText().trim();
+              const value = normalizeEan13Input(result.getText());
 
-              if (value) {
+              if (isValidEan13(value)) {
                 stopped = true;
                 scannerControls.stop();
                 submitCode(value);
+              } else if (value) {
+                setError("Camera vua doc duoc ma khong phai EAN-13 hop le.");
+                setStatus("Dang quet EAN-13...");
               }
 
               return;
             }
 
             if (scanError) {
-              setStatus("Dang quet barcode...");
+              setStatus("Dang quet EAN-13...");
             }
           }
         );
 
-        setStatus("Dang quet barcode...");
+        setStatus("Dang quet EAN-13...");
       } catch {
         setStatus("Khong mo duoc camera.");
         setError(
-          "Kiem tra quyen camera, dung http://localhost/127.0.0.1 hoac nhap barcode thu cong."
+          "Kiem tra quyen camera, dung http://localhost/127.0.0.1 hoac nhap EAN-13 thu cong."
         );
       }
     }
@@ -138,7 +151,7 @@ export function BarcodeScannerModal({
           <Button onClick={onClose} variant="secondary">
             Dong
           </Button>
-          <Button form="manual-barcode-form" type="submit">
+          <Button form="manual-ean13-form" type="submit">
             <Keyboard className="h-4 w-4" />
             Nhap ma
           </Button>
@@ -171,18 +184,23 @@ export function BarcodeScannerModal({
           </div>
         ) : null}
 
-        <form className="space-y-2" id="manual-barcode-form" onSubmit={handleManualSubmit}>
+        <form className="space-y-2" id="manual-ean13-form" onSubmit={handleManualSubmit}>
           <label className="block">
             <span className="mb-2 block text-sm font-extrabold text-slate-950">
-              Barcode thu cong
+              EAN-13 thu cong
             </span>
             <div className="relative">
               <Barcode className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 autoComplete="off"
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                onChange={(event) => setManualCode(event.target.value)}
-                placeholder="Quet bang may quet USB hoac nhap ma"
+                inputMode="numeric"
+                maxLength={13}
+                onChange={(event) => {
+                  setManualCode(normalizeEan13Input(event.target.value));
+                  setError("");
+                }}
+                placeholder="Quet bang may quet USB hoac nhap 13 so"
                 value={manualCode}
               />
             </div>

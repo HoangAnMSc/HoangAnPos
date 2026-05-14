@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Barcode,
   Boxes,
@@ -9,20 +9,23 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { BarcodeScannerModal } from "../components/products/BarcodeScannerModal";
+import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
+import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
 import {
-  findProductByBarcode,
+  findProductByEan13,
   formatProductDate,
-  getProductBarcodeValue,
+  getProductEan13Value,
+  isValidEan13,
+  normalizeEan13Input,
 } from "../lib/productDisplay";
 import { fetchProducts } from "../services/products";
 import type { Product } from "../types";
@@ -30,7 +33,7 @@ import type { Product } from "../types";
 type CountMap = Record<string, string>;
 
 type InventoryRow = {
-  barcode: string;
+  ean13: string;
   counted: number;
   diff: number;
   product: Product;
@@ -51,7 +54,7 @@ type ReportHistoryItem = {
   id: string;
   image: string;
   rows: Array<{
-    barcode: string;
+    ean13: string;
     counted: number;
     diff: number;
     name: string;
@@ -118,7 +121,7 @@ function createInventoryRows(products: Product[], counts: CountMap) {
       const diff = counted - product.stock;
 
       return {
-        barcode: getProductBarcodeValue(product),
+        ean13: getProductEan13Value(product),
         counted,
         diff,
         product,
@@ -255,7 +258,7 @@ function createInventoryReportImage(rows: InventoryRow[], stats: InventoryStats)
   context.fillStyle = "#334155";
   context.font = "800 16px Arial";
   context.fillText("San pham", 64, y + 27);
-  context.fillText("Barcode", 520, y + 27);
+  context.fillText("EAN-13", 520, y + 27);
   context.fillText("Kho", 760, y + 27);
   context.fillText("Dem", 850, y + 27);
   context.fillText("Lech", 940, y + 27);
@@ -273,7 +276,7 @@ function createInventoryReportImage(rows: InventoryRow[], stats: InventoryStats)
     context.fillText(`HSD: ${formatProductDate(row.product.expiry_date)}`, 64, y + 64);
     context.fillStyle = "#334155";
     context.font = "700 16px Arial";
-    context.fillText(row.barcode, 520, y + 45);
+    context.fillText(row.ean13, 520, y + 45);
     context.fillText(String(row.product.stock), 760, y + 45);
     context.fillText(String(row.counted), 850, y + 45);
     context.fillStyle = row.diff < 0 ? "#dc2626" : row.diff > 0 ? "#d97706" : "#15803d";
@@ -320,7 +323,7 @@ function createReportHistoryItem(
     id: `${createdAt}-${Math.random().toString(36).slice(2)}`,
     image,
     rows: rows.map((row) => ({
-      barcode: row.barcode,
+      ean13: row.ean13,
       counted: row.counted,
       diff: row.diff,
       name: row.product.name,
@@ -419,7 +422,7 @@ function QuantityModal({
           <div className="min-w-0">
             <h3 className="truncate font-extrabold text-slate-950">{product.name}</h3>
             <p className="mt-1 text-xs font-bold text-slate-500">
-              {getProductBarcodeValue(product)} / Ton he thong {product.stock}
+              EAN-13 {getProductEan13Value(product)} / Ton he thong {product.stock}
             </p>
           </div>
         </div>
@@ -451,10 +454,11 @@ function QuantityModal({
 
 export function InventoryPage() {
   const { profile, user } = useAuth();
-  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [ean13ScannerOpen, setEan13ScannerOpen] = useState(false);
   const [counts, setCounts] = useState<CountMap>({});
   const [countingProduct, setCountingProduct] = useState<Product | null>(null);
   const [error, setError] = useState("");
+  const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [history, setHistory] = useState<ReportHistoryItem[]>(() => loadReportHistory());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -466,24 +470,30 @@ export function InventoryPage() {
   const [success, setSuccess] = useState("");
   const staffName = profile?.full_name || user?.email || "Nhan vien";
 
-  async function loadProducts() {
+  const showErrorNotice = useCallback((message: string, title = "Thong bao loi") => {
+    setError(message);
+    setErrorNotice({ message, title });
+  }, []);
+
+  const loadProducts = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
       setProducts(await fetchProducts());
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Khong tai duoc du lieu ton kho."
+      showErrorNotice(
+        requestError instanceof Error ? requestError.message : "Khong tai duoc du lieu ton kho.",
+        "Khong tai duoc ton kho"
       );
     } finally {
       setLoading(false);
     }
-  }
+  }, [showErrorNotice]);
 
   useEffect(() => {
     void loadProducts();
-  }, []);
+  }, [loadProducts]);
 
   const rows = useMemo(() => createInventoryRows(products, counts), [counts, products]);
   const stats = useMemo(() => getInventoryStats(rows), [rows]);
@@ -495,7 +505,7 @@ export function InventoryPage() {
 
     return products
       .filter((product) =>
-        [product.name, product.sku, product.category, getProductBarcodeValue(product)]
+        [product.name, product.sku, product.category, getProductEan13Value(product)]
           .filter(Boolean)
           .some((value) => value!.toLowerCase().includes(normalizedQuery))
       )
@@ -548,12 +558,22 @@ export function InventoryPage() {
     setError("");
   }
 
-  function handleBarcodeDetected(value: string) {
-    const product = findProductByBarcode(products, value);
+  function handleEan13Detected(value: string) {
+    const ean13Code = normalizeEan13Input(value);
+    const product = findProductByEan13(products, ean13Code);
+
+    if (!isValidEan13(ean13Code)) {
+      showErrorNotice("Ma quet khong phai EAN-13 hop le.", "EAN-13 khong hop le");
+      setQuery(ean13Code);
+      return;
+    }
 
     if (!product) {
-      setError(`Khong tim thay san pham voi barcode ${value}.`);
-      setQuery(value);
+      showErrorNotice(
+        `Chua co san pham trong database voi EAN-13 ${ean13Code}.`,
+        "Khong co san pham"
+      );
+      setQuery(ean13Code);
       return;
     }
 
@@ -562,13 +582,16 @@ export function InventoryPage() {
 
   function handleCreateReportImage() {
     if (rows.length === 0) {
-      setError("Nhap so luong thuc te cho it nhat mot san pham truoc khi tao bao cao.");
+      showErrorNotice(
+        "Nhap so luong thuc te cho it nhat mot san pham truoc khi tao bao cao.",
+        "Chua co du lieu bao cao"
+      );
       return;
     }
 
     const nextReportImage = createInventoryReportImage(rows, stats);
     if (!nextReportImage) {
-      setError("Khong tao duoc anh bao cao.");
+      showErrorNotice("Khong tao duoc anh bao cao.", "Tao bao cao that bai");
       return;
     }
 
@@ -582,7 +605,10 @@ export function InventoryPage() {
       setError("");
       setSuccess("Da tao va luu bao cao ton kho.");
     } catch {
-      setError("Da tao anh bao cao, nhung khong luu duoc lich su tren trinh duyet nay.");
+      showErrorNotice(
+        "Da tao anh bao cao, nhung khong luu duoc lich su tren trinh duyet nay.",
+        "Khong luu duoc lich su"
+      );
     }
   }
 
@@ -612,9 +638,9 @@ export function InventoryPage() {
               </div>
             </div>
             <div className="grid gap-2 sm:flex">
-              <Button onClick={() => setBarcodeScannerOpen(true)} variant="secondary">
+              <Button onClick={() => setEan13ScannerOpen(true)} variant="secondary">
                 <Barcode className="h-4 w-4" />
-                Quet barcode
+                Quet EAN-13
               </Button>
               <Button onClick={() => setHistoryOpen(true)} variant="secondary">
                 <History className="h-4 w-4" />
@@ -664,7 +690,7 @@ export function InventoryPage() {
                           {product.name}
                         </span>
                         <span className="block truncate text-xs font-semibold text-slate-500">
-                          {getProductBarcodeValue(product)}
+                          {getProductEan13Value(product)}
                         </span>
                       </span>
                     </button>
@@ -699,7 +725,7 @@ export function InventoryPage() {
               <Spinner label="Dang tai ton kho..." />
             ) : rows.length === 0 ? (
               <EmptyState
-                description="Bam Quet barcode, quet tem san pham, nhap so luong va luu tung san pham vao danh sach."
+                description="Bam Quet EAN-13, quet tem san pham, nhap so luong va luu tung san pham vao danh sach."
                 icon={Boxes}
                 title="Chua nhap san pham nao"
               />
@@ -730,7 +756,7 @@ export function InventoryPage() {
                             {row.product.name}
                           </h4>
                           <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                            {row.barcode} / HSD {formatProductDate(row.product.expiry_date)}
+                            {row.ean13} / HSD {formatProductDate(row.product.expiry_date)}
                           </p>
                           <Badge className="mt-2 w-fit" tone={getStatusTone(row.status)}>
                             {getStatusLabel(row)}
@@ -781,12 +807,12 @@ export function InventoryPage() {
         </div>
       </Card>
 
-      <BarcodeScannerModal
-        description="Quet barcode tren tem san pham. Sau khi quet, he thong se mo popup de nhap so luong thuc te."
-        onClose={() => setBarcodeScannerOpen(false)}
-        onDetected={handleBarcodeDetected}
-        open={barcodeScannerOpen}
-        title="Quet barcode ton kho"
+      <Ean13ScannerModal
+        description="Quet EAN-13 tren tem san pham. Sau khi quet, he thong se mo popup de nhap so luong thuc te."
+        onClose={() => setEan13ScannerOpen(false)}
+        onDetected={handleEan13Detected}
+        open={ean13ScannerOpen}
+        title="Quet EAN-13 ton kho"
       />
 
       <Modal
@@ -900,6 +926,7 @@ export function InventoryPage() {
         onSubmit={saveQuantityDraft}
         product={countingProduct}
       />
+      <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
     </div>
   );
 }

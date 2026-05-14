@@ -35,7 +35,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   },
   "/inventory": {
     title: "Ton kho",
-    subtitle: "Quet barcode, nhap so luong thuc te va tao anh bao cao chenh lech.",
+    subtitle: "Quet EAN-13, nhap so luong thuc te va tao anh bao cao chenh lech.",
   },
 };
 

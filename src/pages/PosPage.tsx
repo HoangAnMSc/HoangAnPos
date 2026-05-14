@@ -1,4 +1,12 @@
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Barcode,
   Bell,
@@ -14,10 +22,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { BarcodeScannerModal } from "../components/products/BarcodeScannerModal";
+import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { ProductCard } from "../components/products/ProductCard";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
+import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Select } from "../components/ui/Select";
@@ -25,7 +34,12 @@ import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import { formatCurrency } from "../lib/format";
-import { findProductByBarcode, getProductBarcodeValue } from "../lib/productDisplay";
+import {
+  findProductByEan13,
+  getProductEan13Value,
+  isValidEan13,
+  normalizeEan13Input,
+} from "../lib/productDisplay";
 import { createCustomer, fetchCustomers, type CustomerInput } from "../services/customers";
 import { createSale } from "../services/orders";
 import { fetchProducts, getActiveProducts } from "../services/products";
@@ -238,10 +252,11 @@ export function PosPage() {
   const paidAmountRef = useRef<HTMLInputElement>(null);
 
   const [autoPrint, setAutoPrint] = useState(true);
-  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [ean13ScannerOpen, setEan13ScannerOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState("");
+  const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [lineSeparated, setLineSeparated] = useState(true);
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
@@ -263,7 +278,12 @@ export function PosPage() {
   const paymentMethod = activeBill?.paymentMethod ?? "cash";
   const selectedCustomerId = activeBill?.selectedCustomerId ?? "";
 
-  async function loadPosData() {
+  const showErrorNotice = useCallback((message: string, title = "Thong bao loi") => {
+    setError(message);
+    setErrorNotice({ message, title });
+  }, []);
+
+  const loadPosData = useCallback(async () => {
     setLoading(true);
     setError("");
 
@@ -272,17 +292,18 @@ export function PosPage() {
       setProducts(productData);
       setCustomers(customerData);
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Khong tai duoc du lieu POS."
+      showErrorNotice(
+        requestError instanceof Error ? requestError.message : "Khong tai duoc du lieu POS.",
+        "Khong tai duoc du lieu POS"
       );
     } finally {
       setLoading(false);
     }
-  }
+  }, [showErrorNotice]);
 
   useEffect(() => {
-    loadPosData();
-  }, []);
+    void loadPosData();
+  }, [loadPosData]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -366,7 +387,7 @@ export function PosPage() {
 
     return activeProducts
       .filter((product) =>
-        [product.name, product.sku, product.category, getProductBarcodeValue(product)]
+        [product.name, product.sku, product.category, getProductEan13Value(product)]
           .filter(Boolean)
           .some((value) => value!.toLowerCase().includes(normalizedProductQuery))
       )
@@ -477,7 +498,7 @@ export function PosPage() {
     setError("");
 
     if (product.stock <= 0) {
-      setError("San pham nay da het hang.");
+      showErrorNotice("San pham nay da het hang.", "Khong the them san pham");
       return;
     }
 
@@ -567,20 +588,36 @@ export function PosPage() {
     }
   }
 
-  function handleBarcodeDetected(value: string) {
-    const product = findProductByBarcode(activeProducts, value);
+  function handleEan13Detected(value: string) {
+    const ean13Code = normalizeEan13Input(value);
+    const product = findProductByEan13(products, ean13Code);
 
     setSuccess("");
 
-    if (!product) {
-      setError(`Khong tim thay san pham voi barcode ${value}.`);
-      setProductQuery(value);
+    if (!isValidEan13(ean13Code)) {
+      showErrorNotice("Ma quet khong phai EAN-13 hop le.", "EAN-13 khong hop le");
+      setProductQuery(ean13Code);
       productSearchRef.current?.focus();
       return;
     }
 
+    if (!product) {
+      showErrorNotice(
+        `Chua co san pham trong database voi EAN-13 ${ean13Code}.`,
+        "Khong co san pham"
+      );
+      setProductQuery(ean13Code);
+      productSearchRef.current?.focus();
+      return;
+    }
+
+    if (!product.is_active) {
+      showErrorNotice(`San pham "${product.name}" dang tam an.`, "San pham chua duoc ban");
+      return;
+    }
+
     if (product.stock <= 0 || getQuantityInCart(product.id) >= product.stock) {
-      setError(`San pham "${product.name}" khong con ton de them.`);
+      showErrorNotice(`San pham "${product.name}" khong con ton de them.`, "Het ton kho");
       return;
     }
 
@@ -598,8 +635,9 @@ export function PosPage() {
       selectCustomer(customer);
       setCustomerModalOpen(false);
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Khong them duoc khach hang."
+      showErrorNotice(
+        requestError instanceof Error ? requestError.message : "Khong them duoc khach hang.",
+        "Khong them duoc khach hang"
       );
     } finally {
       setSubmittingCustomer(false);
@@ -612,17 +650,17 @@ export function PosPage() {
     setSuccess("");
 
     if (cart.length === 0) {
-      setError("Gio hang dang trong.");
+      showErrorNotice("Gio hang dang trong.", "Chua co san pham");
       return;
     }
 
     if (Number.isNaN(discountValue) || discountValue < 0) {
-      setError("Giam gia phai la so khong am.");
+      showErrorNotice("Giam gia phai la so khong am.", "Giam gia khong hop le");
       return;
     }
 
     if (paymentMethod === "cash" && paidAmount < total) {
-      setError("Khach dua chua du so tien can thu.");
+      showErrorNotice("Khach dua chua du so tien can thu.", "Chua du tien thanh toan");
       paidAmountRef.current?.focus();
       return;
     }
@@ -644,8 +682,9 @@ export function PosPage() {
         window.setTimeout(() => window.print(), 150);
       }
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Tao hoa don that bai."
+      showErrorNotice(
+        requestError instanceof Error ? requestError.message : "Tao hoa don that bai.",
+        "Tao hoa don that bai"
       );
     } finally {
       setSubmittingSale(false);
@@ -657,7 +696,7 @@ export function PosPage() {
     setSuccess("");
 
     if (cart.length === 0 && !selectedCustomerId && !orderNote.trim()) {
-      setError("Don hien tai chua co thong tin de luu.");
+      showErrorNotice("Don hien tai chua co thong tin de luu.", "Khong the luu don");
       return;
     }
 
@@ -674,9 +713,9 @@ export function PosPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="flex min-w-0 flex-1 gap-2">
             <button
-              aria-label="Quet barcode"
+              aria-label="Quet EAN-13"
               className="flex h-14 w-14 flex-none items-center justify-center rounded-xl bg-slate-900 text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 md:h-16 md:w-16"
-              onClick={() => setBarcodeScannerOpen(true)}
+              onClick={() => setEan13ScannerOpen(true)}
               type="button"
             >
               <Barcode className="h-6 w-6" />
@@ -686,7 +725,7 @@ export function PosPage() {
                 className="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 pr-16 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100 md:h-16 md:px-5 md:pr-20 md:text-xl"
                 onChange={(event) => setProductQuery(event.target.value)}
                 onKeyDown={handleProductSearchKeyDown}
-                placeholder="Nhap ten san pham, SKU hoac barcode"
+                placeholder="Nhap ten san pham hoac EAN-13"
                 ref={productSearchRef}
                 value={productQuery}
               />
@@ -884,7 +923,7 @@ export function PosPage() {
                                 {item.product.name}
                               </h3>
                               <p className="mt-1 text-sm font-semibold text-slate-500">
-                                {item.product.sku || "Chua co SKU"} -{" "}
+                                EAN-13 {getProductEan13Value(item.product)} -{" "}
                                 {formatCurrency(item.product.price)}
                               </p>
                               <p className="mt-1 text-sm font-semibold text-slate-400">
@@ -1194,13 +1233,14 @@ export function PosPage() {
           submitting={submittingCustomer}
         />
       </Modal>
-      <BarcodeScannerModal
-        description="Quet barcode de them nhanh san pham vao hoa don hien tai."
-        onClose={() => setBarcodeScannerOpen(false)}
-        onDetected={handleBarcodeDetected}
-        open={barcodeScannerOpen}
-        title="Quet barcode ban hang"
+      <Ean13ScannerModal
+        description="Quet EAN-13 de them nhanh san pham vao hoa don hien tai."
+        onClose={() => setEan13ScannerOpen(false)}
+        onDetected={handleEan13Detected}
+        open={ean13ScannerOpen}
+        title="Quet EAN-13 ban hang"
       />
+      <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
     </div>
   );
 }

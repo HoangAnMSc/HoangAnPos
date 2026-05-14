@@ -3,14 +3,14 @@ import { Button } from "../ui/Button";
 import { Modal } from "../ui/Modal";
 import { formatCurrency } from "../../lib/format";
 import {
-  createCode128SvgMarkup,
+  createEan13SvgMarkup,
   escapeHtml,
   formatProductDate,
-  getProductBarcodeValue,
+  getProductEan13Value,
 } from "../../lib/productDisplay";
 import type { Product } from "../../types";
 
-type BarcodeLabelsModalProps = {
+type Ean13LabelsModalProps = {
   onClose: () => void;
   open: boolean;
   products: Product[];
@@ -19,7 +19,7 @@ type BarcodeLabelsModalProps = {
 function createPrintDocument(products: Product[]) {
   const labels = products
     .map((product) => {
-      const barcodeValue = getProductBarcodeValue(product);
+      const ean13Value = getProductEan13Value(product);
 
       return `
         <section class="label">
@@ -27,8 +27,8 @@ function createPrintDocument(products: Product[]) {
             <div class="name">${escapeHtml(product.name)}</div>
             <div class="price">${escapeHtml(formatCurrency(product.price))}</div>
           </div>
-          <div class="barcode">${createCode128SvgMarkup(barcodeValue)}</div>
-          <div class="code">${escapeHtml(barcodeValue)}</div>
+          <div class="ean13">${createEan13SvgMarkup(ean13Value)}</div>
+          <div class="code">${escapeHtml(ean13Value)}</div>
           <div class="meta">
             <span>Stock: <strong>${product.stock}</strong></span>
             <span>HSD: <strong>${escapeHtml(formatProductDate(product.expiry_date))}</strong></span>
@@ -43,7 +43,7 @@ function createPrintDocument(products: Product[]) {
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Barcode san pham</title>
+        <title>EAN-13 san pham</title>
         <style>
           @page {
             size: A4;
@@ -96,12 +96,12 @@ function createPrintDocument(products: Product[]) {
             font-weight: 700;
           }
 
-          .barcode {
+          .ean13 {
             height: 15mm;
             margin-top: 2mm;
           }
 
-          .barcode svg {
+          .ean13 svg {
             display: block;
             width: 100%;
             height: 100%;
@@ -137,11 +137,11 @@ function createPrintDocument(products: Product[]) {
   `;
 }
 
-function printProductBarcodes(products: Product[]) {
+function printProductEan13Labels(products: Product[]) {
   const printWindow = window.open("", "_blank", "width=960,height=720");
 
   if (!printWindow) {
-    window.alert("Trinh duyet dang chan cua so in barcode.");
+    window.alert("Trinh duyet dang chan cua so in EAN-13.");
     return;
   }
 
@@ -152,7 +152,7 @@ function printProductBarcodes(products: Product[]) {
   printWindow.setTimeout(() => printWindow.print(), 250);
 }
 
-export function BarcodeLabelsModal({ onClose, open, products }: BarcodeLabelsModalProps) {
+export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalProps) {
   return (
     <Modal
       footer={
@@ -160,26 +160,26 @@ export function BarcodeLabelsModal({ onClose, open, products }: BarcodeLabelsMod
           <Button onClick={onClose} variant="secondary">
             Dong
           </Button>
-          <Button disabled={products.length === 0} onClick={() => printProductBarcodes(products)}>
+          <Button disabled={products.length === 0} onClick={() => printProductEan13Labels(products)}>
             <Printer className="h-4 w-4" />
-            In barcode
+            In EAN-13
           </Button>
         </div>
       }
       onClose={onClose}
       open={open}
       size="wide"
-      title="Barcode san pham"
+      title="EAN-13 san pham"
     >
       <div className="space-y-5">
         <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
-          Tao ma Code 128 cho tat ca san pham. May quet ma vach va ung dung camera co ho tro
-          barcode co the doc ma nay; POS cung tim duoc theo SKU hoac ma in tren tem.
+          In tem EAN-13 cho tat ca san pham. San pham co EAN-13 da luu se dung ma do;
+          san pham chua co ma hop le se duoc tao ma EAN-13 Viet Nam prefix 893 de dan va quet lai.
         </div>
 
         <div className="grid max-h-[58vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((product) => {
-            const barcodeValue = getProductBarcodeValue(product);
+            const ean13Value = getProductEan13Value(product);
 
             return (
               <article
@@ -196,10 +196,10 @@ export function BarcodeLabelsModal({ onClose, open, products }: BarcodeLabelsMod
                 </div>
                 <div
                   className="mt-3 h-16 w-full [&_svg]:h-full [&_svg]:w-full"
-                  dangerouslySetInnerHTML={{ __html: createCode128SvgMarkup(barcodeValue) }}
+                  dangerouslySetInnerHTML={{ __html: createEan13SvgMarkup(ean13Value) }}
                 />
                 <p className="mt-1 truncate text-center font-mono text-xs font-bold tracking-wide text-slate-950">
-                  {barcodeValue}
+                  {ean13Value}
                 </p>
                 <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
                   <span>

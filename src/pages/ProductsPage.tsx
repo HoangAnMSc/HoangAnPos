@@ -1,4 +1,4 @@
-import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useState } from "react";
 import {
   Barcode,
   Boxes,
@@ -13,23 +13,29 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { BarcodeLabelsModal } from "../components/products/BarcodeLabelsModal";
+import { Ean13LabelsModal } from "../components/products/Ean13LabelsModal";
+import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { ProductCard } from "../components/products/ProductCard";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
+import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
 import { formatCurrency } from "../lib/format";
 import {
+  createVietnamEan13FromSeed,
+  findProductByEan13,
   formatProductDate,
   getExpiryLabel,
   getExpiryStatus,
   getExpiryTone,
-  getProductBarcodeValue,
+  getProductEan13Value,
+  isValidEan13,
+  normalizeEan13Input,
 } from "../lib/productDisplay";
 import { uploadProductImage } from "../lib/cloudinary";
 import {
@@ -45,7 +51,7 @@ import type { Product } from "../types";
 
 type ProductFormState = {
   name: string;
-  sku: string;
+  ean13: string;
   category: string;
   description: string;
   price: string;
@@ -61,13 +67,13 @@ const emptyForm: ProductFormState = {
   category: "",
   cost_price: "0",
   description: "",
+  ean13: "",
   expiry_date: "",
   image_url: "",
   import_date: "",
   is_active: true,
   name: "",
   price: "0",
-  sku: "",
   stock: "0",
 };
 
@@ -80,9 +86,9 @@ function normalizeText(value: string) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function productToForm(product?: Product | null): ProductFormState {
+function productToForm(product?: Product | null, initialEan13 = ""): ProductFormState {
   if (!product) {
-    return emptyForm;
+    return { ...emptyForm, ean13: initialEan13 };
   }
 
   return {
@@ -95,7 +101,7 @@ function productToForm(product?: Product | null): ProductFormState {
     is_active: product.is_active,
     name: product.name,
     price: String(product.price),
-    sku: product.sku ?? "",
+    ean13: normalizeEan13Input(product.sku),
     stock: String(product.stock),
   };
 }
@@ -121,6 +127,148 @@ function mergeCategoryNames(values: Array<string | null | undefined>) {
 
   return Array.from(categories.values()).sort((firstCategory, secondCategory) =>
     firstCategory.localeCompare(secondCategory)
+  );
+}
+
+function createUniqueVietnamEan13(products: Product[]) {
+  const usedCodes = new Set(products.map((product) => getProductEan13Value(product)));
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const code = createVietnamEan13FromSeed(
+      `new-product:${Date.now()}:${Math.random().toString(36).slice(2)}:${attempt}`
+    );
+
+    if (!usedCodes.has(code)) {
+      return code;
+    }
+  }
+
+  return createVietnamEan13FromSeed(`new-product:fallback:${Date.now()}`);
+}
+
+type ProductEan13GateModalProps = {
+  open: boolean;
+  products: Product[];
+  onClose: () => void;
+  onError: (notice: ErrorNotice) => void;
+  onSelect: (ean13: string) => void;
+};
+
+function ProductEan13GateModal({
+  onClose,
+  onError,
+  onSelect,
+  open,
+  products,
+}: ProductEan13GateModalProps) {
+  const [scannerOpen, setScannerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setScannerOpen(false);
+    }
+  }, [open]);
+
+  function acceptEan13(value: string) {
+    const ean13Code = normalizeEan13Input(value);
+    const existingProduct = findProductByEan13(products, ean13Code);
+
+    if (!isValidEan13(ean13Code)) {
+      onError({
+        message: "Ma EAN-13 phai co dung 13 chu so va dung so kiem tra.",
+        title: "EAN-13 khong hop le",
+      });
+      return;
+    }
+
+    if (existingProduct) {
+      onError({
+        detail: `Ma nay dang gan voi san pham "${existingProduct.name}".`,
+        message: `EAN-13 ${ean13Code} da ton tai trong database.`,
+        title: "EAN-13 da ton tai",
+      });
+      return;
+    }
+
+    onSelect(ean13Code);
+  }
+
+  function createAutoEan13() {
+    acceptEan13(createUniqueVietnamEan13(products));
+  }
+
+  return (
+    <>
+      <Modal
+        footer={
+          <Button onClick={onClose} variant="secondary">
+            Huy
+          </Button>
+        }
+        onClose={onClose}
+        open={open}
+        size="md"
+        title="Chon ma EAN-13"
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-slate-50 p-4">
+            <p className="text-sm font-extrabold text-slate-950">
+              Them san pham moi can co EAN-13 truoc.
+            </p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
+              Quet ma co san tren bao bi, hoac tao ma Viet Nam bat dau bang 893 de in tem va dan
+              len san pham.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              className="flex min-h-36 flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-blue-300 hover:bg-blue-50"
+              onClick={() => setScannerOpen(true)}
+              type="button"
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                <Barcode className="h-5 w-5" />
+              </span>
+              <span>
+                <span className="block text-base font-extrabold text-slate-950">
+                  Quet EAN-13
+                </span>
+                <span className="mt-1 block text-sm font-semibold leading-5 text-slate-500">
+                  Dung khi san pham da co ma vach tren bao bi.
+                </span>
+              </span>
+            </button>
+
+            <button
+              className="flex min-h-36 flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-green-300 hover:bg-green-50"
+              onClick={createAutoEan13}
+              type="button"
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 text-green-700">
+                <PackagePlus className="h-5 w-5" />
+              </span>
+              <span>
+                <span className="block text-base font-extrabold text-slate-950">
+                  Tao ma Viet Nam
+                </span>
+                <span className="mt-1 block text-sm font-semibold leading-5 text-slate-500">
+                  Tao EAN-13 prefix 893 cho san pham chua co ma.
+                </span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Ean13ScannerModal
+        description="Quet EAN-13 co san tren bao bi. Neu ma chua co trong database, he thong se dung ma nay cho san pham moi."
+        onClose={() => setScannerOpen(false)}
+        onDetected={acceptEan13}
+        open={open && scannerOpen}
+        title="Quet EAN-13 san pham moi"
+      />
+    </>
   );
 }
 
@@ -315,7 +463,10 @@ function MediaPickerModal({
 
 type ProductFormProps = {
   categories: string[];
+  ean13Locked?: boolean;
+  ean13Required?: boolean;
   formId: string;
+  initialEan13?: string;
   libraryImages: string[];
   product?: Product | null;
   submitting: boolean;
@@ -325,14 +476,17 @@ type ProductFormProps = {
 
 function ProductForm({
   categories,
+  ean13Locked = false,
+  ean13Required = false,
   formId,
+  initialEan13 = "",
   libraryImages,
   onAddCategory,
   onSubmit,
   product,
   submitting,
 }: ProductFormProps) {
-  const [form, setForm] = useState<ProductFormState>(() => productToForm(product));
+  const [form, setForm] = useState<ProductFormState>(() => productToForm(product, initialEan13));
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
   const [mediaOpen, setMediaOpen] = useState(false);
@@ -340,17 +494,19 @@ function ProductForm({
   const [categoryDraft, setCategoryDraft] = useState("");
   const [categoryError, setCategoryError] = useState("");
   const [categorySubmitting, setCategorySubmitting] = useState(false);
+  const [ean13ScannerOpen, setEan13ScannerOpen] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setForm(productToForm(product));
+    setForm(productToForm(product, initialEan13));
     setImageFile(null);
     setImagePreviewUrl("");
     setCategoryDraft("");
     setCategoryError("");
     setCategorySubmitting(false);
+    setEan13ScannerOpen(false);
     setError("");
-  }, [product]);
+  }, [initialEan13, product]);
 
   useEffect(() => {
     return () => {
@@ -428,6 +584,7 @@ function ProductForm({
     const price = Number(form.price);
     const costPrice = Number(form.cost_price);
     const stock = Number(form.stock);
+    const ean13Code = normalizeEan13Input(form.ean13);
     const importDate = normalizeText(form.import_date);
     const expiryDate = normalizeText(form.expiry_date);
 
@@ -446,6 +603,11 @@ function ProductForm({
       return;
     }
 
+    if ((ean13Required || form.ean13.trim()) && !isValidEan13(ean13Code)) {
+      setError("Ma EAN-13 phai co dung 13 chu so va dung so kiem tra.");
+      return;
+    }
+
     try {
       await onSubmit(
         {
@@ -458,7 +620,7 @@ function ProductForm({
           is_active: form.is_active,
           name,
           price,
-          sku: normalizeText(form.sku),
+          sku: ean13Code || null,
           stock: Math.floor(stock),
         },
         imageFile
@@ -639,13 +801,39 @@ function ProductForm({
             />
           </label>
           <label className="block">
-            <span className={labelClassName}>SKU</span>
-            <input
-              className={fieldClassName}
-              onChange={(event) => updateField("sku", event.target.value)}
-              placeholder="SKU"
-              value={form.sku}
-            />
+            <span className={labelClassName}>EAN-13</span>
+            <div className="flex gap-2">
+              <input
+                className={`${fieldClassName} min-w-0 flex-1 ${
+                  ean13Locked ? "bg-slate-50 font-extrabold" : ""
+                }`}
+                inputMode="numeric"
+                maxLength={13}
+                onChange={(event) => {
+                  if (!ean13Locked) {
+                    updateField("ean13", normalizeEan13Input(event.target.value));
+                  }
+                }}
+                placeholder="Quet hoac nhap 13 chu so"
+                readOnly={ean13Locked}
+                value={form.ean13}
+              />
+              {ean13Locked ? (
+                <span className="inline-flex h-[46px] shrink-0 items-center justify-center rounded-2xl bg-green-50 px-4 text-sm font-extrabold text-green-700 sm:h-[58px]">
+                  Da chon
+                </span>
+              ) : (
+                <Button
+                  aria-label="Quet EAN-13"
+                  className="h-[46px] shrink-0 px-4 sm:h-[58px]"
+                  onClick={() => setEan13ScannerOpen(true)}
+                  variant="secondary"
+                >
+                  <Barcode className="h-4 w-4" />
+                  Quet
+                </Button>
+              )}
+            </div>
           </label>
         </div>
 
@@ -721,12 +909,23 @@ function ProductForm({
           ) : null}
         </form>
       </Modal>
+      <Ean13ScannerModal
+        description="Quet EAN-13 co san tren bao bi san pham. Ma quet duoc se luu vao truong EAN-13 cua san pham."
+        onClose={() => setEan13ScannerOpen(false)}
+        onDetected={(value) => {
+          updateField("ean13", value);
+          setError("");
+        }}
+        open={ean13ScannerOpen}
+        title="Quet EAN-13 san pham"
+      />
     </>
   );
 }
 
 type ProductEditorModalProps = {
   categories: string[];
+  initialEan13?: string;
   libraryImages: string[];
   open: boolean;
   product?: Product | null;
@@ -738,6 +937,7 @@ type ProductEditorModalProps = {
 
 function ProductEditorModal({
   categories,
+  initialEan13 = "",
   libraryImages,
   onAddCategory,
   onCancel,
@@ -773,11 +973,14 @@ function ProductEditorModal({
       onClose={onCancel}
       open={open}
       size="wide"
-      title={product ? "Edit Product" : "Create Product"}
+      title={product ? "Edit Product" : "Nhap thong tin san pham"}
     >
       <ProductForm
         categories={categories}
+        ean13Locked={!product}
+        ean13Required={!product}
         formId={formId}
+        initialEan13={initialEan13}
         libraryImages={libraryImages}
         onAddCategory={onAddCategory}
         onSubmit={onSubmit}
@@ -802,8 +1005,7 @@ function ProductDetailModal({ onClose, onEdit, open, product }: ProductDetailMod
 
   const expiryStatus = getExpiryStatus(product.expiry_date);
   const detailItems = [
-    { label: "Barcode", value: getProductBarcodeValue(product) },
-    { label: "SKU", value: product.sku || "Chua co SKU" },
+    { label: "EAN-13", value: getProductEan13Value(product) },
     { label: "Nhom hang", value: product.category || "Chua phan nhom" },
     { label: "Ngay nhap", value: formatProductDate(product.import_date) },
     { label: "Ngay het han", value: formatProductDate(product.expiry_date) },
@@ -879,9 +1081,12 @@ function ProductDetailModal({ onClose, onEdit, open, product }: ProductDetailMod
 }
 
 export function ProductsPage() {
-  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
+  const [createEan13Open, setCreateEan13Open] = useState(false);
+  const [ean13LabelsOpen, setEan13LabelsOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [error, setError] = useState("");
+  const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
+  const [initialCreateEan13, setInitialCreateEan13] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
@@ -890,7 +1095,12 @@ export function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
 
-  async function loadProducts() {
+  const showErrorNotice = useCallback((message: string, title = "Thong bao loi", detail?: string) => {
+    setError(message);
+    setErrorNotice({ detail, message, title });
+  }, []);
+
+  const loadProducts = useCallback(async () => {
     setLoading(true);
     setError("");
 
@@ -903,28 +1113,47 @@ export function ProductsPage() {
       setProducts(nextProducts);
       setSavedCategories(nextCategories);
     } catch (requestError) {
-      setError(
+      const message =
         requestError instanceof Error
           ? requestError.message
-          : "Khong tai duoc danh sach san pham."
-      );
+          : "Khong tai duoc danh sach san pham.";
+      showErrorNotice(message, "Khong tai duoc du lieu");
     } finally {
       setLoading(false);
     }
-  }
+  }, [showErrorNotice]);
 
   useEffect(() => {
-    loadProducts();
-  }, []);
+    void loadProducts();
+  }, [loadProducts]);
 
   function openCreateModal() {
     setEditingProduct(null);
-    setModalOpen(true);
+    setInitialCreateEan13("");
+    setCreateEan13Open(true);
+    setModalOpen(false);
   }
 
   function openEditModal(product: Product) {
     setEditingProduct(product);
+    setInitialCreateEan13("");
+    setCreateEan13Open(false);
     setModalOpen(true);
+  }
+
+  function openCreateForm(ean13: string) {
+    setEditingProduct(null);
+    setInitialCreateEan13(ean13);
+    setCreateEan13Open(false);
+    setModalOpen(true);
+  }
+
+  function closeProductEditor() {
+    setModalOpen(false);
+
+    if (!editingProduct) {
+      setInitialCreateEan13("");
+    }
   }
 
   function openViewModal(product: Product) {
@@ -958,11 +1187,13 @@ export function ProductsPage() {
 
       setModalOpen(false);
       setEditingProduct(null);
+      setInitialCreateEan13("");
       await loadProducts();
     } catch (requestError) {
       const message =
         requestError instanceof Error ? requestError.message : "Luu san pham that bai.";
       setError(message);
+      setErrorNotice({ message, title: "Luu san pham that bai" });
       throw new Error(message);
     } finally {
       setSubmitting(false);
@@ -982,13 +1213,16 @@ export function ProductsPage() {
       setProducts((current) => current.filter((item) => item.id !== product.id));
       setViewingProduct((current) => (current?.id === product.id ? null : current));
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Xoa san pham that bai.");
+      showErrorNotice(
+        requestError instanceof Error ? requestError.message : "Xoa san pham that bai.",
+        "Xoa san pham that bai"
+      );
     }
   }
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredProducts = products.filter((product) =>
-    [product.name, product.sku, product.category, getProductBarcodeValue(product)]
+    [product.name, product.sku, product.category, getProductEan13Value(product)]
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedQuery))
   );
@@ -1028,11 +1262,11 @@ export function ProductsPage() {
               <Button
                 className="w-full sm:w-auto"
                 disabled={products.length === 0}
-                onClick={() => setBarcodeModalOpen(true)}
+                onClick={() => setEan13LabelsOpen(true)}
                 variant="secondary"
               >
                 <Barcode className="h-4 w-4" />
-                Tao barcode
+                Tao EAN-13
               </Button>
               <Button className="w-full sm:w-auto" onClick={openCreateModal}>
                 <PackagePlus className="h-4 w-4" />
@@ -1046,7 +1280,7 @@ export function ProductsPage() {
             <Input
               className="pl-11"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tim theo ten, SKU, barcode, nhom hang..."
+              placeholder="Tim theo ten, EAN-13, nhom hang..."
               value={query}
             />
           </div>
@@ -1107,13 +1341,21 @@ export function ProductsPage() {
 
       <ProductEditorModal
         categories={categories}
+        initialEan13={initialCreateEan13}
         libraryImages={libraryImages}
         onAddCategory={handleAddCategory}
-        onCancel={() => setModalOpen(false)}
+        onCancel={closeProductEditor}
         onSubmit={handleSave}
         open={modalOpen}
         product={editingProduct}
         submitting={submitting}
+      />
+      <ProductEan13GateModal
+        onClose={() => setCreateEan13Open(false)}
+        onError={(notice) => setErrorNotice(notice)}
+        onSelect={openCreateForm}
+        open={createEan13Open}
+        products={products}
       />
       <ProductDetailModal
         onClose={() => setViewingProduct(null)}
@@ -1121,11 +1363,12 @@ export function ProductsPage() {
         open={Boolean(viewingProduct)}
         product={viewingProduct}
       />
-      <BarcodeLabelsModal
-        onClose={() => setBarcodeModalOpen(false)}
-        open={barcodeModalOpen}
+      <Ean13LabelsModal
+        onClose={() => setEan13LabelsOpen(false)}
+        open={ean13LabelsOpen}
         products={products}
       />
+      <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
     </div>
   );
 }
