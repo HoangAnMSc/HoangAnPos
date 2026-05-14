@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import type { IScannerControls } from "@zxing/browser";
 import { Barcode, Camera, Keyboard } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Modal } from "../ui/Modal";
@@ -10,29 +11,6 @@ type BarcodeScannerModalProps = {
   onClose: () => void;
   onDetected: (value: string) => void;
 };
-
-type BarcodeDetectorInstance = {
-  detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue?: string }>>;
-};
-
-type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => BarcodeDetectorInstance;
-
-const barcodeFormats = [
-  "code_128",
-  "code_39",
-  "code_93",
-  "ean_13",
-  "ean_8",
-  "itf",
-  "qr_code",
-  "upc_a",
-  "upc_e",
-];
-
-function getBarcodeDetector() {
-  return (window as typeof window & { BarcodeDetector?: BarcodeDetectorConstructor })
-    .BarcodeDetector;
-}
 
 export function BarcodeScannerModal({
   description = "Dua ma vach vao khung camera hoac nhap ma thu cong.",
@@ -46,17 +24,20 @@ export function BarcodeScannerModal({
   const [status, setStatus] = useState("Dang khoi dong camera...");
   const [error, setError] = useState("");
 
-  const submitCode = useCallback((value: string) => {
-    const code = value.trim();
+  const submitCode = useCallback(
+    (value: string) => {
+      const code = value.trim();
 
-    if (!code) {
-      return;
-    }
+      if (!code) {
+        return;
+      }
 
-    onDetected(code);
-    setManualCode("");
-    onClose();
-  }, [onClose, onDetected]);
+      onDetected(code);
+      setManualCode("");
+      onClose();
+    },
+    [onClose, onDetected]
+  );
 
   function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,10 +49,9 @@ export function BarcodeScannerModal({
       return;
     }
 
-    let animationId = 0;
     let stopped = false;
-    let stream: MediaStream | null = null;
-    let videoElement: HTMLVideoElement | null = null;
+    let controls: IScannerControls | null = null;
+    const videoElement = videoRef.current;
 
     async function startScanner() {
       setError("");
@@ -83,58 +63,59 @@ export function BarcodeScannerModal({
         return;
       }
 
-      const Detector = getBarcodeDetector();
-      if (!Detector) {
-        setStatus("Trinh duyet chua ho tro BarcodeDetector.");
-        setError("Hay dung Chrome/Edge moi hoac nhap barcode thu cong.");
+      if (!videoElement) {
+        setStatus("Khong tim thay khung camera.");
+        setError("Hay dong popup va mo lai.");
         return;
       }
 
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
+        const { BrowserMultiFormatReader } = await import("@zxing/browser");
+        const reader = new BrowserMultiFormatReader(undefined, {
+          delayBetweenScanAttempts: 130,
+          delayBetweenScanSuccess: 700,
+          tryPlayVideoTimeout: 7000,
         });
 
-        const video = videoRef.current;
-        videoElement = video;
-        if (!video || stopped) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
+        controls = await reader.decodeFromConstraints(
+          {
+            audio: false,
+            video: {
+              facingMode: { ideal: "environment" },
+              height: { ideal: 720 },
+              width: { ideal: 1280 },
+            },
+          },
+          videoElement,
+          (result, scanError, scannerControls) => {
+            if (stopped) {
+              return;
+            }
 
-        video.srcObject = stream;
-        await video.play();
-
-        const detector = new Detector({ formats: barcodeFormats });
-        setStatus("Dang quet barcode...");
-
-        async function scanFrame() {
-          if (stopped || !videoElement) {
-            return;
-          }
-
-          try {
-            if (videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-              const barcodes = await detector.detect(videoElement);
-              const value = barcodes[0]?.rawValue?.trim();
+            if (result) {
+              const value = result.getText().trim();
 
               if (value) {
                 stopped = true;
+                scannerControls.stop();
                 submitCode(value);
-                return;
               }
+
+              return;
             }
-          } catch {
-            setStatus("Khong doc duoc ma. Thu can lai barcode hoac nhap tay.");
+
+            if (scanError) {
+              setStatus("Dang quet barcode...");
+            }
           }
+        );
 
-          animationId = window.requestAnimationFrame(scanFrame);
-        }
-
-        animationId = window.requestAnimationFrame(scanFrame);
+        setStatus("Dang quet barcode...");
       } catch {
         setStatus("Khong mo duoc camera.");
-        setError("Kiem tra quyen camera hoac nhap barcode thu cong.");
+        setError(
+          "Kiem tra quyen camera, dung http://localhost/127.0.0.1 hoac nhap barcode thu cong."
+        );
       }
     }
 
@@ -142,8 +123,7 @@ export function BarcodeScannerModal({
 
     return () => {
       stopped = true;
-      window.cancelAnimationFrame(animationId);
-      stream?.getTracks().forEach((track) => track.stop());
+      controls?.stop();
 
       if (videoElement) {
         videoElement.srcObject = null;
@@ -175,12 +155,7 @@ export function BarcodeScannerModal({
         </div>
 
         <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-slate-950">
-          <video
-            className="h-full w-full object-cover"
-            muted
-            playsInline
-            ref={videoRef}
-          />
+          <video className="h-full w-full object-cover" muted playsInline ref={videoRef} />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="h-28 w-64 max-w-[78%] rounded-2xl border-2 border-white/80 shadow-[0_0_0_999px_rgba(15,23,42,0.35)]" />
           </div>

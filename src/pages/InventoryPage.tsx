@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle,
   Barcode,
-  BarChart3,
   Boxes,
   Download,
+  Edit3,
   FileImage,
-  PackageCheck,
+  History,
   Search,
+  Trash2,
 } from "lucide-react";
 import { BarcodeScannerModal } from "../components/products/BarcodeScannerModal";
 import { Badge } from "../components/ui/Badge";
@@ -16,7 +16,9 @@ import { Card } from "../components/ui/Card";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Input } from "../components/ui/Input";
+import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
+import { useAuth } from "../contexts/AuthContext";
 import {
   findProductByBarcode,
   formatProductDate,
@@ -43,6 +45,25 @@ type InventoryStats = {
   shortCount: number;
   systemTotal: number;
 };
+
+type ReportHistoryItem = {
+  createdAt: string;
+  id: string;
+  image: string;
+  rows: Array<{
+    barcode: string;
+    counted: number;
+    diff: number;
+    name: string;
+    status: InventoryRow["status"];
+    stock: number;
+  }>;
+  staffName?: string;
+  stats: InventoryStats;
+};
+
+const reportHistoryStorageKey = "hoang-an-pos:inventory-report-history:v1";
+const maxReportHistoryItems = 12;
 
 function hasInventoryCount(value?: string) {
   return value !== undefined && value.trim() !== "";
@@ -158,8 +179,6 @@ function drawWrappedText(
   if (line && lineCount < maxLines) {
     context.fillText(line, x, currentY);
   }
-
-  return currentY + lineHeight;
 }
 
 function drawSummaryBox(
@@ -207,13 +226,27 @@ function createInventoryReportImage(rows: InventoryRow[], stats: InventoryStats)
   context.font = "800 44px Arial";
   context.fillText("Bao cao ton kho", 44, 58);
   context.font = "600 20px Arial";
-  context.fillText(new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(new Date()), 44, 94);
+  context.fillText(
+    new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(
+      new Date()
+    ),
+    44,
+    94
+  );
 
   const totalDiff = stats.countedTotal - stats.systemTotal;
   drawSummaryBox(context, "Da kiem", String(stats.auditedCount), 44, 154, 206, "#e0f2fe");
   drawSummaryBox(context, "He thong", String(stats.systemTotal), 272, 154, 206, "#f1f5f9");
   drawSummaryBox(context, "Thuc te", String(stats.countedTotal), 500, 154, 206, "#dcfce7");
-  drawSummaryBox(context, "Chenh lech", String(totalDiff), 728, 154, 206, totalDiff < 0 ? "#fee2e2" : "#fef3c7");
+  drawSummaryBox(
+    context,
+    "Chenh lech",
+    String(totalDiff),
+    728,
+    154,
+    206,
+    totalDiff < 0 ? "#fee2e2" : "#fef3c7"
+  );
   drawSummaryBox(context, "Thieu", String(stats.shortCount), 956, 154, 200, "#fee2e2");
 
   let y = 286;
@@ -252,15 +285,186 @@ function createInventoryReportImage(rows: InventoryRow[], stats: InventoryStats)
   return canvas.toDataURL("image/png");
 }
 
+function loadReportHistory() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(reportHistoryStorageKey);
+    if (!rawValue) {
+      return [];
+    }
+
+    const parsed = JSON.parse(rawValue);
+    return Array.isArray(parsed) ? (parsed as ReportHistoryItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveReportHistory(history: ReportHistoryItem[]) {
+  window.localStorage.setItem(reportHistoryStorageKey, JSON.stringify(history));
+}
+
+function createReportHistoryItem(
+  image: string,
+  rows: InventoryRow[],
+  staffName: string,
+  stats: InventoryStats
+) {
+  const createdAt = new Date().toISOString();
+
+  return {
+    createdAt,
+    id: `${createdAt}-${Math.random().toString(36).slice(2)}`,
+    image,
+    rows: rows.map((row) => ({
+      barcode: row.barcode,
+      counted: row.counted,
+      diff: row.diff,
+      name: row.product.name,
+      status: row.status,
+      stock: row.product.stock,
+    })),
+    staffName,
+    stats,
+  };
+}
+
+function getReportStatusLabel(stats: InventoryStats) {
+  const parts = [];
+
+  if (stats.shortCount > 0) {
+    parts.push(`Thieu ${stats.shortCount}`);
+  }
+
+  if (stats.overCount > 0) {
+    parts.push(`Thua ${stats.overCount}`);
+  }
+
+  return parts.length > 0 ? parts.join(" / ") : "Du";
+}
+
+function getReportStatusTone(stats: InventoryStats): "green" | "amber" | "red" {
+  if (stats.shortCount > 0) {
+    return "red";
+  }
+
+  if (stats.overCount > 0) {
+    return "amber";
+  }
+
+  return "green";
+}
+
+type QuantityModalProps = {
+  countValue: string;
+  error: string;
+  product: Product | null;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+};
+
+function QuantityModal({
+  countValue,
+  error,
+  onChange,
+  onClose,
+  onSubmit,
+  product,
+}: QuantityModalProps) {
+  if (!product) {
+    return null;
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onSubmit();
+  }
+
+  return (
+    <Modal
+      footer={
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+          <Button onClick={onClose} variant="secondary">
+            Huy
+          </Button>
+          <Button form="inventory-quantity-form" type="submit">
+            Luu san pham
+          </Button>
+        </div>
+      }
+      onClose={onClose}
+      open={Boolean(product)}
+      size="md"
+      title="Nhap so luong thuc te"
+    >
+      <form className="space-y-4" id="inventory-quantity-form" onSubmit={handleSubmit}>
+        <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
+          <div className="h-16 w-16 flex-none overflow-hidden rounded-xl bg-white">
+            {product.image_url ? (
+              <img
+                alt={product.name}
+                className="h-full w-full object-contain p-1"
+                src={product.image_url}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-slate-400">
+                <Boxes className="h-6 w-6" />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h3 className="truncate font-extrabold text-slate-950">{product.name}</h3>
+            <p className="mt-1 text-xs font-bold text-slate-500">
+              {getProductBarcodeValue(product)} / Ton he thong {product.stock}
+            </p>
+          </div>
+        </div>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-extrabold text-slate-950">
+            So luong thuc te
+          </span>
+          <input
+            autoFocus
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-lg font-extrabold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+            min="0"
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="Nhap so luong dem duoc"
+            type="number"
+            value={countValue}
+          />
+        </label>
+
+        {error ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        ) : null}
+      </form>
+    </Modal>
+  );
+}
+
 export function InventoryPage() {
+  const { profile, user } = useAuth();
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [counts, setCounts] = useState<CountMap>({});
+  const [countingProduct, setCountingProduct] = useState<Product | null>(null);
   const [error, setError] = useState("");
+  const [history, setHistory] = useState<ReportHistoryItem[]>(() => loadReportHistory());
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
-  const [reportImage, setReportImage] = useState("");
+  const [quantityDraft, setQuantityDraft] = useState("");
+  const [quantityError, setQuantityError] = useState("");
+  const [viewingReport, setViewingReport] = useState<ReportHistoryItem | null>(null);
   const [success, setSuccess] = useState("");
+  const staffName = profile?.full_name || user?.email || "Nhan vien";
 
   async function loadProducts() {
     setLoading(true);
@@ -284,26 +488,62 @@ export function InventoryPage() {
   const rows = useMemo(() => createInventoryRows(products, counts), [counts, products]);
   const stats = useMemo(() => getInventoryStats(rows), [rows]);
   const normalizedQuery = query.trim().toLowerCase();
-  const filteredProducts = useMemo(() => {
+  const searchResults = useMemo(() => {
     if (!normalizedQuery) {
-      return products;
+      return [];
     }
 
-    return products.filter((product) =>
-      [product.name, product.sku, product.category, getProductBarcodeValue(product)]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(normalizedQuery))
-    );
+    return products
+      .filter((product) =>
+        [product.name, product.sku, product.category, getProductBarcodeValue(product)]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(normalizedQuery))
+      )
+      .slice(0, 6);
   }, [normalizedQuery, products]);
 
-  function updateCount(productId: string, value: string) {
-    setCounts((current) => ({ ...current, [productId]: value }));
-    setReportImage("");
+  function openQuantityModal(product: Product) {
+    setCountingProduct(product);
+    setQuantityDraft(counts[product.id] ?? "");
+    setQuantityError("");
+    setError("");
+    setSuccess("");
+  }
+
+  function closeQuantityModal() {
+    setCountingProduct(null);
+    setQuantityDraft("");
+    setQuantityError("");
+  }
+
+  function saveQuantityDraft() {
+    if (!countingProduct) {
+      return;
+    }
+
+    const parsed = Number(quantityDraft);
+    if (!quantityDraft.trim() || Number.isNaN(parsed) || parsed < 0) {
+      setQuantityError("Nhap so luong khong am.");
+      return;
+    }
+
+    const nextQuantity = String(Math.floor(parsed));
+    setCounts((current) => ({ ...current, [countingProduct.id]: nextQuantity }));
+    setSuccess(`Da nhap ${countingProduct.name}. Hay quet san pham tiep theo.`);
+    setQuery("");
+    closeQuantityModal();
+  }
+
+  function removeCount(productId: string) {
+    setCounts((current) => {
+      const nextCounts = { ...current };
+      delete nextCounts[productId];
+      return nextCounts;
+    });
   }
 
   function clearCounts() {
     setCounts({});
-    setReportImage("");
     setSuccess("");
     setError("");
   }
@@ -317,26 +557,39 @@ export function InventoryPage() {
       return;
     }
 
-    setCounts((current) => {
-      const nextValue = parseInventoryCount(current[product.id]) + 1;
-      return { ...current, [product.id]: String(nextValue) };
-    });
-    setQuery(product.name);
-    setReportImage("");
-    setError("");
-    setSuccess(`Da quet ${product.name}. Co the sua lai so luong neu can.`);
+    openQuantityModal(product);
   }
 
   function handleCreateReportImage() {
     if (rows.length === 0) {
-      setError("Nhap so luong thuc te cho it nhat mot san pham truoc khi tao anh.");
-      setReportImage("");
+      setError("Nhap so luong thuc te cho it nhat mot san pham truoc khi tao bao cao.");
       return;
     }
 
-    setReportImage(createInventoryReportImage(rows, stats));
-    setError("");
-    setSuccess("Da tao anh thong ke ton kho.");
+    const nextReportImage = createInventoryReportImage(rows, stats);
+    if (!nextReportImage) {
+      setError("Khong tao duoc anh bao cao.");
+      return;
+    }
+
+    const nextHistoryItem = createReportHistoryItem(nextReportImage, rows, staffName, stats);
+    const nextHistory = [nextHistoryItem, ...history].slice(0, maxReportHistoryItems);
+
+    try {
+      saveReportHistory(nextHistory);
+      setHistory(nextHistory);
+      setHistoryOpen(true);
+      setError("");
+      setSuccess("Da tao va luu bao cao ton kho.");
+    } catch {
+      setError("Da tao anh bao cao, nhung khong luu duoc lich su tren trinh duyet nay.");
+    }
+  }
+
+  function clearHistory() {
+    window.localStorage.removeItem(reportHistoryStorageKey);
+    setHistory([]);
+    setViewingReport(null);
   }
 
   return (
@@ -353,7 +606,7 @@ export function InventoryPage() {
               <h2 className="mt-1 font-display text-2xl font-bold text-coal">Ton kho</h2>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Badge tone="neutral">{products.length} mat hang</Badge>
-                <Badge tone="green">{stats.auditedCount} da kiem</Badge>
+                <Badge tone="green">{rows.length} da nhap</Badge>
                 {stats.shortCount > 0 ? <Badge tone="red">{stats.shortCount} thieu</Badge> : null}
                 {stats.overCount > 0 ? <Badge tone="amber">{stats.overCount} thua</Badge> : null}
               </div>
@@ -363,9 +616,13 @@ export function InventoryPage() {
                 <Barcode className="h-4 w-4" />
                 Quet barcode
               </Button>
-              <Button onClick={handleCreateReportImage}>
+              <Button onClick={() => setHistoryOpen(true)} variant="secondary">
+                <History className="h-4 w-4" />
+                Lich su
+              </Button>
+              <Button disabled={rows.length === 0} onClick={handleCreateReportImage}>
                 <FileImage className="h-4 w-4" />
-                Tao anh thong ke
+                Tao bao cao
               </Button>
             </div>
           </div>
@@ -375,9 +632,46 @@ export function InventoryPage() {
             <Input
               className="pl-11"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tim theo ten, SKU, barcode, nhom hang..."
+              placeholder="Tim san pham de nhap tay neu khong quet duoc..."
               value={query}
             />
+
+            {searchResults.length > 0 ? (
+              <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.16)]">
+                <div className="max-h-80 overflow-y-auto p-2">
+                  {searchResults.map((product) => (
+                    <button
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-slate-50"
+                      key={product.id}
+                      onClick={() => openQuantityModal(product)}
+                      type="button"
+                    >
+                      <div className="h-11 w-11 flex-none overflow-hidden rounded-xl bg-slate-100">
+                        {product.image_url ? (
+                          <img
+                            alt={product.name}
+                            className="h-full w-full object-contain p-1"
+                            src={product.image_url}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-slate-400">
+                            <Boxes className="h-5 w-5" />
+                          </div>
+                        )}
+                      </div>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-extrabold text-slate-950">
+                          {product.name}
+                        </span>
+                        <span className="block truncate text-xs font-semibold text-slate-500">
+                          {getProductBarcodeValue(product)}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -392,174 +686,219 @@ export function InventoryPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-5 p-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="p-4">
           <section>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-lg font-extrabold text-coal">San pham da nhap</h3>
+              <Button disabled={rows.length === 0} onClick={clearCounts} variant="secondary">
+                Xoa danh sach
+              </Button>
+            </div>
+
             {loading ? (
               <Spinner label="Dang tai ton kho..." />
-            ) : filteredProducts.length === 0 ? (
+            ) : rows.length === 0 ? (
               <EmptyState
-                description="Thu quet barcode hoac tim theo ten/SKU de bat dau kiem kho."
+                description="Bam Quet barcode, quet tem san pham, nhap so luong va luu tung san pham vao danh sach."
                 icon={Boxes}
-                title="Chua co san pham phu hop"
+                title="Chua nhap san pham nao"
               />
             ) : (
               <div className="space-y-3">
-                {filteredProducts.map((product) => {
-                  const value = counts[product.id] ?? "";
-                  const counted = hasInventoryCount(value);
-                  const countNumber = parseInventoryCount(value);
-                  const diff = counted ? countNumber - product.stock : 0;
-                  const status = counted ? getInventoryStatus(diff) : null;
-
-                  return (
-                    <article
-                      className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_130px_170px] sm:items-center"
-                      key={product.id}
-                    >
+                {rows.map((row) => (
+                  <article
+                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                    key={row.product.id}
+                  >
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className="h-14 w-14 flex-none overflow-hidden rounded-xl bg-slate-100">
-                          {product.image_url ? (
+                        <div className="h-16 w-16 flex-none overflow-hidden rounded-xl bg-slate-100">
+                          {row.product.image_url ? (
                             <img
-                              alt={product.name}
+                              alt={row.product.name}
                               className="h-full w-full object-contain p-1"
-                              src={product.image_url}
+                              src={row.product.image_url}
                             />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center text-slate-400">
-                              <Boxes className="h-5 w-5" />
+                              <Boxes className="h-6 w-6" />
                             </div>
                           )}
                         </div>
                         <div className="min-w-0">
-                          <h3 className="truncate text-sm font-extrabold text-slate-950">
-                            {product.name}
-                          </h3>
+                          <h4 className="truncate font-extrabold text-slate-950">
+                            {row.product.name}
+                          </h4>
                           <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                            {getProductBarcodeValue(product)} / HSD {formatProductDate(product.expiry_date)}
+                            {row.barcode} / HSD {formatProductDate(row.product.expiry_date)}
                           </p>
+                          <Badge className="mt-2 w-fit" tone={getStatusTone(row.status)}>
+                            {getStatusLabel(row)}
+                          </Badge>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 sm:block">
-                        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                          Ton he thong
-                        </p>
-                        <p className="mt-1 text-lg font-extrabold text-slate-950">{product.stock}</p>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-xl bg-slate-50 p-2">
+                          <p className="text-[11px] font-bold uppercase text-slate-400">Kho</p>
+                          <p className="mt-1 font-extrabold text-slate-950">{row.product.stock}</p>
+                        </div>
+                        <div className="rounded-xl bg-green-50 p-2">
+                          <p className="text-[11px] font-bold uppercase text-green-700">Dem</p>
+                          <p className="mt-1 font-extrabold text-green-800">{row.counted}</p>
+                        </div>
+                        <div className="rounded-xl bg-amber-50 p-2">
+                          <p className="text-[11px] font-bold uppercase text-amber-700">Lech</p>
+                          <p className="mt-1 font-extrabold text-amber-800">{row.diff}</p>
+                        </div>
                       </div>
+                    </div>
 
-                      <div className="grid gap-2">
-                        <input
-                          className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base font-extrabold text-slate-950 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                          min="0"
-                          onChange={(event) => updateCount(product.id, event.target.value)}
-                          placeholder="So thuc te"
-                          type="number"
-                          value={value}
-                        />
-                        {status ? (
-                          <Badge className="w-fit" tone={getStatusTone(status)}>
-                            {getStatusLabel({
-                              barcode: getProductBarcodeValue(product),
-                              counted: countNumber,
-                              diff,
-                              product,
-                              status,
-                            })}
-                          </Badge>
-                        ) : (
-                          <Badge className="w-fit" tone="neutral">
-                            Chua nhap
-                          </Badge>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
+                    <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                      <Button
+                        className="h-10 px-3"
+                        onClick={() => openQuantityModal(row.product)}
+                        variant="secondary"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                        Sua
+                      </Button>
+                      <Button
+                        className="h-10 px-3"
+                        onClick={() => removeCount(row.product.id)}
+                        variant="danger"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Xoa
+                      </Button>
+                    </div>
+                  </article>
+                ))}
               </div>
             )}
           </section>
 
-          <aside className="space-y-4 xl:sticky xl:top-28 xl:self-start">
-            <Card className="rounded-2xl p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="rounded-xl bg-blue-50 p-3 text-blue-700">
-                  <BarChart3 className="h-5 w-5" />
-                </span>
-                <div>
-                  <h3 className="font-extrabold text-coal">Thong ke nhanh</h3>
-                  <p className="text-xs font-semibold text-coal/55">
-                    So sanh so thuc te voi ton he thong.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-slate-50 p-3">
-                  <p className="text-xs font-bold text-slate-500">He thong</p>
-                  <p className="mt-1 text-xl font-extrabold text-slate-950">{stats.systemTotal}</p>
-                </div>
-                <div className="rounded-2xl bg-green-50 p-3">
-                  <p className="text-xs font-bold text-green-700">Thuc te</p>
-                  <p className="mt-1 text-xl font-extrabold text-green-800">{stats.countedTotal}</p>
-                </div>
-                <div className="rounded-2xl bg-red-50 p-3">
-                  <p className="text-xs font-bold text-red-700">Thieu</p>
-                  <p className="mt-1 text-xl font-extrabold text-red-800">{stats.shortCount}</p>
-                </div>
-                <div className="rounded-2xl bg-amber-50 p-3">
-                  <p className="text-xs font-bold text-amber-700">Thua</p>
-                  <p className="mt-1 text-xl font-extrabold text-amber-800">{stats.overCount}</p>
-                </div>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Button className="flex-1" onClick={clearCounts} variant="secondary">
-                  Xoa dem
-                </Button>
-                <Button className="flex-1" onClick={() => void loadProducts()} variant="secondary">
-                  Tai lai
-                </Button>
-              </div>
-            </Card>
-
-            {reportImage ? (
-              <Card className="rounded-2xl p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 font-extrabold text-coal">
-                    <PackageCheck className="h-5 w-5" />
-                    Anh thong ke
-                  </div>
-                  <a
-                    className="inline-flex items-center gap-1 rounded-xl bg-coal px-3 py-2 text-xs font-extrabold text-white"
-                    download={`ton-kho-${Date.now()}.png`}
-                    href={reportImage}
-                  >
-                    <Download className="h-4 w-4" />
-                    Tai anh
-                  </a>
-                </div>
-                <img
-                  alt="Bao cao ton kho"
-                  className="w-full rounded-xl border border-slate-200"
-                  src={reportImage}
-                />
-              </Card>
-            ) : (
-              <Card className="rounded-2xl p-4 text-sm font-semibold text-coal/60 shadow-sm">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 flex-none text-clay" />
-                  <p>Nhap so luong thuc te, roi bam Tao anh thong ke de xuat bao cao dang PNG.</p>
-                </div>
-              </Card>
-            )}
-          </aside>
         </div>
       </Card>
 
       <BarcodeScannerModal
-        description="Quet barcode tren tem san pham. Moi lan quet se cong 1 vao so luong thuc te cua san pham."
+        description="Quet barcode tren tem san pham. Sau khi quet, he thong se mo popup de nhap so luong thuc te."
         onClose={() => setBarcodeScannerOpen(false)}
         onDetected={handleBarcodeDetected}
         open={barcodeScannerOpen}
         title="Quet barcode ton kho"
+      />
+
+      <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button onClick={() => setHistoryOpen(false)} variant="secondary">
+              Dong
+            </Button>
+            <Button disabled={history.length === 0} onClick={clearHistory} variant="danger">
+              Xoa lich su
+            </Button>
+          </div>
+        }
+        onClose={() => setHistoryOpen(false)}
+        open={historyOpen}
+        size="lg"
+        title="Lich su bao cao"
+      >
+        {history.length === 0 ? (
+          <div className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
+            Chua co bao cao nao duoc tao tren may nay.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {history.map((item) => (
+              <button
+                className="grid w-full gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-blue-200 hover:bg-blue-50 sm:grid-cols-[minmax(0,1fr)_180px_130px] sm:items-center"
+                key={item.id}
+                onClick={() => {
+                  setHistoryOpen(false);
+                  setViewingReport(item);
+                }}
+                type="button"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    Nhan vien
+                  </p>
+                  <p className="mt-1 truncate font-extrabold text-slate-950">
+                    {item.staffName || "Chua co ten"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    Ngay gio
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-700">
+                    {new Intl.DateTimeFormat("vi-VN", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    }).format(new Date(item.createdAt))}
+                  </p>
+                </div>
+                <Badge className="w-fit" tone={getReportStatusTone(item.stats)}>
+                  {getReportStatusLabel(item.stats)}
+                </Badge>
+              </button>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button onClick={() => setViewingReport(null)} variant="secondary">
+              Dong
+            </Button>
+            {viewingReport ? (
+              <a
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-coal px-4 py-2.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:shadow-lift"
+                download={`ton-kho-${viewingReport.createdAt.slice(0, 10)}.png`}
+                href={viewingReport.image}
+              >
+                <Download className="h-4 w-4" />
+                Tai anh
+              </a>
+            ) : null}
+          </div>
+        }
+        onClose={() => setViewingReport(null)}
+        open={Boolean(viewingReport)}
+        size="xl"
+        title="Anh bao cao ton kho"
+      >
+        {viewingReport ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={getReportStatusTone(viewingReport.stats)}>
+                {getReportStatusLabel(viewingReport.stats)}
+              </Badge>
+              <Badge tone="neutral">{viewingReport.staffName || "Chua co ten"}</Badge>
+            </div>
+            <img
+              alt="Bao cao ton kho"
+              className="w-full rounded-2xl border border-slate-200"
+              src={viewingReport.image}
+            />
+          </div>
+        ) : null}
+      </Modal>
+
+      <QuantityModal
+        countValue={quantityDraft}
+        error={quantityError}
+        onChange={(value) => {
+          setQuantityDraft(value);
+          setQuantityError("");
+        }}
+        onClose={closeQuantityModal}
+        onSubmit={saveQuantityDraft}
+        product={countingProduct}
       />
     </div>
   );
