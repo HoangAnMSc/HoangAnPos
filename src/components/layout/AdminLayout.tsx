@@ -48,7 +48,7 @@ export function AdminLayout() {
   const isPosRoute = location.pathname === "/pos";
 
   return (
-    <div className="min-h-screen bg-cream text-coal">
+    <div className="min-h-screen bg-white text-coal">
       <div className="fixed inset-0 -z-10 bg-grain" />
 
       <aside
@@ -127,7 +127,7 @@ export function AdminLayout() {
           </>
         ) : (
           <>
-            <header className="sticky top-0 z-20 border-b border-white/70 bg-cream/82 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
+            <header className="sticky top-0 z-20 border-b border-white/70 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
               <div className="flex items-center gap-4">
                 <button
                   className="rounded-2xl bg-white p-3 text-coal shadow-soft lg:hidden"
@@ -147,7 +147,7 @@ export function AdminLayout() {
               </div>
             </header>
 
-            <main className="px-4 py-6 sm:px-6 lg:px-8">
+            <main className="pt-6 sm:pt-4">
               <Outlet />
             </main>
           </>
