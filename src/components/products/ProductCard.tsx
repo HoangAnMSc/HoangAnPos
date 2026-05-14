@@ -77,7 +77,7 @@ export function ProductCard({
             <img
               alt={product.name}
               className={clsx(
-                "h-full w-full object-contain transition duration-300 group-hover:scale-[1.03]",
+                "h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]",
                 compact ? "p-2" : "p-3"
               )}
               src={product.image_url}
