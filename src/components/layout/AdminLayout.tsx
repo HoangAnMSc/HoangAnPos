@@ -1,6 +1,7 @@
 import {
   BadgeDollarSign,
   Boxes,
+  ClipboardList,
   LogOut,
   Menu,
   PanelLeftClose,
@@ -16,6 +17,7 @@ const navigation = [
   { to: "/pos", label: "POS", icon: BadgeDollarSign },
   { to: "/customers", label: "Khách hàng", icon: UsersRound },
   { to: "/products", label: "Sản phẩm", icon: Boxes },
+  { to: "/inventory", label: "Ton kho", icon: ClipboardList },
 ];
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
@@ -30,6 +32,10 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/products": {
     title: "Sản phẩm",
     subtitle: "Quản lý giá, tồn kho và ảnh sản phẩm trên Cloudinary.",
+  },
+  "/inventory": {
+    title: "Ton kho",
+    subtitle: "Quet barcode, nhap so luong thuc te va tao anh bao cao chenh lech.",
   },
 };
 

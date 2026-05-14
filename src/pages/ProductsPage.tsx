@@ -1,8 +1,8 @@
-import { type ChangeEvent, type FormEvent, type KeyboardEvent, useEffect, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
 import {
+  Barcode,
   Boxes,
   Check,
-  CheckCircle2,
   ChevronRight,
   Edit3,
   Image as ImageIcon,
@@ -10,10 +10,11 @@ import {
   PackagePlus,
   Plus,
   Search,
-  Tag,
   Trash2,
   Upload,
 } from "lucide-react";
+import { BarcodeLabelsModal } from "../components/products/BarcodeLabelsModal";
+import { ProductCard } from "../components/products/ProductCard";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -23,6 +24,13 @@ import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
 import { formatCurrency } from "../lib/format";
+import {
+  formatProductDate,
+  getExpiryLabel,
+  getExpiryStatus,
+  getExpiryTone,
+  getProductBarcodeValue,
+} from "../lib/productDisplay";
 import { uploadProductImage } from "../lib/cloudinary";
 import {
   createProductCategory,
@@ -66,80 +74,10 @@ const emptyForm: ProductFormState = {
 const fieldClassName =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:px-5 sm:py-4 sm:text-base";
 const labelClassName = "mb-2 block text-sm font-extrabold text-slate-950";
-const dateFormatter = new Intl.DateTimeFormat("vi-VN", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
-const expiringSoonWindowMs = 1000 * 60 * 60 * 24 * 60;
-type ExpiryStatus = "expired" | "soon" | "valid";
 
 function normalizeText(value: string) {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function parseDateOnly(value?: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function formatProductDate(value?: string | null) {
-  const date = parseDateOnly(value);
-  return date ? dateFormatter.format(date) : "Chua co";
-}
-
-function getExpiryStatus(value?: string | null): ExpiryStatus | null {
-  const expiryDate = parseDateOnly(value);
-  if (!expiryDate) {
-    return null;
-  }
-
-  const today = new Date();
-  const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const expiryTime = expiryDate.getTime();
-
-  if (expiryTime < todayTime) {
-    return "expired";
-  }
-
-  if (expiryTime - todayTime <= expiringSoonWindowMs) {
-    return "soon";
-  }
-
-  return "valid";
-}
-
-function getExpiryTone(status: ExpiryStatus | null): "green" | "amber" | "red" | "neutral" {
-  if (status === "expired") {
-    return "red";
-  }
-
-  if (status === "soon") {
-    return "amber";
-  }
-
-  return status === "valid" ? "green" : "neutral";
-}
-
-function getExpiryLabel(status: ExpiryStatus | null) {
-  if (status === "expired") {
-    return "Het han";
-  }
-
-  if (status === "soon") {
-    return "Gan het han";
-  }
-
-  if (status === "valid") {
-    return "Con han";
-  }
-
-  return "Chua co HSD";
 }
 
 function productToForm(product?: Product | null): ProductFormState {
@@ -864,6 +802,7 @@ function ProductDetailModal({ onClose, onEdit, open, product }: ProductDetailMod
 
   const expiryStatus = getExpiryStatus(product.expiry_date);
   const detailItems = [
+    { label: "Barcode", value: getProductBarcodeValue(product) },
     { label: "SKU", value: product.sku || "Chua co SKU" },
     { label: "Nhom hang", value: product.category || "Chua phan nhom" },
     { label: "Ngay nhap", value: formatProductDate(product.import_date) },
@@ -940,6 +879,7 @@ function ProductDetailModal({ onClose, onEdit, open, product }: ProductDetailMod
 }
 
 export function ProductsPage() {
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -989,13 +929,6 @@ export function ProductsPage() {
 
   function openViewModal(product: Product) {
     setViewingProduct(product);
-  }
-
-  function handleProductRowKeyDown(event: KeyboardEvent<HTMLDivElement>, product: Product) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      openViewModal(product);
-    }
   }
 
   function openEditFromDetail(product: Product) {
@@ -1055,7 +988,7 @@ export function ProductsPage() {
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredProducts = products.filter((product) =>
-    [product.name, product.sku, product.category]
+    [product.name, product.sku, product.category, getProductBarcodeValue(product)]
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedQuery))
   );
@@ -1091,10 +1024,21 @@ export function ProductsPage() {
                 {expiredCount > 0 ? <Badge tone="red">{expiredCount} het han</Badge> : null}
               </div>
             </div>
-            <Button className="w-full sm:w-auto" onClick={openCreateModal}>
-              <PackagePlus className="h-4 w-4" />
-              Them san pham
-            </Button>
+            <div className="grid gap-2 sm:flex sm:w-auto">
+              <Button
+                className="w-full sm:w-auto"
+                disabled={products.length === 0}
+                onClick={() => setBarcodeModalOpen(true)}
+                variant="secondary"
+              >
+                <Barcode className="h-4 w-4" />
+                Tao barcode
+              </Button>
+              <Button className="w-full sm:w-auto" onClick={openCreateModal}>
+                <PackagePlus className="h-4 w-4" />
+                Them san pham
+              </Button>
+            </div>
           </div>
 
           <div className="relative mt-4 w-full xl:max-w-xl">
@@ -1102,7 +1046,7 @@ export function ProductsPage() {
             <Input
               className="pl-11"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tim theo ten, SKU, nhom hang..."
+              placeholder="Tim theo ten, SKU, barcode, nhom hang..."
               value={query}
             />
           </div>
@@ -1127,103 +1071,36 @@ export function ProductsPage() {
             />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <div className="min-w-[820px]">
-              <div className="grid grid-cols-[minmax(280px,1.7fr)_140px_88px_150px_112px] gap-4 border-b border-coal/10 bg-coal px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-white/70">
-                <span>San pham</span>
-                <span>Gia ban</span>
-                <span>Ton</span>
-                <span>HSD</span>
-                <span className="text-right">Thao tac</span>
-              </div>
-              <div className="divide-y divide-coal/10 bg-white/70">
-                {filteredProducts.map((product) => {
-                  const expiryStatus = getExpiryStatus(product.expiry_date);
-
-                  return (
-                    <div
-                      aria-label={`Xem chi tiet ${product.name}`}
-                      className="grid cursor-pointer grid-cols-[minmax(280px,1.7fr)_140px_88px_150px_112px] gap-4 px-5 py-3 transition hover:bg-cream/35 focus:outline-none focus:ring-4 focus:ring-clay/15"
-                      key={product.id}
-                      onClick={() => openViewModal(product)}
-                      onKeyDown={(event) => handleProductRowKeyDown(event, product)}
-                      role="button"
-                      tabIndex={0}
+          <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+            {filteredProducts.map((product) => (
+              <ProductCard
+                actions={
+                  <>
+                    <Button
+                      aria-label={`Sua ${product.name}`}
+                      className="h-9 w-9 rounded-xl bg-white/95 p-0 text-coal shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                      onClick={() => openEditModal(product)}
+                      variant="secondary"
                     >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-coal/5">
-                          {product.image_url ? (
-                            <img
-                              alt={product.name}
-                              className="h-full w-full object-cover"
-                              src={product.image_url}
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-coal/35">
-                              <Boxes className="h-5 w-5" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <p className="truncate font-bold">{product.name}</p>
-                            <Badge className="shrink-0" tone={product.is_active ? "green" : "neutral"}>
-                              {product.is_active ? "Dang ban" : "Tam an"}
-                            </Badge>
-                          </div>
-                          <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-coal/50">
-                            <Tag className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate">
-                              {product.category || "Chua phan nhom"} / {product.sku || "Chua co SKU"}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <p className="flex items-center font-display text-base font-bold text-moss">
-                        {formatCurrency(product.price)}
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-moss" />
-                        <span className="font-bold">{product.stock}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`font-bold ${
-                            expiryStatus === "expired"
-                              ? "text-red-600"
-                              : expiryStatus === "soon"
-                                ? "text-clay"
-                                : "text-coal"
-                          }`}
-                        >
-                          {formatProductDate(product.expiry_date)}
-                        </span>
-                        <Badge className="shrink-0" tone={getExpiryTone(expiryStatus)}>
-                          {getExpiryLabel(expiryStatus)}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
-                        <Button
-                          className="h-9 w-9 p-0"
-                          onClick={() => openEditModal(product)}
-                          variant="secondary"
-                        >
-                          <Edit3 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          className="h-9 w-9 p-0"
-                          onClick={() => handleDelete(product)}
-                          variant="danger"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+                      <Edit3 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      aria-label={`Xoa ${product.name}`}
+                      className="h-9 w-9 rounded-xl p-0 shadow-sm"
+                      onClick={() => handleDelete(product)}
+                      variant="danger"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
+                }
+                badgeLabel={product.is_active ? undefined : "Tam an"}
+                compact
+                key={product.id}
+                onSelect={() => openViewModal(product)}
+                product={product}
+              />
+            ))}
           </div>
         )}
       </Card>
@@ -1243,6 +1120,11 @@ export function ProductsPage() {
         onEdit={openEditFromDetail}
         open={Boolean(viewingProduct)}
         product={viewingProduct}
+      />
+      <BarcodeLabelsModal
+        onClose={() => setBarcodeModalOpen(false)}
+        open={barcodeModalOpen}
+        products={products}
       />
     </div>
   );

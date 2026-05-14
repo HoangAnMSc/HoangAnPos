@@ -1,5 +1,6 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Barcode,
   Bell,
   Check,
   ChevronDown,
@@ -13,6 +14,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { BarcodeScannerModal } from "../components/products/BarcodeScannerModal";
+import { ProductCard } from "../components/products/ProductCard";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { Input } from "../components/ui/Input";
@@ -22,6 +25,7 @@ import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import { formatCurrency } from "../lib/format";
+import { findProductByBarcode, getProductBarcodeValue } from "../lib/productDisplay";
 import { createCustomer, fetchCustomers, type CustomerInput } from "../services/customers";
 import { createSale } from "../services/orders";
 import { fetchProducts, getActiveProducts } from "../services/products";
@@ -234,6 +238,7 @@ export function PosPage() {
   const paidAmountRef = useRef<HTMLInputElement>(null);
 
   const [autoPrint, setAutoPrint] = useState(true);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState("");
@@ -361,7 +366,7 @@ export function PosPage() {
 
     return activeProducts
       .filter((product) =>
-        [product.name, product.sku, product.category]
+        [product.name, product.sku, product.category, getProductBarcodeValue(product)]
           .filter(Boolean)
           .some((value) => value!.toLowerCase().includes(normalizedProductQuery))
       )
@@ -562,6 +567,27 @@ export function PosPage() {
     }
   }
 
+  function handleBarcodeDetected(value: string) {
+    const product = findProductByBarcode(activeProducts, value);
+
+    setSuccess("");
+
+    if (!product) {
+      setError(`Khong tim thay san pham voi barcode ${value}.`);
+      setProductQuery(value);
+      productSearchRef.current?.focus();
+      return;
+    }
+
+    if (product.stock <= 0 || getQuantityInCart(product.id) >= product.stock) {
+      setError(`San pham "${product.name}" khong con ton de them.`);
+      return;
+    }
+
+    addToCart(product);
+    setSuccess(`Da quet ${product.name}.`);
+  }
+
   async function handleCreateCustomer(input: CustomerInput) {
     setSubmittingCustomer(true);
     setError("");
@@ -646,78 +672,68 @@ export function PosPage() {
     <div className="min-h-screen bg-[#e8eef6]">
       <header className="sticky top-0 z-40 rounded-b-[1.5rem] border-b border-white/80 bg-white/95 px-4 py-3 pl-20 shadow-[0_14px_36px_rgba(15,23,42,0.12)] backdrop-blur lg:pl-5 xl:px-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <div className="relative min-w-0 flex-1">
-            <input
-              className="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 pr-16 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100 md:h-16 md:px-5 md:pr-20 md:text-xl"
-              onChange={(event) => setProductQuery(event.target.value)}
-              onKeyDown={handleProductSearchKeyDown}
-              placeholder="Nhap ten san pham hoac ma SKU"
-              ref={productSearchRef}
-              value={productQuery}
-            />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2">
-              <ShortcutTag>F3</ShortcutTag>
-            </span>
+          <div className="flex min-w-0 flex-1 gap-2">
+            <button
+              aria-label="Quet barcode"
+              className="flex h-14 w-14 flex-none items-center justify-center rounded-xl bg-slate-900 text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 md:h-16 md:w-16"
+              onClick={() => setBarcodeScannerOpen(true)}
+              type="button"
+            >
+              <Barcode className="h-6 w-6" />
+            </button>
+            <div className="relative min-w-0 flex-1">
+              <input
+                className="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 pr-16 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100 md:h-16 md:px-5 md:pr-20 md:text-xl"
+                onChange={(event) => setProductQuery(event.target.value)}
+                onKeyDown={handleProductSearchKeyDown}
+                placeholder="Nhap ten san pham, SKU hoac barcode"
+                ref={productSearchRef}
+                value={productQuery}
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2">
+                <ShortcutTag>F3</ShortcutTag>
+              </span>
 
-            {productQuery ? (
-              <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
-                {loading ? (
-                  <Spinner label="Dang tai san pham..." />
-                ) : productResults.length === 0 ? (
-                  <div className="flex items-center gap-3 p-5 text-sm font-semibold text-slate-500">
-                    <PackageSearch className="h-5 w-5" />
-                    Khong tim thay san pham phu hop.
-                  </div>
-                ) : (
-                  <div className="max-h-[430px] overflow-y-auto p-2">
-                    {productResults.map((product) => {
-                      const quantityInCart = getQuantityInCart(product.id);
-                      const disabled = product.stock <= 0 || quantityInCart >= product.stock;
+              {productQuery ? (
+                <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+                  {loading ? (
+                    <Spinner label="Dang tai san pham..." />
+                  ) : productResults.length === 0 ? (
+                    <div className="flex items-center gap-3 p-5 text-sm font-semibold text-slate-500">
+                      <PackageSearch className="h-5 w-5" />
+                      Khong tim thay san pham phu hop.
+                    </div>
+                  ) : (
+                    <div className="max-h-[560px] overflow-y-auto p-3">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {productResults.map((product) => {
+                          const quantityInCart = getQuantityInCart(product.id);
+                          const disabled = product.stock <= 0 || quantityInCart >= product.stock;
+                          const badgeLabel =
+                            product.stock <= 0
+                              ? "Het hang"
+                              : quantityInCart > 0
+                                ? `Da chon ${quantityInCart}`
+                                : undefined;
 
-                      return (
-                        <button
-                          className="flex w-full items-center gap-4 rounded-xl p-3 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={disabled}
-                          key={product.id}
-                          onClick={() => addToCart(product)}
-                          type="button"
-                        >
-                          <div className="h-16 w-16 flex-none overflow-hidden rounded-xl bg-slate-100">
-                            {product.image_url ? (
-                              <img
-                                alt={product.name}
-                                className="h-full w-full object-cover"
-                                src={product.image_url}
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-slate-400">
-                                <ShoppingBag className="h-6 w-6" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-base font-extrabold text-slate-900">
-                              {product.name}
-                            </p>
-                            <p className="mt-1 truncate text-sm font-semibold text-slate-500">
-                              {product.sku || "Chua co SKU"} - Ton {product.stock}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-base font-extrabold text-slate-900">
-                              {formatCurrency(product.price)}
-                            </p>
-                            <p className="mt-1 text-xs font-bold text-blue-600">
-                              {quantityInCart > 0 ? `Da chon ${quantityInCart}` : "Them"}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : null}
+                          return (
+                            <ProductCard
+                              badgeLabel={badgeLabel}
+                              badgeTone={product.stock <= 0 ? "neutral" : "blue"}
+                              compact
+                              disabled={disabled}
+                              key={product.id}
+                              onSelect={() => addToCart(product)}
+                              product={product}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="hidden min-w-0 shrink-0 items-end gap-1 overflow-x-auto pb-1 md:flex">
@@ -1178,6 +1194,13 @@ export function PosPage() {
           submitting={submittingCustomer}
         />
       </Modal>
+      <BarcodeScannerModal
+        description="Quet barcode de them nhanh san pham vao hoa don hien tai."
+        onClose={() => setBarcodeScannerOpen(false)}
+        onDetected={handleBarcodeDetected}
+        open={barcodeScannerOpen}
+        title="Quet barcode ban hang"
+      />
     </div>
   );
 }

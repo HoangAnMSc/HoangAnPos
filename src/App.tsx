@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { ProtectedRoute } from "./components/routing/ProtectedRoute";
 import { CustomersPage } from "./pages/CustomersPage";
+import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PosPage } from "./pages/PosPage";
@@ -19,6 +20,7 @@ export function App() {
           <Route path="pos" element={<PosPage />} />
           <Route path="customers" element={<CustomersPage />} />
           <Route path="products" element={<ProductsPage />} />
+          <Route path="inventory" element={<InventoryPage />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFoundPage />} />
