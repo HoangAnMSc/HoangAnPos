@@ -20,22 +20,18 @@ const navigation = [
   { to: "/inventory", label: "Ton kho", icon: ClipboardList },
 ];
 
-const pageTitles: Record<string, { title: string; subtitle: string }> = {
+const pageTitles: Record<string, { title: string}> = {
   "/pos": {
     title: "Bán hàng tại quầy",
-    subtitle: "Chọn sản phẩm, gắn khách hàng và tạo hóa đơn thật gọn.",
   },
   "/customers": {
     title: "Khách hàng",
-    subtitle: "Quản lý thông tin liên hệ và ghi chú chăm sóc khách.",
   },
   "/products": {
     title: "Sản phẩm",
-    subtitle: "Quản lý giá, tồn kho và ảnh sản phẩm trên Cloudinary.",
   },
   "/inventory": {
     title: "Ton kho",
-    subtitle: "Quet EAN-13, nhap so luong thuc te va tao anh bao cao chenh lech.",
   },
 };
 
@@ -68,7 +64,7 @@ export function AdminLayout() {
             onClick={() => setSidebarOpen(false)}
             type="button"
           >
-            <PanelLeftClose className="h-5 w-5" />
+            <PanelLeftClose className="h-6 w-6" />
           </button>
         </div>
 
@@ -86,7 +82,7 @@ export function AdminLayout() {
               onClick={() => setSidebarOpen(false)}
               to={item.to}
             >
-              <item.icon className="h-5 w-5" />
+              <item.icon className="h-6 w-6" />
               {item.label}
             </NavLink>
           ))}
@@ -115,13 +111,13 @@ export function AdminLayout() {
         {isPosRoute ? (
           <>
             <button
-              className="fixed left-4 top-5 z-50 rounded-2xl bg-white p-3 text-coal shadow-soft lg:hidden"
+              className="fixed left-4 top-4 z-50 rounded-2xl bg-white p-4 text-coal shadow-soft lg:hidden"
               onClick={() => setSidebarOpen(true)}
               type="button"
             >
               <Menu className="h-5 w-5" />
             </button>
-            <main className="min-h-screen bg-[#e8eef6] text-[#111827]">
+            <main className="min-h-screen text-[#111827]">
               <Outlet />
             </main>
           </>
@@ -134,11 +130,10 @@ export function AdminLayout() {
                   onClick={() => setSidebarOpen(true)}
                   type="button"
                 >
-                  <Menu className="h-5 w-5" />
+                  <Menu className="h-6 w-6" />
                 </button>
                 <div className="min-w-0 flex-1">
                   <h2 className="font-display text-2xl font-bold sm:text-3xl">{page.title}</h2>
-                  <p className="mt-1 text-sm text-coal/60">{page.subtitle}</p>
                 </div>
                 <div className="hidden min-w-72 items-center gap-3 rounded-2xl bg-white px-4 py-3 text-coal/45 shadow-soft xl:flex">
                   <Search className="h-4 w-4" />
