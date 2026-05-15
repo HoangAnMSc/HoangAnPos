@@ -13,37 +13,41 @@ import {
   Check,
   ChevronDown,
   DollarSign,
+  ImagePlus,
   Loader2,
   Minus,
   PackageSearch,
   Plus,
+  QrCode,
   Save,
   ShoppingBag,
   Trash2,
+  Wallet,
   X,
 } from "lucide-react";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
-import { ProductCard } from "../components/products/ProductCard";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
-import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
+import { uploadPaymentProof } from "../lib/cloudinary";
 import { formatCurrency } from "../lib/format";
 import {
   findProductByEan13,
+  formatProductDate,
   getProductEan13Value,
   isValidEan13,
   normalizeEan13Input,
 } from "../lib/productDisplay";
 import { createCustomer, fetchCustomers, type CustomerInput } from "../services/customers";
-import { createSale } from "../services/orders";
-import { fetchProducts, getActiveProducts } from "../services/products";
-import type { CartItem, Customer, Product } from "../types";
+import { createSale, type PaymentMethod } from "../services/orders";
+import { fetchPaymentSettings } from "../services/paymentSettings";
+import { fetchProductBatches, fetchProducts, getActiveProducts } from "../services/products";
+import type { CartItem, Customer, PaymentSettings, Product, ProductBatch } from "../types";
 
 type PosCartItem = CartItem & {
   lineId: string;
@@ -56,7 +60,7 @@ type PosBill = {
   customerQuery: string;
   discount: string;
   orderNote: string;
-  paymentMethod: string;
+  paymentMethod: PaymentMethod;
   savedAt: string | null;
   selectedCustomerId: string;
 };
@@ -117,7 +121,7 @@ function normalizeBill(value: Partial<PosBill> | undefined, fallbackId: number):
     cart,
     discount: String(value?.discount ?? "0"),
     cashReceived: String(value?.cashReceived ?? ""),
-    paymentMethod: value?.paymentMethod || "cash",
+    paymentMethod: value?.paymentMethod === "transfer" ? "transfer" : "cash",
     savedAt: value?.savedAt || null,
   };
 }
@@ -252,6 +256,7 @@ export function PosPage() {
   const paidAmountRef = useRef<HTMLInputElement>(null);
 
   const [autoPrint, setAutoPrint] = useState(true);
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [ean13ScannerOpen, setEan13ScannerOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -259,8 +264,18 @@ export function PosPage() {
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [lineSeparated, setLineSeparated] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentProofModalOpen, setPaymentProofModalOpen] = useState(false);
+  const [paymentProofNote, setPaymentProofNote] = useState("");
+  const [paymentQrModalOpen, setPaymentQrModalOpen] = useState(false);
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null);
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
+  const [paymentProofPreview, setPaymentProofPreview] = useState("");
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>("cash");
   const [products, setProducts] = useState<Product[]>([]);
+  const [productBatches, setProductBatches] = useState<ProductBatch[]>([]);
   const [productQuery, setProductQuery] = useState("");
+  const [productToBatchSelect, setProductToBatchSelect] = useState<Product | null>(null);
   const [submittingCustomer, setSubmittingCustomer] = useState(false);
   const [submittingSale, setSubmittingSale] = useState(false);
   const [success, setSuccess] = useState("");
@@ -288,9 +303,16 @@ export function PosPage() {
     setError("");
 
     try {
-      const [productData, customerData] = await Promise.all([fetchProducts(), fetchCustomers()]);
+      const [productData, batchData, customerData, settingsData] = await Promise.all([
+        fetchProducts(),
+        fetchProductBatches(),
+        fetchCustomers(),
+        fetchPaymentSettings(),
+      ]);
       setProducts(productData);
+      setProductBatches(batchData);
       setCustomers(customerData);
+      setPaymentSettings(settingsData);
     } catch (requestError) {
       showErrorNotice(
         requestError instanceof Error ? requestError.message : "Khong tai duoc du lieu POS.",
@@ -319,6 +341,7 @@ export function PosPage() {
     }
 
     const productsById = new Map(products.map((product) => [product.id, product]));
+    const batchesById = new Map(productBatches.map((batch) => [batch.id, batch]));
 
     setWorkspace((current) => {
       let changed = false;
@@ -335,12 +358,19 @@ export function PosPage() {
               return null;
             }
 
-            const quantity = Math.min(item.quantity, freshProduct.stock);
-            if (quantity !== item.quantity || freshProduct !== item.product) {
+            const freshBatch = item.batch?.id ? batchesById.get(item.batch.id) ?? null : null;
+            const availableStock = freshBatch?.quantity ?? freshProduct.stock;
+            if (item.batch?.id && (!freshBatch || freshBatch.quantity <= 0)) {
+              changed = true;
+              return null;
+            }
+
+            const quantity = Math.min(item.quantity, availableStock);
+            if (quantity !== item.quantity || freshProduct !== item.product || freshBatch !== item.batch) {
               changed = true;
             }
 
-            return { ...item, product: freshProduct, quantity };
+            return { ...item, batch: freshBatch, product: freshProduct, quantity };
           })
           .filter((item): item is PosCartItem => Boolean(item));
 
@@ -349,7 +379,7 @@ export function PosPage() {
 
       return changed ? { ...current, bills } : current;
     });
-  }, [products]);
+  }, [productBatches, products]);
 
   useEffect(() => {
     function handleShortcut(event: globalThis.KeyboardEvent) {
@@ -365,7 +395,7 @@ export function PosPage() {
 
       if (event.key === "F4") {
         event.preventDefault();
-        paidAmountRef.current?.focus();
+        setPaymentModalOpen(true);
       }
 
       if (event.key === "F6") {
@@ -450,10 +480,15 @@ export function PosPage() {
     }));
   }
 
-  function getQuantityInCart(productId: string) {
+  function getQuantityInCart(productId: string, batchId?: string | null) {
     return cart
       .filter((item) => item.product.id === productId)
+      .filter((item) => (batchId ? item.batch?.id === batchId : true))
       .reduce((sum, item) => sum + item.quantity, 0);
+  }
+
+  function getProductBatches(productId: string) {
+    return productBatches.filter((batch) => batch.product_id === productId && batch.quantity > 0);
   }
 
   function switchBill(billId: number) {
@@ -493,7 +528,7 @@ export function PosPage() {
     });
   }
 
-  function addToCart(product: Product) {
+  function addToCart(product: Product, batch?: ProductBatch | null) {
     setSuccess("");
     setError("");
 
@@ -502,20 +537,35 @@ export function PosPage() {
       return;
     }
 
+    const batches = getProductBatches(product.id);
+    if (batch === undefined && batches.length > 0) {
+      setProductToBatchSelect(product);
+      setBatchModalOpen(true);
+      return;
+    }
+
     updateActiveCart((current) => {
       const quantityInCart = current
         .filter((item) => item.product.id === product.id)
         .reduce((sum, item) => sum + item.quantity, 0);
+      const quantityInBatch = batch
+        ? current
+            .filter((item) => item.batch?.id === batch.id)
+            .reduce((sum, item) => sum + item.quantity, 0)
+        : 0;
+      const maxByBatch = batch ? batch.quantity - quantityInBatch : product.stock - quantityInCart;
 
-      if (quantityInCart >= product.stock) {
+      if (quantityInCart >= product.stock || maxByBatch <= 0) {
         return current;
       }
 
       if (lineSeparated) {
-        return [...current, { lineId: createLineId(product.id), product, quantity: 1 }];
+        return [...current, { batch: batch ?? null, lineId: createLineId(product.id), product, quantity: 1 }];
       }
 
-      const existingItem = current.find((item) => item.product.id === product.id);
+      const existingItem = current.find(
+        (item) => item.product.id === product.id && (item.batch?.id ?? null) === (batch?.id ?? null)
+      );
 
       if (existingItem) {
         return current.map((item) =>
@@ -523,8 +573,10 @@ export function PosPage() {
         );
       }
 
-      return [...current, { lineId: createLineId(product.id), product, quantity: 1 }];
+      return [...current, { batch: batch ?? null, lineId: createLineId(product.id), product, quantity: 1 }];
     });
+    setBatchModalOpen(false);
+    setProductToBatchSelect(null);
     setProductQuery("");
     productSearchRef.current?.focus();
   }
@@ -539,9 +591,14 @@ export function PosPage() {
 
           const otherQuantity = current
             .filter((cartItem) => cartItem.lineId !== lineId)
-            .filter((cartItem) => cartItem.product.id === item.product.id)
+            .filter((cartItem) =>
+              item.batch
+                ? cartItem.batch?.id === item.batch.id
+                : cartItem.product.id === item.product.id
+            )
             .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-          const maxQuantity = Math.max(item.product.stock - otherQuantity, 0);
+          const availableStock = item.batch?.quantity ?? item.product.stock;
+          const maxQuantity = Math.max(availableStock - otherQuantity, 0);
 
           return {
             ...item,
@@ -644,38 +701,107 @@ export function PosPage() {
     }
   }
 
-  async function handleCheckout() {
+  function getValidatedDiscount() {
     const discountValue = Number(discount || 0);
     setError("");
     setSuccess("");
 
     if (cart.length === 0) {
       showErrorNotice("Gio hang dang trong.", "Chua co san pham");
-      return;
+      return null;
     }
 
     if (Number.isNaN(discountValue) || discountValue < 0) {
       showErrorNotice("Giam gia phai la so khong am.", "Giam gia khong hop le");
+      return null;
+    }
+
+    return discountValue;
+  }
+
+  function openPaymentModal() {
+    const discountValue = getValidatedDiscount();
+    if (discountValue === null) {
       return;
     }
 
-    if (paymentMethod === "cash" && paidAmount < total) {
+    setSelectedPaymentMethod(paymentMethod);
+    setPaymentProofFile(null);
+    setPaymentProofNote("");
+    setPaymentProofPreview("");
+    setPaymentProofModalOpen(false);
+    setPaymentQrModalOpen(false);
+    setPaymentModalOpen(true);
+
+    window.setTimeout(() => {
+      if (paymentMethod === "cash") {
+        paidAmountRef.current?.focus();
+      }
+    }, 80);
+  }
+
+  function handlePaymentProofChange(file: File | null) {
+    setPaymentProofFile(file);
+    setPaymentProofPreview("");
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPaymentProofPreview(typeof reader.result === "string" ? reader.result : "");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleCheckout() {
+    const discountValue = getValidatedDiscount();
+    if (discountValue === null) {
+      return;
+    }
+
+    if (selectedPaymentMethod === "cash" && paidAmount < total) {
       showErrorNotice("Khach dua chua du so tien can thu.", "Chua du tien thanh toan");
       paidAmountRef.current?.focus();
+      return;
+    }
+
+    if (selectedPaymentMethod === "transfer" && !paymentProofFile && !paymentProofNote.trim()) {
+      showErrorNotice(
+        "Can chup/chon anh hoac nhap ma giao dich de xac nhan chuyen khoan.",
+        "Thieu xac nhan thanh toan"
+      );
       return;
     }
 
     setSubmittingSale(true);
 
     try {
+      const paymentProofUrl =
+        selectedPaymentMethod === "transfer" && paymentProofFile
+          ? await uploadPaymentProof(paymentProofFile)
+          : null;
+
       const order = await createSale({
+        cashReceived: selectedPaymentMethod === "cash" ? paidAmount : total,
         cashierId: user?.id ?? null,
         cart,
         customerId: selectedCustomerId || null,
         discount: discountValue,
+        note: normalizeText(orderNote),
+        paymentMethod: selectedPaymentMethod,
+        paymentProofNote: normalizeText(paymentProofNote),
+        paymentProofUrl,
       });
 
       updateActiveBill((bill) => createEmptyBill(bill.id));
+      setPaymentModalOpen(false);
+      setPaymentProofModalOpen(false);
+      setPaymentQrModalOpen(false);
+      setPaymentProofFile(null);
+      setPaymentProofNote("");
+      setPaymentProofPreview("");
       setSuccess(`Da tao hoa don ${order.code} voi tong tien ${formatCurrency(order.total)}.`);
       await loadPosData();
       if (autoPrint) {
@@ -734,7 +860,7 @@ export function PosPage() {
               </span>
 
               {productQuery ? (
-                <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+                <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 max-h-[min(70vh,620px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
                   {loading ? (
                     <Spinner label="Dang tai san pham..." />
                   ) : productResults.length === 0 ? (
@@ -743,31 +869,62 @@ export function PosPage() {
                       Khong tim thay san pham phu hop.
                     </div>
                   ) : (
-                    <div className="max-h-[560px] overflow-y-auto p-3">
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {productResults.map((product) => {
-                          const quantityInCart = getQuantityInCart(product.id);
-                          const disabled = product.stock <= 0 || quantityInCart >= product.stock;
-                          const badgeLabel =
-                            product.stock <= 0
-                              ? "Het hang"
-                              : quantityInCart > 0
-                                ? `Da chon ${quantityInCart}`
-                                : undefined;
+                    <div className="max-h-[min(70vh,620px)] overflow-y-auto p-2">
+                      {productResults.map((product) => {
+                        const quantityInCart = getQuantityInCart(product.id);
+                        const disabled = product.stock <= 0 || quantityInCart >= product.stock;
 
-                          return (
-                            <ProductCard
-                              badgeLabel={badgeLabel}
-                              badgeTone={product.stock <= 0 ? "neutral" : "blue"}
-                              compact
-                              disabled={disabled}
-                              key={product.id}
-                              onSelect={() => addToCart(product)}
-                              product={product}
-                            />
-                          );
-                        })}
-                      </div>
+                        return (
+                          <button
+                            className="grid w-full grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-55 sm:grid-cols-[76px_minmax(0,1fr)_120px_120px]"
+                            disabled={disabled}
+                            key={product.id}
+                            onClick={() => addToCart(product)}
+                            type="button"
+                          >
+                            <div className="h-16 w-16 overflow-hidden rounded-xl bg-slate-100 sm:h-[76px] sm:w-[76px]">
+                              {product.image_url ? (
+                                <img
+                                  alt={product.name}
+                                  className="h-full w-full object-cover"
+                                  src={product.image_url}
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-slate-400">
+                                  <ShoppingBag className="h-7 w-7" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="line-clamp-2 text-base font-extrabold leading-tight text-slate-900 sm:text-lg">
+                                {product.name}
+                              </p>
+                              <p className="mt-1 truncate text-sm font-bold text-slate-500">
+                                EAN-13 {getProductEan13Value(product)}
+                              </p>
+                              <div className="mt-2 flex flex-wrap gap-2 text-xs font-extrabold">
+                                <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600">
+                                  Ton {product.stock}
+                                </span>
+                                {quantityInCart > 0 ? (
+                                  <span className="rounded-lg bg-blue-50 px-2 py-1 text-blue-700">
+                                    Da chon {quantityInCart}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="hidden text-right sm:block">
+                              <p className="text-xs font-extrabold uppercase text-slate-400">Gia</p>
+                              <p className="mt-1 text-lg font-extrabold tabular-nums text-slate-900">
+                                {formatCurrency(product.price)}
+                              </p>
+                            </div>
+                            <span className="rounded-xl bg-green-600 px-4 py-3 text-sm font-extrabold text-white shadow-sm">
+                              Them
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -835,8 +992,8 @@ export function PosPage() {
         </div>
       </header>
 
-      <main className="px-3 py-4 sm:px-4 xl:px-6">
-        <div className="mx-auto max-w-[1500px] space-y-4">
+      <main className="w-full max-w-[100vw] px-[1.2vw] py-4">
+        <div className="mx-auto w-full max-w-none space-y-4">
           <ConfigNotice />
 
           {error ? (
@@ -850,7 +1007,7 @@ export function PosPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_560px]">
+          <div className="grid gap-[1.2vw] xl:grid-cols-[minmax(0,1fr)_clamp(420px,32vw,560px)]">
             <div className="space-y-6">
               <section className="overflow-hidden rounded-[1.75rem] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.10)] ring-1 ring-slate-100">
                 <div className="flex flex-col gap-4 border-b border-slate-100 px-7 py-5 sm:flex-row sm:items-center sm:justify-between">
@@ -895,17 +1052,17 @@ export function PosPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-100">
+                  <div className="max-h-[calc(100vh-300px)] divide-y divide-slate-100 overflow-y-auto">
                     {cart.map((item) => {
                       const quantityInProduct = getQuantityInCart(item.product.id);
 
                       return (
                         <article
-                          className="grid gap-4 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_170px_140px_48px] lg:items-center"
+                          className="grid gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_180px_150px_52px] lg:items-center"
                           key={item.lineId}
                         >
                           <div className="flex min-w-0 items-center gap-4">
-                            <div className="h-20 w-20 flex-none overflow-hidden rounded-xl bg-slate-100">
+                            <div className="h-24 w-24 flex-none overflow-hidden rounded-xl bg-slate-100">
                               {item.product.image_url ? (
                                 <img
                                   alt={item.product.name}
@@ -919,7 +1076,7 @@ export function PosPage() {
                               )}
                             </div>
                             <div className="min-w-0">
-                              <h3 className="truncate text-lg font-extrabold text-slate-900">
+                              <h3 className="line-clamp-2 text-xl font-extrabold leading-tight text-slate-900">
                                 {item.product.name}
                               </h3>
                               <p className="mt-1 text-sm font-semibold text-slate-500">
@@ -929,22 +1086,28 @@ export function PosPage() {
                               <p className="mt-1 text-sm font-semibold text-slate-400">
                                 Ton kho: {item.product.stock}
                               </p>
+                              {item.batch ? (
+                                <p className="mt-1 text-sm font-extrabold text-blue-600">
+                                  Lo: {formatProductDate(item.batch.import_date)} - HSD{" "}
+                                  {formatProductDate(item.batch.expiry_date)} ({item.batch.quantity})
+                                </p>
+                              ) : null}
                             </div>
                           </div>
 
-                          <div className="flex w-fit items-center gap-2 rounded-xl bg-slate-50 p-1">
+                          <div className="flex w-fit items-center gap-2 rounded-xl bg-slate-50 p-1.5">
                             <button
-                              className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
+                              className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
                               onClick={() => changeQuantity(item.lineId, item.quantity - 1)}
                               type="button"
                             >
                               <Minus className="h-4 w-4" />
                             </button>
-                            <span className="min-w-10 text-center text-lg font-extrabold text-slate-900">
+                            <span className="min-w-12 text-center text-2xl font-extrabold text-slate-900">
                               {item.quantity}
                             </span>
                             <button
-                              className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                               disabled={quantityInProduct >= item.product.stock}
                               onClick={() => changeQuantity(item.lineId, item.quantity + 1)}
                               type="button"
@@ -953,7 +1116,7 @@ export function PosPage() {
                             </button>
                           </div>
 
-                          <p className="text-left text-xl font-extrabold text-slate-900 lg:text-right">
+                          <p className="text-left text-2xl font-extrabold tabular-nums text-slate-900 lg:text-right">
                             {formatCurrency(item.product.price * item.quantity)}
                           </p>
 
@@ -1004,7 +1167,7 @@ export function PosPage() {
               </div>
             </div>
 
-            <div className="space-y-6 xl:sticky xl:top-32 xl:self-start">
+            <div className="space-y-6 xl:sticky xl:top-28 xl:self-start">
               <section className="rounded-[1.75rem] bg-white p-7 shadow-[0_18px_45px_rgba(15,23,42,0.10)] ring-1 ring-slate-100">
                 <div className="relative flex gap-4">
                   <div className="relative min-w-0 flex-1">
@@ -1069,10 +1232,10 @@ export function PosPage() {
 
                 <div className="mt-10 space-y-5">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-2xl font-extrabold text-slate-900">
+                    <span className="text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold text-slate-900">
                       Tam tinh ({totalItems} san pham)
                     </span>
-                    <span className="text-2xl font-extrabold text-slate-900">
+                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(subtotal)}
                     </span>
                   </div>
@@ -1090,34 +1253,34 @@ export function PosPage() {
                       />
                       <ShortcutTag>F6</ShortcutTag>
                     </label>
-                    <span className="text-2xl font-extrabold text-slate-900">
+                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(safeDiscount)}
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-2xl font-extrabold text-slate-900">Thanh tien</span>
-                    <span className="text-2xl font-extrabold text-slate-900">
+                    <span className="text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold text-slate-900">Thanh tien</span>
+                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(total)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-2xl font-extrabold text-slate-900">Khach dua</span>
-                    <span className="text-2xl font-extrabold text-slate-900">
+                    <span className="text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold text-slate-900">Khach dua</span>
+                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(paidAmount)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-2xl font-extrabold text-slate-900">Tien thua</span>
-                    <span className="text-2xl font-extrabold text-slate-900">
+                    <span className="text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold text-slate-900">Tien thua</span>
+                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(changeAmount)}
                     </span>
                   </div>
 
                   <div className="border-t border-slate-100 pt-6">
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-4xl font-extrabold text-slate-900">Can thu</span>
-                      <span className="text-4xl font-extrabold text-slate-900">
+                      <span className="text-[clamp(1.8rem,2.4vw,2.5rem)] font-extrabold text-slate-900">Can thu</span>
+                      <span className="min-w-[11ch] text-right text-[clamp(1.8rem,2.4vw,2.5rem)] font-extrabold tabular-nums text-slate-900">
                         {formatCurrency(total)}
                       </span>
                     </div>
@@ -1136,68 +1299,13 @@ export function PosPage() {
                   In hoa don tu dong
                 </label>
 
-                <div className="mt-7 grid gap-4 sm:grid-cols-[164px_minmax(0,1fr)]">
-                  <Select
-                    aria-label="Phuong thuc thanh toan"
-                    className="h-[66px] rounded-xl text-xl"
-                    onChange={(event) =>
-                      updateActiveBillField("paymentMethod", event.target.value)
-                    }
-                    value={paymentMethod}
-                  >
-                    <option value="cash">Tien mat</option>
-                    <option value="transfer">Chuyen khoan</option>
-                    <option value="card">The</option>
-                  </Select>
-                  <div className="relative">
-                    <input
-                      className="h-[66px] w-full rounded-xl border border-slate-200 bg-white px-5 pr-16 text-xl font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
-                      min="0"
-                      onChange={(event) =>
-                        updateActiveBillField("cashReceived", event.target.value)
-                      }
-                      placeholder="Nhap so tien khach dua"
-                      ref={paidAmountRef}
-                      type="number"
-                      value={cashReceived}
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2">
-                      <ShortcutTag>F4</ShortcutTag>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <button
-                    className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-extrabold text-slate-600 transition hover:bg-slate-200"
-                    disabled={cart.length === 0}
-                    onClick={() => updateActiveBillField("cashReceived", String(total))}
-                    type="button"
-                  >
-                    Thu du
-                  </button>
-                  <button
-                    className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-extrabold text-slate-600 transition hover:bg-slate-200"
-                    disabled={cart.length === 0}
-                    onClick={() =>
-                      updateActiveBillField(
-                        "cashReceived",
-                        String(Math.ceil(total / 100000) * 100000)
-                      )
-                    }
-                    type="button"
-                  >
-                    Lam tron tien dua
-                  </button>
-                </div>
-
                 <button
                   className="mt-6 flex h-[70px] w-full items-center justify-center gap-3 rounded-2xl bg-green-600 text-2xl font-extrabold text-white shadow-[0_18px_36px_rgba(22,163,74,0.28)] transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={cart.length === 0 || submittingSale}
-                  onClick={handleCheckout}
+                  onClick={openPaymentModal}
                   type="button"
                 >
-                  {submittingSale ? <Loader2 className="h-6 w-6 animate-spin" /> : <Check className="h-7 w-7" />}
+                  {submittingSale ? <Loader2 className="h-6 w-6 animate-spin" /> : <Wallet className="h-7 w-7" />}
                   Thanh toan
                 </button>
               </section>
@@ -1232,6 +1340,364 @@ export function PosPage() {
           onSubmit={handleCreateCustomer}
           submitting={submittingCustomer}
         />
+      </Modal>
+      <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button
+              disabled={submittingSale}
+              onClick={() => setPaymentModalOpen(false)}
+              type="button"
+              variant="secondary"
+            >
+              Huy
+            </Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              disabled={
+                submittingSale ||
+                (selectedPaymentMethod === "transfer" &&
+                  !paymentProofFile &&
+                  !paymentProofNote.trim())
+              }
+              isLoading={submittingSale}
+              onClick={handleCheckout}
+              type="button"
+            >
+              <Check className="h-4 w-4" />
+              Hoan tat
+            </Button>
+          </div>
+        }
+        onClose={() => {
+          if (!submittingSale) {
+            setPaymentModalOpen(false);
+            setPaymentProofModalOpen(false);
+            setPaymentQrModalOpen(false);
+          }
+        }}
+        open={paymentModalOpen}
+        size="lg"
+        title="Chon thanh toan"
+      >
+        <div className="space-y-6">
+          <div className="rounded-2xl bg-slate-50 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-lg font-extrabold text-slate-700">Can thu</span>
+              <span className="text-right text-3xl font-extrabold tabular-nums text-slate-950">
+                {formatCurrency(total)}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(["cash", "transfer"] as PaymentMethod[]).map((method) => {
+              const active = selectedPaymentMethod === method;
+              return (
+                <button
+                  className={`flex h-20 items-center gap-4 rounded-2xl border px-5 text-left transition ${
+                    active
+                      ? "border-green-500 bg-green-50 text-green-800 ring-4 ring-green-100"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  key={method}
+                  onClick={() => {
+                    setSelectedPaymentMethod(method);
+                    updateActiveBillField("paymentMethod", method);
+                    window.setTimeout(() => {
+                      if (method === "cash") {
+                        paidAmountRef.current?.focus();
+                      }
+                    }, 80);
+                  }}
+                  type="button"
+                >
+                  {method === "cash" ? (
+                    <DollarSign className="h-7 w-7 flex-none" />
+                  ) : (
+                    <QrCode className="h-7 w-7 flex-none" />
+                  )}
+                  <span>
+                    <span className="block text-xl font-extrabold">
+                      {method === "cash" ? "Tien mat" : "Chuyen khoan"}
+                    </span>
+                    <span className="mt-1 block text-sm font-bold opacity-70">
+                      {method === "cash" ? "Nhap tien khach dua" : "Can anh xac nhan"}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedPaymentMethod === "cash" ? (
+            <div className="space-y-4">
+              <div className="relative">
+                <input
+                  className="h-[66px] w-full rounded-xl border border-slate-200 bg-white px-5 pr-16 text-xl font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                  min="0"
+                  onChange={(event) => updateActiveBillField("cashReceived", event.target.value)}
+                  placeholder="Nhap so tien khach dua"
+                  ref={paidAmountRef}
+                  type="number"
+                  value={cashReceived}
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2">
+                  <ShortcutTag>F4</ShortcutTag>
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-extrabold text-slate-600 transition hover:bg-slate-200"
+                  disabled={cart.length === 0}
+                  onClick={() => updateActiveBillField("cashReceived", String(total))}
+                  type="button"
+                >
+                  Thu du
+                </button>
+                <button
+                  className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-extrabold text-slate-600 transition hover:bg-slate-200"
+                  disabled={cart.length === 0}
+                  onClick={() =>
+                    updateActiveBillField(
+                      "cashReceived",
+                      String(Math.ceil(total / 100000) * 100000)
+                    )
+                  }
+                  type="button"
+                >
+                  Lam tron tien dua
+                </button>
+              </div>
+              <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-sm font-bold text-slate-500">Khach dua</p>
+                  <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
+                    {formatCurrency(paidAmount)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-500">Tien thua</p>
+                  <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
+                    {formatCurrency(changeAmount)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <button
+                className="flex min-h-28 items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:bg-slate-50"
+                onClick={() => setPaymentQrModalOpen(true)}
+                type="button"
+              >
+                <span className="flex h-14 w-14 flex-none items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+                  <QrCode className="h-7 w-7" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-xl font-extrabold text-slate-900">
+                    Ma nhan tien
+                  </span>
+                  <span className="mt-1 block text-sm font-bold text-slate-500">
+                    {paymentSettings?.transfer_qr_url ? "Bam de hien QR" : "Chua cai dat QR"}
+                  </span>
+                </span>
+              </button>
+
+              <button
+                className={`flex min-h-28 items-center gap-4 rounded-2xl border p-5 text-left transition ${
+                  paymentProofFile
+                    ? "border-green-300 bg-green-50 hover:bg-green-100"
+                    : "border-amber-200 bg-amber-50 hover:bg-amber-100"
+                }`}
+                onClick={() => setPaymentProofModalOpen(true)}
+                type="button"
+              >
+                <span
+                  className={`flex h-14 w-14 flex-none items-center justify-center rounded-2xl ${
+                    paymentProofFile ? "bg-green-100 text-green-700" : "bg-white text-amber-700"
+                  }`}
+                >
+                  <ImagePlus className="h-7 w-7" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-xl font-extrabold text-slate-900">
+                    Chup thanh toan
+                  </span>
+                  <span className="mt-1 block truncate text-sm font-bold text-slate-600">
+                    {paymentProofFile
+                      ? `Da co anh: ${paymentProofFile.name}`
+                      : paymentProofNote.trim()
+                        ? "Da xac nhan thu cong"
+                        : "Chup anh hoac nhap ma giao dich"}
+                  </span>
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
+      </Modal>
+      <Modal
+        footer={
+          <Button onClick={() => setPaymentQrModalOpen(false)} type="button" variant="secondary">
+            Dong
+          </Button>
+        }
+        onClose={() => setPaymentQrModalOpen(false)}
+        open={paymentQrModalOpen}
+        size="md"
+        title="Ma nhan tien"
+      >
+        {paymentSettings?.transfer_qr_url ? (
+          <div className="space-y-4">
+            <img
+              alt="Ma nhan tien"
+              className="mx-auto aspect-square w-full max-w-sm rounded-2xl bg-slate-50 object-contain"
+              src={paymentSettings.transfer_qr_url}
+            />
+            {paymentSettings.transfer_note ? (
+              <p className="whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
+                {paymentSettings.transfer_note}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl bg-slate-50 text-center text-slate-500">
+            <QrCode className="h-16 w-16" />
+            <p className="mt-3 text-base font-extrabold">Chua cai dat ma nhan tien.</p>
+          </div>
+        )}
+      </Modal>
+      <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button onClick={() => setPaymentProofModalOpen(false)} type="button" variant="secondary">
+              Huy
+            </Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              disabled={!paymentProofFile && !paymentProofNote.trim()}
+              onClick={() => setPaymentProofModalOpen(false)}
+              type="button"
+            >
+              Xong
+            </Button>
+          </div>
+        }
+        onClose={() => setPaymentProofModalOpen(false)}
+        open={paymentProofModalOpen}
+        size="lg"
+        title="Chup thanh toan"
+      >
+        <div className="space-y-4">
+          <label className="flex min-h-72 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white p-5 text-center transition hover:bg-slate-50">
+            {paymentProofPreview ? (
+              <img
+                alt="Anh thanh toan"
+                className="max-h-[56vh] w-full rounded-xl object-contain"
+                src={paymentProofPreview}
+              />
+            ) : (
+              <>
+                <ImagePlus className="h-14 w-14 text-slate-400" />
+                <span className="mt-3 text-xl font-extrabold text-slate-800">
+                  Chon hoac chup anh
+                </span>
+                <span className="mt-1 text-sm font-bold text-slate-500">
+                  Anh bien lai chuyen khoan cua khach
+                </span>
+              </>
+            )}
+            <input
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              onChange={(event) => handlePaymentProofChange(event.target.files?.[0] ?? null)}
+              type="file"
+            />
+          </label>
+          {paymentProofFile ? (
+            <p className="rounded-2xl bg-green-50 px-4 py-3 text-sm font-extrabold text-green-700">
+              Da chon anh: {paymentProofFile.name}
+            </p>
+          ) : (
+            <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-extrabold text-amber-700">
+              May PC khong co camera co the nhap ma giao dich/ghi chu xac nhan ben duoi.
+            </p>
+          )}
+          <Textarea
+            label="Xac nhan thu cong tren PC"
+            onChange={(event) => setPaymentProofNote(event.target.value)}
+            placeholder="Nhap ma giao dich, ten nguoi kiem tra, hoac ghi chu da doi soat..."
+            value={paymentProofNote}
+          />
+        </div>
+      </Modal>
+      <Modal
+        footer={
+          <Button
+            onClick={() => {
+              setBatchModalOpen(false);
+              setProductToBatchSelect(null);
+            }}
+            type="button"
+            variant="secondary"
+          >
+            Dong
+          </Button>
+        }
+        onClose={() => {
+          setBatchModalOpen(false);
+          setProductToBatchSelect(null);
+        }}
+        open={batchModalOpen}
+        size="lg"
+        title="Chon date nhap kho"
+      >
+        {productToBatchSelect ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-sm font-bold text-slate-500">San pham</p>
+              <p className="mt-1 text-xl font-extrabold text-slate-900">
+                {productToBatchSelect.name}
+              </p>
+            </div>
+            <div className="grid gap-3">
+              {getProductBatches(productToBatchSelect.id).map((batch) => {
+                const selectedQuantity = getQuantityInCart(productToBatchSelect.id, batch.id);
+                const disabled = selectedQuantity >= batch.quantity;
+
+                return (
+                  <button
+                    className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-55 sm:grid-cols-[minmax(0,1fr)_150px_auto] sm:items-center"
+                    disabled={disabled}
+                    key={batch.id}
+                    onClick={() => addToCart(productToBatchSelect, batch)}
+                    type="button"
+                  >
+                    <div>
+                      <p className="text-lg font-extrabold text-slate-900">
+                        Ngay nhap {formatProductDate(batch.import_date)}
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-slate-500">
+                        Han su dung {formatProductDate(batch.expiry_date)}
+                      </p>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <p className="text-xs font-extrabold uppercase text-slate-400">Con lai</p>
+                      <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
+                        {batch.quantity - selectedQuantity}
+                      </p>
+                    </div>
+                    <span className="rounded-xl bg-green-600 px-4 py-3 text-center text-sm font-extrabold text-white">
+                      Chon lo
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </Modal>
       <Ean13ScannerModal
         description="Quet EAN-13 de them nhanh san pham vao hoa don hien tai."

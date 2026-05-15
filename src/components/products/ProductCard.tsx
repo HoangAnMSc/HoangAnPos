@@ -15,8 +15,11 @@ type ProductCardProps = {
   className?: string;
   compact?: boolean;
   disabled?: boolean;
+  expiryClassName?: string;
+  expiryLabel?: string;
   onSelect?: () => void;
   product: Product;
+  stockLabel?: string;
 };
 
 const badgeToneClassNames = {
@@ -45,8 +48,11 @@ export function ProductCard({
   className,
   compact = false,
   disabled = false,
+  expiryClassName,
+  expiryLabel,
   onSelect,
   product,
+  stockLabel,
 }: ProductCardProps) {
   const expiryStatus = getExpiryStatus(product.expiry_date);
 
@@ -120,12 +126,20 @@ export function ProductCard({
             )}
           >
             <span className="min-w-0">
-              Stock: <strong className="font-extrabold text-slate-950">{product.stock}</strong>
+              Stock:{" "}
+              <strong className="font-extrabold text-slate-950">
+                {stockLabel ?? product.stock}
+              </strong>
             </span>
             <span className="min-w-0 text-right">
               Han:{" "}
-              <strong className={clsx("font-extrabold", getExpiryClassName(expiryStatus))}>
-                {formatExpiryDays(product.expiry_date)}
+              <strong
+                className={clsx(
+                  "font-extrabold",
+                  expiryClassName ?? getExpiryClassName(expiryStatus)
+                )}
+              >
+                {expiryLabel ?? formatExpiryDays(product.expiry_date)}
               </strong>
             </span>
           </div>

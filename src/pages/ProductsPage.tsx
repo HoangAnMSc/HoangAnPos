@@ -42,12 +42,15 @@ import {
   createProductCategory,
   createProduct,
   deleteProduct,
+  fetchProductBatches,
   fetchProductCategories,
   fetchProducts,
+  receiveProductStock,
   updateProduct,
   type ProductInput,
+  type ReceiveStockInput,
 } from "../services/products";
-import type { Product } from "../types";
+import type { Product, ProductBatch } from "../types";
 
 type ProductFormState = {
   name: string;
@@ -992,26 +995,30 @@ function ProductEditorModal({
 }
 
 type ProductDetailModalProps = {
+  batches: ProductBatch[];
   open: boolean;
   product: Product | null;
   onClose: () => void;
   onEdit: (product: Product) => void;
 };
 
-function ProductDetailModal({ onClose, onEdit, open, product }: ProductDetailModalProps) {
+function ProductDetailModal({ batches, onClose, onEdit, open, product }: ProductDetailModalProps) {
   if (!product) {
     return null;
   }
 
-  const expiryStatus = getExpiryStatus(product.expiry_date);
+  const activeBatches = batches.filter((batch) => batch.quantity > 0);
+  const nearestBatch =
+    activeBatches.find((batch) => batch.expiry_date) ?? activeBatches[0] ?? null;
+  const expiryStatus = getExpiryStatus(nearestBatch?.expiry_date ?? product.expiry_date);
+  const batchTotal = activeBatches.reduce((sum, batch) => sum + batch.quantity, 0);
   const detailItems = [
     { label: "EAN-13", value: getProductEan13Value(product) },
     { label: "Nhom hang", value: product.category || "Chua phan nhom" },
-    { label: "Ngay nhap", value: formatProductDate(product.import_date) },
-    { label: "Ngay het han", value: formatProductDate(product.expiry_date) },
     { label: "Gia von", value: formatCurrency(product.cost_price) },
     { label: "Gia ban", value: formatCurrency(product.price) },
     { label: "Ton kho", value: String(product.stock) },
+    { label: "Ton theo lo", value: `${batchTotal} / ${activeBatches.length} lo` },
     { label: "Trang thai", value: product.is_active ? "Dang ban" : "Tam an" },
   ];
 
@@ -1075,7 +1082,201 @@ function ProductDetailModal({ onClose, onEdit, open, product }: ProductDetailMod
             </div>
           ))}
         </div>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-sm font-extrabold uppercase tracking-wide text-coal/55">
+              Ton kho theo date
+            </h4>
+            <Badge tone="neutral">{activeBatches.length} lo</Badge>
+          </div>
+
+          {activeBatches.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-bold text-slate-500">
+              Chua co lo nhap kho nao con hang.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-slate-100">
+              <div className="hidden grid-cols-[1fr_1fr_110px_120px] gap-3 bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500 sm:grid">
+                <span>Ngay nhap</span>
+                <span>Han su dung</span>
+                <span className="text-right">Con lai</span>
+                <span className="text-right">Trang thai</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {activeBatches.map((batch) => {
+                  const status = getExpiryStatus(batch.expiry_date);
+
+                  return (
+                    <div
+                      className="grid gap-2 px-4 py-3 sm:grid-cols-[1fr_1fr_110px_120px] sm:items-center"
+                      key={batch.id}
+                    >
+                      <div>
+                        <p className="text-xs font-extrabold uppercase text-slate-400 sm:hidden">
+                          Ngay nhap
+                        </p>
+                        <p className="font-bold text-slate-900">
+                          {formatProductDate(batch.import_date)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-extrabold uppercase text-slate-400 sm:hidden">
+                          Han su dung
+                        </p>
+                        <p className="font-bold text-slate-900">
+                          {formatProductDate(batch.expiry_date)}
+                        </p>
+                      </div>
+                      <p className="text-left text-xl font-extrabold tabular-nums text-slate-900 sm:text-right">
+                        {batch.quantity}
+                      </p>
+                      <div className="sm:text-right">
+                        <Badge tone={getExpiryTone(status)}>{getExpiryLabel(status)}</Badge>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </section>
       </div>
+    </Modal>
+  );
+}
+
+type ReceiveStockModalProps = {
+  onClose: () => void;
+  onSubmit: (input: ReceiveStockInput) => Promise<void>;
+  open: boolean;
+  product?: Product | null;
+  products: Product[];
+  submitting: boolean;
+};
+
+function ReceiveStockModal({
+  onClose,
+  onSubmit,
+  open,
+  product,
+  products,
+  submitting,
+}: ReceiveStockModalProps) {
+  const [productId, setProductId] = useState(product?.id ?? "");
+  const [quantity, setQuantity] = useState("1");
+  const [importDate, setImportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [expiryDate, setExpiryDate] = useState("");
+  const [error, setError] = useState("");
+  const formId = "receive-stock-form";
+
+  useEffect(() => {
+    setProductId(product?.id ?? "");
+    setQuantity("1");
+    setImportDate(new Date().toISOString().slice(0, 10));
+    setExpiryDate("");
+    setError("");
+  }, [open, product]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+
+    const nextQuantity = Number(quantity);
+    const nextImportDate = normalizeText(importDate);
+    const nextExpiryDate = normalizeText(expiryDate);
+
+    if (!productId) {
+      setError("Chon san pham can nhap kho.");
+      return;
+    }
+
+    if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
+      setError("So luong nhap phai lon hon 0.");
+      return;
+    }
+
+    if (nextImportDate && nextExpiryDate && nextExpiryDate < nextImportDate) {
+      setError("Ngay het han phai sau hoac bang ngay nhap.");
+      return;
+    }
+
+    try {
+      await onSubmit({
+        expiry_date: nextExpiryDate,
+        import_date: nextImportDate,
+        product_id: productId,
+        quantity: Math.floor(nextQuantity),
+      });
+    } catch (requestError) {
+      setError(getSubmitErrorMessage(requestError));
+    }
+  }
+
+  return (
+    <Modal
+      footer={
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+          <Button onClick={onClose} type="button" variant="secondary">
+            Huy
+          </Button>
+          <Button form={formId} isLoading={submitting} type="submit">
+            Nhap kho
+          </Button>
+        </div>
+      }
+      onClose={onClose}
+      open={open}
+      size="md"
+      title="Nhap kho"
+    >
+      <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
+        <label className="block">
+          <span className={labelClassName}>San pham</span>
+          <select
+            className={`${fieldClassName} appearance-none`}
+            disabled={Boolean(product)}
+            onChange={(event) => setProductId(event.target.value)}
+            value={productId}
+          >
+            <option value="">Chon san pham</option>
+            {products.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <Input
+          label="So luong nhap"
+          min="1"
+          onChange={(event) => setQuantity(event.target.value)}
+          type="number"
+          value={quantity}
+        />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Ngay nhap"
+            onChange={(event) => setImportDate(event.target.value)}
+            type="date"
+            value={importDate}
+          />
+          <Input
+            label="Ngay het han"
+            onChange={(event) => setExpiryDate(event.target.value)}
+            type="date"
+            value={expiryDate}
+          />
+        </div>
+
+        {error ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        ) : null}
+      </form>
     </Modal>
   );
 }
@@ -1088,10 +1289,14 @@ export function ProductsPage() {
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [initialCreateEan13, setInitialCreateEan13] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [productBatches, setProductBatches] = useState<ProductBatch[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
+  const [receiveModalOpen, setReceiveModalOpen] = useState(false);
+  const [receivingProduct, setReceivingProduct] = useState<Product | null>(null);
   const [savedCategories, setSavedCategories] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [submittingReceive, setSubmittingReceive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
 
@@ -1105,12 +1310,14 @@ export function ProductsPage() {
     setError("");
 
     try {
-      const [nextProducts, nextCategories] = await Promise.all([
+      const [nextProducts, nextCategories, nextBatches] = await Promise.all([
         fetchProducts(),
         fetchProductCategories(),
+        fetchProductBatches(),
       ]);
 
       setProducts(nextProducts);
+      setProductBatches(nextBatches);
       setSavedCategories(nextCategories);
     } catch (requestError) {
       const message =
@@ -1165,6 +1372,16 @@ export function ProductsPage() {
     openEditModal(product);
   }
 
+  function openReceiveModal(product?: Product | null) {
+    setReceivingProduct(product ?? null);
+    setReceiveModalOpen(true);
+  }
+
+  function closeReceiveModal() {
+    setReceiveModalOpen(false);
+    setReceivingProduct(null);
+  }
+
   async function handleAddCategory(name: string) {
     const savedCategory = await createProductCategory(name);
     setSavedCategories((current) => mergeCategoryNames([...current, savedCategory]));
@@ -1197,6 +1414,25 @@ export function ProductsPage() {
       throw new Error(message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleReceiveStock(input: ReceiveStockInput) {
+    setSubmittingReceive(true);
+    setError("");
+
+    try {
+      await receiveProductStock(input);
+      closeReceiveModal();
+      await loadProducts();
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error ? requestError.message : "Nhap kho that bai.";
+      setError(message);
+      setErrorNotice({ message, title: "Nhap kho that bai" });
+      throw new Error(message);
+    } finally {
+      setSubmittingReceive(false);
     }
   }
 
@@ -1233,15 +1469,55 @@ export function ProductsPage() {
     ...savedCategories,
     ...products.map((product) => product.category),
   ]);
-  const expiredCount = products.filter(
-    (product) => getExpiryStatus(product.expiry_date) === "expired"
-  ).length;
-  const expiringSoonCount = products.filter(
-    (product) => getExpiryStatus(product.expiry_date) === "soon"
-  ).length;
+
+  function getProductActiveBatches(productId: string) {
+    return productBatches.filter((batch) => batch.product_id === productId && batch.quantity > 0);
+  }
+
+  function getNearestBatch(productId: string) {
+    const batches = getProductActiveBatches(productId);
+    return batches.find((batch) => batch.expiry_date) ?? batches[0] ?? null;
+  }
+
+  function getProductExpiryStatus(product: Product) {
+    const nearestBatch = getNearestBatch(product.id);
+    return getExpiryStatus(nearestBatch?.expiry_date ?? product.expiry_date);
+  }
+
+  function getProductStockLabel(product: Product) {
+    const batches = getProductActiveBatches(product.id);
+    return batches.length > 0 ? `${product.stock}/${batches.length} lo` : String(product.stock);
+  }
+
+  function getProductExpiryLabel(product: Product) {
+    const nearestBatch = getNearestBatch(product.id);
+    if (!nearestBatch) {
+      return formatProductDate(product.expiry_date);
+    }
+
+    return `${formatProductDate(nearestBatch.expiry_date)} (${nearestBatch.quantity})`;
+  }
+
+  function getProductExpiryClassName(product: Product) {
+    const status = getProductExpiryStatus(product);
+    if (status === "expired") {
+      return "text-red-600";
+    }
+
+    if (status === "soon") {
+      return "text-amber-600";
+    }
+
+    return "text-slate-950";
+  }
+
+  const expiredCount = products.filter((product) => getProductExpiryStatus(product) === "expired")
+    .length;
+  const expiringSoonCount = products.filter((product) => getProductExpiryStatus(product) === "soon")
+    .length;
 
   return (
-    <div>
+    <div className="w-full max-w-[100vw] px-[1vw]">
       <ConfigNotice />
 
       <Card className="overflow-hidden p-0">
@@ -1262,6 +1538,15 @@ export function ProductsPage() {
               <Button
                 className="w-full sm:w-auto"
                 disabled={products.length === 0}
+                onClick={() => openReceiveModal()}
+                variant="secondary"
+              >
+                <PackagePlus className="h-4 w-4" />
+                Nhap kho
+              </Button>
+              <Button
+                className="w-full sm:w-auto"
+                disabled={products.length === 0}
                 onClick={() => setEan13LabelsOpen(true)}
                 variant="secondary"
               >
@@ -1275,7 +1560,7 @@ export function ProductsPage() {
             </div>
           </div>
 
-          <div className="relative mt-4 w-full xl:max-w-xl">
+          <div className="relative mt-4 w-full xl:max-w-[42vw]">
             <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
             <Input
               className="pl-11"
@@ -1305,11 +1590,19 @@ export function ProductsPage() {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3 p-3">
             {filteredProducts.map((product) => (
               <ProductCard
                 actions={
                   <>
+                    <Button
+                      aria-label={`Nhap kho ${product.name}`}
+                      className="h-9 w-9 rounded-xl bg-white/95 p-0 text-green-700 shadow-sm ring-1 ring-slate-200 hover:bg-green-50"
+                      onClick={() => openReceiveModal(product)}
+                      variant="secondary"
+                    >
+                      <PackagePlus className="h-4 w-4" />
+                    </Button>
                     <Button
                       aria-label={`Sua ${product.name}`}
                       className="h-9 w-9 rounded-xl bg-white/95 p-0 text-coal shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
@@ -1330,9 +1623,12 @@ export function ProductsPage() {
                 }
                 badgeLabel={product.is_active ? undefined : "Tam an"}
                 compact
+                expiryClassName={getProductExpiryClassName(product)}
+                expiryLabel={getProductExpiryLabel(product)}
                 key={product.id}
                 onSelect={() => openViewModal(product)}
                 product={product}
+                stockLabel={getProductStockLabel(product)}
               />
             ))}
           </div>
@@ -1358,10 +1654,19 @@ export function ProductsPage() {
         products={products}
       />
       <ProductDetailModal
+        batches={viewingProduct ? getProductActiveBatches(viewingProduct.id) : []}
         onClose={() => setViewingProduct(null)}
         onEdit={openEditFromDetail}
         open={Boolean(viewingProduct)}
         product={viewingProduct}
+      />
+      <ReceiveStockModal
+        onClose={closeReceiveModal}
+        onSubmit={handleReceiveStock}
+        open={receiveModalOpen}
+        product={receivingProduct}
+        products={products}
+        submitting={submittingReceive}
       />
       <Ean13LabelsModal
         onClose={() => setEan13LabelsOpen(false)}

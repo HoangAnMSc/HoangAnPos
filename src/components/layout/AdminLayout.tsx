@@ -5,7 +5,9 @@ import {
   LogOut,
   Menu,
   PanelLeftClose,
+  ReceiptText,
   Search,
+  Settings,
   UsersRound,
 } from "lucide-react";
 import { useState } from "react";
@@ -15,23 +17,31 @@ import { Button } from "../ui/Button";
 
 const navigation = [
   { to: "/pos", label: "POS", icon: BadgeDollarSign },
-  { to: "/customers", label: "Khách hàng", icon: UsersRound },
-  { to: "/products", label: "Sản phẩm", icon: Boxes },
+  { to: "/orders", label: "Hoa don", icon: ReceiptText },
+  { to: "/customers", label: "Khach hang", icon: UsersRound },
+  { to: "/products", label: "San pham", icon: Boxes },
   { to: "/inventory", label: "Ton kho", icon: ClipboardList },
+  { to: "/payment-settings", label: "Thanh toan", icon: Settings },
 ];
 
-const pageTitles: Record<string, { title: string}> = {
+const pageTitles: Record<string, { title: string }> = {
   "/pos": {
-    title: "Bán hàng tại quầy",
+    title: "Ban hang tai quay",
+  },
+  "/orders": {
+    title: "Hoa don",
   },
   "/customers": {
-    title: "Khách hàng",
+    title: "Khach hang",
   },
   "/products": {
-    title: "Sản phẩm",
+    title: "San pham",
   },
   "/inventory": {
     title: "Ton kho",
+  },
+  "/payment-settings": {
+    title: "Cau hinh thanh toan",
   },
 };
 
@@ -89,18 +99,18 @@ export function AdminLayout() {
         </nav>
 
         <div className="mt-auto rounded-[1.75rem] bg-white/10 p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-white/45">Đăng nhập</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-white/45">Dang nhap</p>
           <p className="mt-1 truncate font-bold">{displayName}</p>
           <Button className="mt-4 w-full bg-white text-coal" onClick={signOut} variant="secondary">
             <LogOut className="h-4 w-4" />
-            Đăng xuất
+            Dang xuat
           </Button>
         </div>
       </aside>
 
       {sidebarOpen ? (
         <button
-          aria-label="Đóng menu"
+          aria-label="Dong menu"
           className="fixed inset-0 z-[80] bg-coal/45 lg:hidden"
           onClick={() => setSidebarOpen(false)}
           type="button"
@@ -137,7 +147,7 @@ export function AdminLayout() {
                 </div>
                 <div className="hidden min-w-72 items-center gap-3 rounded-2xl bg-white px-4 py-3 text-coal/45 shadow-soft xl:flex">
                   <Search className="h-4 w-4" />
-                  <span className="text-sm font-semibold">Dữ liệu đồng bộ qua Supabase</span>
+                  <span className="text-sm font-semibold">Du lieu dong bo qua Supabase</span>
                 </div>
               </div>
             </header>

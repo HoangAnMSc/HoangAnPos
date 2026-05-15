@@ -4,6 +4,18 @@ const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 export const isCloudinaryConfigured = Boolean(cloudName && uploadPreset);
 
 export async function uploadProductImage(file: File) {
+  return uploadImage(file, "hoang-an-pos/products");
+}
+
+export async function uploadPaymentProof(file: File) {
+  return uploadImage(file, "hoang-an-pos/payment-proofs");
+}
+
+export async function uploadPaymentQr(file: File) {
+  return uploadImage(file, "hoang-an-pos/payment-qr");
+}
+
+async function uploadImage(file: File, folder: string) {
   if (!isCloudinaryConfigured) {
     throw new Error(
       "Chưa cấu hình Cloudinary. Hãy điền VITE_CLOUDINARY_CLOUD_NAME và VITE_CLOUDINARY_UPLOAD_PRESET trong file .env."
@@ -13,7 +25,7 @@ export async function uploadProductImage(file: File) {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_preset", uploadPreset);
-  formData.append("folder", "hoang-an-pos/products");
+  formData.append("folder", folder);
 
   const response = await fetch(
     `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
