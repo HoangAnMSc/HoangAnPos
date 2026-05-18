@@ -4,7 +4,8 @@ import {
   Boxes,
   Check,
   ChevronRight,
-  Edit3,
+  Eye,
+  EyeOff,
   Image as ImageIcon,
   ImagePlus,
   PackagePlus,
@@ -37,7 +38,8 @@ import {
   isValidEan13,
   normalizeEan13Input,
 } from "../lib/productDisplay";
-import { uploadProductImage } from "../lib/cloudinary";
+import { fetchCloudinaryImageResources, uploadProductImageAsset } from "../lib/cloudinary";
+import { saveCloudinaryImageAsset } from "../services/cloudinaryImages";
 import {
   createProductCategory,
   createProduct,
@@ -311,6 +313,8 @@ function MediaPickerModal({
   }, [draftPreview]);
 
   const selectedCount = activeTab === "upload" && draftFile ? 1 : selectedUrl ? 1 : 0;
+  const canSave =
+    Boolean(draftFile) || selectedUrl !== currentImageUrl || Boolean(selectedUrl);
 
   function handleUploadChange(event: ChangeEvent<HTMLInputElement>) {
     const nextFile = event.target.files?.[0] ?? null;
@@ -345,7 +349,7 @@ function MediaPickerModal({
           </button>
           <button
             className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={selectedCount === 0}
+            disabled={!canSave}
             onClick={handleSave}
             type="button"
           >
@@ -397,7 +401,7 @@ function MediaPickerModal({
             }}
             type="button"
           >
-            Unselect all
+            {selectedUrl || draftFile ? "Bo anh" : "Chua chon anh"}
           </button>
         </div>
 
@@ -681,30 +685,30 @@ function ProductForm({
             <button
               className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
                 form.is_active
-                  ? "border-slate-950 bg-white text-slate-950"
+                  ? "border-green-500 bg-green-50 text-green-700"
                   : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
               }`}
               onClick={() => updateField("is_active", true)}
               type="button"
             >
-              <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300">
-                {form.is_active ? <span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> : null}
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-green-700 shadow-sm">
+                <Eye className="h-5 w-5" />
               </span>
-              Active
+              Hien thi
             </button>
             <button
               className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
                 !form.is_active
-                  ? "border-slate-950 bg-white text-slate-950"
+                  ? "border-red-500 bg-red-50 text-red-700"
                   : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
               }`}
               onClick={() => updateField("is_active", false)}
               type="button"
             >
-              <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300">
-                {!form.is_active ? <span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> : null}
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-700 shadow-sm">
+                <EyeOff className="h-5 w-5" />
               </span>
-              Inactive
+              An
             </button>
           </div>
         </section>
@@ -935,6 +939,7 @@ type ProductEditorModalProps = {
   submitting: boolean;
   onAddCategory: (name: string) => Promise<string>;
   onCancel: () => void;
+  onDelete: (product: Product) => Promise<void>;
   onSubmit: (input: ProductInput, imageFile: File | null) => Promise<void>;
 };
 
@@ -944,6 +949,7 @@ function ProductEditorModal({
   libraryImages,
   onAddCategory,
   onCancel,
+  onDelete,
   onSubmit,
   open,
   product,
@@ -955,22 +961,37 @@ function ProductEditorModal({
     <Modal
       bodyClassName="sm:px-8 sm:py-7"
       footer={
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-          <button
-            className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:min-w-32"
-            onClick={onCancel}
-            type="button"
-          >
-            Cancel
-          </button>
-          <button
-            className="rounded-2xl bg-green-600 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
-            disabled={submitting}
-            form={formId}
-            type="submit"
-          >
-            {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
-          </button>
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          {product ? (
+            <button
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-6 py-3 text-sm font-extrabold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-32"
+              disabled={submitting}
+              onClick={() => void onDelete(product)}
+              type="button"
+            >
+              <Trash2 className="h-4 w-4" />
+              Xoa
+            </button>
+          ) : (
+            <span className="hidden sm:block" />
+          )}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <button
+              className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:min-w-32"
+              onClick={onCancel}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="rounded-2xl bg-green-600 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
+              disabled={submitting}
+              form={formId}
+              type="submit"
+            >
+              {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
+            </button>
+          </div>
         </div>
       }
       onClose={onCancel}
@@ -1019,7 +1040,7 @@ function ProductDetailModal({ batches, onClose, onEdit, open, product }: Product
     { label: "Gia ban", value: formatCurrency(product.price) },
     { label: "Ton kho", value: String(product.stock) },
     { label: "Ton theo lo", value: `${batchTotal} / ${activeBatches.length} lo` },
-    { label: "Trang thai", value: product.is_active ? "Dang ban" : "Tam an" },
+    { label: "Trang thai", value: product.is_active ? "Dang hien" : "Dang an" },
   ];
 
   return (
@@ -1060,8 +1081,9 @@ function ProductDetailModal({ batches, onClose, onEdit, open, product }: Product
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap gap-2">
-              <Badge tone={product.is_active ? "green" : "neutral"}>
-                {product.is_active ? "Dang ban" : "Tam an"}
+              <Badge className="items-center gap-1" tone={product.is_active ? "green" : "red"}>
+                {product.is_active ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                {product.is_active ? "Dang hien" : "Dang an"}
               </Badge>
               <Badge tone={getExpiryTone(expiryStatus)}>{getExpiryLabel(expiryStatus)}</Badge>
             </div>
@@ -1289,6 +1311,7 @@ export function ProductsPage() {
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [initialCreateEan13, setInitialCreateEan13] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [cloudinaryLibraryImages, setCloudinaryLibraryImages] = useState<string[]>([]);
   const [productBatches, setProductBatches] = useState<ProductBatch[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
@@ -1310,15 +1333,21 @@ export function ProductsPage() {
     setError("");
 
     try {
-      const [nextProducts, nextCategories, nextBatches] = await Promise.all([
+      const [nextProducts, nextCategories, nextBatches, nextCloudinaryResources] = await Promise.all([
         fetchProducts(),
         fetchProductCategories(),
         fetchProductBatches(),
+        fetchCloudinaryImageResources().catch(() => []),
       ]);
 
       setProducts(nextProducts);
       setProductBatches(nextBatches);
       setSavedCategories(nextCategories);
+      setCloudinaryLibraryImages(
+        nextCloudinaryResources
+          .map((resource) => resource.secure_url || resource.url)
+          .filter((url): url is string => Boolean(url))
+      );
     } catch (requestError) {
       const message =
         requestError instanceof Error
@@ -1393,8 +1422,13 @@ export function ProductsPage() {
     setError("");
 
     try {
-      const imageUrl = imageFile ? await uploadProductImage(imageFile) : input.image_url;
+      const imageUpload = imageFile ? await uploadProductImageAsset(imageFile) : null;
+      const imageUrl = imageUpload ? imageUpload.url : input.image_url;
       const payload = { ...input, image_url: imageUrl };
+
+      if (imageUpload) {
+        await saveCloudinaryImageAsset(imageUpload);
+      }
 
       if (editingProduct) {
         await updateProduct(editingProduct.id, payload);
@@ -1445,9 +1479,29 @@ export function ProductsPage() {
     setError("");
 
     try {
-      await deleteProduct(product.id);
-      setProducts((current) => current.filter((item) => item.id !== product.id));
+      const deletingEditingProduct = editingProduct?.id === product.id;
+      const result = await deleteProduct(product.id);
       setViewingProduct((current) => (current?.id === product.id ? null : current));
+      if (deletingEditingProduct) {
+        setModalOpen(false);
+        setEditingProduct(null);
+        setInitialCreateEan13("");
+      }
+      await loadProducts();
+
+      if (result.mode === "soft-deleted") {
+        setErrorNotice({
+          message:
+            "San pham co lich su hoa don nen he thong da an khoi danh sach thay vi xoa cung.",
+          title: "Da an san pham",
+        });
+      } else if (result.mode === "hidden") {
+        setErrorNotice({
+          message:
+            "Database chua co cot deleted_at, san pham da duoc chuyen sang trang thai an.",
+          title: "Da an san pham",
+        });
+      }
     } catch (requestError) {
       showErrorNotice(
         requestError instanceof Error ? requestError.message : "Xoa san pham that bai.",
@@ -1463,7 +1517,10 @@ export function ProductsPage() {
       .some((value) => value!.toLowerCase().includes(normalizedQuery))
   );
   const libraryImages = Array.from(
-    new Set(products.map((product) => product.image_url).filter(Boolean))
+    new Set([
+      ...cloudinaryLibraryImages,
+      ...products.map((product) => product.image_url).filter(Boolean),
+    ])
   ) as string[];
   const categories = mergeCategoryNames([
     ...savedCategories,
@@ -1515,6 +1572,7 @@ export function ProductsPage() {
     .length;
   const expiringSoonCount = products.filter((product) => getProductExpiryStatus(product) === "soon")
     .length;
+  const hiddenCount = products.filter((product) => !product.is_active).length;
 
   return (
     <div className="w-full max-w-[100vw] px-[1vw]">
@@ -1524,14 +1582,11 @@ export function ProductsPage() {
         <div className="border-b border-coal/10 p-4 sm:p-5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
-                Quan ly kho
-              </p>
-              <h2 className="mt-1 font-display text-2xl font-bold text-coal">San pham</h2>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Badge tone="neutral">{products.length} mat hang</Badge>
                 {expiringSoonCount > 0 ? <Badge tone="amber">{expiringSoonCount} gan het han</Badge> : null}
                 {expiredCount > 0 ? <Badge tone="red">{expiredCount} het han</Badge> : null}
+                {hiddenCount > 0 ? <Badge tone="red">{hiddenCount} dang an</Badge> : null}
               </div>
             </div>
             <div className="grid gap-2 sm:flex sm:w-auto">
@@ -1590,38 +1645,9 @@ export function ProductsPage() {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-3 p-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 mt-2">
             {filteredProducts.map((product) => (
               <ProductCard
-                actions={
-                  <>
-                    <Button
-                      aria-label={`Nhap kho ${product.name}`}
-                      className="h-9 w-9 rounded-xl bg-white/95 p-0 text-green-700 shadow-sm ring-1 ring-slate-200 hover:bg-green-50"
-                      onClick={() => openReceiveModal(product)}
-                      variant="secondary"
-                    >
-                      <PackagePlus className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      aria-label={`Sua ${product.name}`}
-                      className="h-9 w-9 rounded-xl bg-white/95 p-0 text-coal shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
-                      onClick={() => openEditModal(product)}
-                      variant="secondary"
-                    >
-                      <Edit3 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      aria-label={`Xoa ${product.name}`}
-                      className="h-9 w-9 rounded-xl p-0 shadow-sm"
-                      onClick={() => handleDelete(product)}
-                      variant="danger"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </>
-                }
-                badgeLabel={product.is_active ? undefined : "Tam an"}
                 compact
                 expiryClassName={getProductExpiryClassName(product)}
                 expiryLabel={getProductExpiryLabel(product)}
@@ -1641,6 +1667,7 @@ export function ProductsPage() {
         libraryImages={libraryImages}
         onAddCategory={handleAddCategory}
         onCancel={closeProductEditor}
+        onDelete={handleDelete}
         onSubmit={handleSave}
         open={modalOpen}
         product={editingProduct}

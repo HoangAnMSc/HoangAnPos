@@ -2,6 +2,7 @@ import {
   BadgeDollarSign,
   Boxes,
   ClipboardList,
+  Images,
   LogOut,
   Menu,
   PanelLeftClose,
@@ -20,6 +21,7 @@ const navigation = [
   { to: "/orders", label: "Hoa don", icon: ReceiptText },
   { to: "/customers", label: "Khach hang", icon: UsersRound },
   { to: "/products", label: "San pham", icon: Boxes },
+  { to: "/cloudinary-images", label: "Anh Cloudinary", icon: Images },
   { to: "/inventory", label: "Ton kho", icon: ClipboardList },
   { to: "/payment-settings", label: "Thanh toan", icon: Settings },
 ];
@@ -36,6 +38,9 @@ const pageTitles: Record<string, { title: string }> = {
   },
   "/products": {
     title: "San pham",
+  },
+  "/cloudinary-images": {
+    title: "Anh Cloudinary",
   },
   "/inventory": {
     title: "Ton kho",

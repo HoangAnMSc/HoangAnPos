@@ -25,6 +25,10 @@ export type ReceiveStockInput = {
   quantity: number;
 };
 
+export type DeleteProductResult = {
+  mode: "deleted" | "soft-deleted" | "hidden";
+};
+
 const nullableProductFields = [
   "sku",
   "category",
@@ -39,7 +43,7 @@ function createProductPayload(input: ProductInput) {
 
   nullableProductFields.forEach((field) => {
     if (payload[field] === null || payload[field] === "") {
-      delete payload[field];
+      payload[field] = null;
     }
   });
 
@@ -92,6 +96,27 @@ function isDuplicateKey(error: unknown) {
   );
 }
 
+function isForeignKeyViolation(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23503"
+  );
+}
+
+function isMissingDeletedAtColumn(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string" &&
+    (error.message.includes("'deleted_at' column") ||
+      error.message.includes("deleted_at") ||
+      error.message.includes("products_deleted_at"))
+  );
+}
+
 function withoutDescription(input: ProductInput) {
   const payload = createProductPayload(input);
   delete payload.description;
@@ -104,9 +129,21 @@ export async function fetchProducts() {
   const { data, error } = await supabase
     .from("products")
     .select("*")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (error) {
+    if (isMissingDeletedAtColumn(error)) {
+      const fallback = await supabase
+        .from("products")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (!fallback.error) {
+        return fallback.data ?? [];
+      }
+    }
+
     throw error;
   }
 
@@ -265,14 +302,61 @@ export async function updateProduct(id: string, input: ProductInput) {
   return data;
 }
 
-export async function deleteProduct(id: string) {
+export async function updateProductActive(id: string, isActive: boolean) {
+  requireSupabaseConfig();
+
+  const { data, error } = await supabase
+    .from("products")
+    .update({ is_active: isActive })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function deleteProduct(id: string): Promise<DeleteProductResult> {
   requireSupabaseConfig();
 
   const { error } = await supabase.from("products").delete().eq("id", id);
 
   if (error) {
+    if (isForeignKeyViolation(error)) {
+      return softDeleteProduct(id);
+    }
+
     throw error;
   }
+
+  return { mode: "deleted" };
+}
+
+async function softDeleteProduct(id: string): Promise<DeleteProductResult> {
+  const deletedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from("products")
+    .update({ deleted_at: deletedAt, is_active: false })
+    .eq("id", id);
+
+  if (!error) {
+    return { mode: "soft-deleted" };
+  }
+
+  if (isMissingDeletedAtColumn(error)) {
+    const fallback = await supabase.from("products").update({ is_active: false }).eq("id", id);
+
+    if (fallback.error) {
+      throw fallback.error;
+    }
+
+    return { mode: "hidden" };
+  }
+
+  throw error;
 }
 
 export async function receiveProductStock(input: ReceiveStockInput) {

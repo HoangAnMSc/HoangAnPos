@@ -23,8 +23,10 @@ Tạo file `.env` từ `.env.example`:
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-VITE_CLOUDINARY_CLOUD_NAME=your-cloud-name
-VITE_CLOUDINARY_UPLOAD_PRESET=your-unsigned-upload-preset
+CLOUDINARY_CLOUD_NAME=your-cloud-name
+CLOUDINARY_UPLOAD_PRESET=your-unsigned-upload-preset
+CLOUDINARY_API_KEY=your-api-key
+CLOUDINARY_API_SECRET=your-api-secret
 ```
 
 ## Supabase
@@ -61,8 +63,27 @@ order by p.created_at desc;
 
 ## Cloudinary
 
-Tạo unsigned upload preset trong Cloudinary và điền vào `VITE_CLOUDINARY_UPLOAD_PRESET`.
+Tạo unsigned upload preset trong Cloudinary và điền vào `CLOUDINARY_UPLOAD_PRESET`.
 Ảnh sản phẩm sẽ được upload vào folder `hoang-an-pos/products`.
+
+De xoa anh truc tiep tren Cloudinary tu trang quan ly anh, deploy Supabase Edge Function:
+
+```bash
+supabase functions deploy delete-cloudinary-image
+supabase secrets set CLOUDINARY_CLOUD_NAME=your-cloud-name
+supabase secrets set CLOUDINARY_API_KEY=your-api-key
+supabase secrets set CLOUDINARY_API_SECRET=your-api-secret
+```
+
+Neu deploy tren Vercel, app dung API route `api/cloudinary-images.js` de liet ke toan bo anh Cloudinary va xoa anh. Khai bao 3 bien moi truong server-side trong Vercel:
+
+```bash
+CLOUDINARY_CLOUD_NAME=your-cloud-name
+CLOUDINARY_API_KEY=your-api-key
+CLOUDINARY_API_SECRET=your-api-secret
+```
+
+Anh moi upload se luu `delete_token` va co the xoa nhanh trong khoang ngan sau upload. Anh cu van can API key/secret de xoa that tren Cloudinary.
 
 ## Scripts
 

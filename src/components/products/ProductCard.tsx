@@ -75,7 +75,7 @@ export function ProductCard({
       >
         <div
           className={clsx(
-            "relative flex w-full items-center justify-center overflow-hidden rounded-[1.05rem] bg-slate-50",
+            "relative flex w-full items-center justify-center overflow-hidden rounded-[20px] bg-slate-50",
             compact ? "aspect-[1.55]" : "aspect-[1.14]"
           )}
         >
@@ -83,7 +83,7 @@ export function ProductCard({
             <img
               alt={product.name}
               className={clsx(
-                "h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]",
+                "h-full w-full object-cover transition rounded-[20px] duration-300 group-hover:scale-[1.03]",
                 compact ? "p-2" : "p-3"
               )}
               src={product.image_url}

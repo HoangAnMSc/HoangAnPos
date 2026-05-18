@@ -47,6 +47,7 @@ export type Database = {
           stock: number;
           image_url: string | null;
           is_active: boolean;
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -63,6 +64,7 @@ export type Database = {
           stock?: number;
           image_url?: string | null;
           is_active?: boolean;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -79,6 +81,40 @@ export type Database = {
           stock?: number;
           image_url?: string | null;
           is_active?: boolean;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      cloudinary_images: {
+        Row: {
+          id: string;
+          url: string;
+          public_id: string | null;
+          folder: string | null;
+          delete_token: string | null;
+          delete_token_expires_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          url: string;
+          public_id?: string | null;
+          folder?: string | null;
+          delete_token?: string | null;
+          delete_token_expires_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          url?: string;
+          public_id?: string | null;
+          folder?: string | null;
+          delete_token?: string | null;
+          delete_token_expires_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

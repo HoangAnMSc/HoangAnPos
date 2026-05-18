@@ -21,6 +21,7 @@ create table if not exists public.products (
   stock integer not null default 0 check (stock >= 0),
   image_url text,
   is_active boolean not null default true,
+  deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -43,6 +44,26 @@ add column if not exists import_date date;
 
 alter table public.products
 add column if not exists expiry_date date;
+
+alter table public.products
+add column if not exists deleted_at timestamptz;
+
+create table if not exists public.cloudinary_images (
+  id uuid primary key default gen_random_uuid(),
+  url text not null unique,
+  public_id text,
+  folder text,
+  delete_token text,
+  delete_token_expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.cloudinary_images
+add column if not exists delete_token text;
+
+alter table public.cloudinary_images
+add column if not exists delete_token_expires_at timestamptz;
 
 create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),
@@ -143,6 +164,8 @@ where p.stock > 0
   );
 
 create index if not exists products_name_idx on public.products using gin (to_tsvector('simple', name));
+create index if not exists products_deleted_at_idx on public.products(deleted_at);
+create index if not exists cloudinary_images_public_id_idx on public.cloudinary_images(public_id);
 create index if not exists product_categories_name_idx on public.product_categories(name);
 create index if not exists product_batches_product_id_idx on public.product_batches(product_id);
 create index if not exists customers_name_idx on public.customers using gin (to_tsvector('simple', name));
@@ -179,6 +202,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists set_product_categories_updated_at on public.product_categories;
 create trigger set_product_categories_updated_at
 before update on public.product_categories
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_cloudinary_images_updated_at on public.cloudinary_images;
+create trigger set_cloudinary_images_updated_at
+before update on public.cloudinary_images
 for each row execute function public.set_updated_at();
 
 drop trigger if exists set_product_batches_updated_at on public.product_batches;
@@ -511,6 +539,7 @@ $$;
 
 alter table public.profiles enable row level security;
 alter table public.products enable row level security;
+alter table public.cloudinary_images enable row level security;
 alter table public.product_categories enable row level security;
 alter table public.product_batches enable row level security;
 alter table public.customers enable row level security;
@@ -537,6 +566,12 @@ with check (public.is_admin());
 drop policy if exists "Admins manage products" on public.products;
 create policy "Admins manage products"
 on public.products for all
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "Admins manage cloudinary images" on public.cloudinary_images;
+create policy "Admins manage cloudinary images"
+on public.cloudinary_images for all
 using (public.is_admin())
 with check (public.is_admin());
 

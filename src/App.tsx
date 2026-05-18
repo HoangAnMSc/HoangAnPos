@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { ProtectedRoute } from "./components/routing/ProtectedRoute";
+import { CloudinaryImagesPage } from "./pages/CloudinaryImagesPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -23,6 +24,7 @@ export function App() {
           <Route path="orders" element={<OrdersPage />} />
           <Route path="customers" element={<CustomersPage />} />
           <Route path="products" element={<ProductsPage />} />
+          <Route path="cloudinary-images" element={<CloudinaryImagesPage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="payment-settings" element={<PaymentSettingsPage />} />
         </Route>
