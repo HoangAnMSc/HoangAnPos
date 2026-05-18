@@ -431,7 +431,7 @@ export function CloudinaryImagesPage() {
             title="Chua co anh phu hop"
           />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 xl:grid-cols-[repeat(auto-fit,minmax(200px,1fr))] grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
             {filteredImages.map((item) => {
               const busy = deletingUrls.includes(item.url);
               const selected = selectedUrls.has(item.url);
