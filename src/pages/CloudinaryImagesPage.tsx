@@ -8,6 +8,7 @@ import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNotice
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
+import { useAuth } from "../contexts/AuthContext";
 import { formatDateTime } from "../lib/format";
 import {
   deleteCloudinaryProductImage,
@@ -147,6 +148,7 @@ function formatDimensions(item: ImageLibraryItem) {
 }
 
 export function CloudinaryImagesPage() {
+  const { canAccess } = useAuth();
   const [deletingUrls, setDeletingUrls] = useState<string[]>([]);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [images, setImages] = useState<ImageLibraryItem[]>([]);
@@ -155,6 +157,8 @@ export function CloudinaryImagesPage() {
   const [selectedImage, setSelectedImage] = useState<ImageLibraryItem | null>(null);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(() => new Set());
   const [uploading, setUploading] = useState(false);
+  const canUploadImage = canAccess("cloudinary-images.upload");
+  const canDeleteImage = canAccess("cloudinary-images.delete");
 
   const loadImages = useCallback(async () => {
     setLoading(true);
@@ -223,6 +227,10 @@ export function CloudinaryImagesPage() {
   const deleting = deletingUrls.length > 0;
 
   function toggleImageSelection(imageUrl: string) {
+    if (!canDeleteImage) {
+      return;
+    }
+
     setSelectedUrls((current) => {
       const nextSelected = new Set(current);
 
@@ -237,6 +245,10 @@ export function CloudinaryImagesPage() {
   }
 
   function toggleFilteredSelection() {
+    if (!canDeleteImage) {
+      return;
+    }
+
     setSelectedUrls((current) => {
       const nextSelected = new Set(current);
 
@@ -258,6 +270,10 @@ export function CloudinaryImagesPage() {
       return;
     }
 
+    if (!canUploadImage) {
+      return;
+    }
+
     setUploading(true);
 
     try {
@@ -275,7 +291,7 @@ export function CloudinaryImagesPage() {
   }
 
   async function deleteCloudinaryItems(items: ImageLibraryItem[], confirmMessage: string) {
-    if (items.length === 0 || deleting) {
+    if (!canDeleteImage || items.length === 0 || deleting) {
       return;
     }
 
@@ -348,24 +364,28 @@ export function CloudinaryImagesPage() {
             </div>
 
             <div className="grid gap-2 sm:flex sm:w-auto">
-              <Button
-                className="w-full sm:w-auto"
-                disabled={filteredImages.length === 0 || deleting}
-                onClick={toggleFilteredSelection}
-                variant="secondary"
-              >
-                {allFilteredSelected ? "Bo chon" : "Chon tat ca"}
-              </Button>
-              <Button
-                className="w-full sm:w-auto"
-                disabled={selectedItems.length === 0 || deleting}
-                isLoading={deleting}
-                onClick={() => void handleDeleteSelected()}
-                variant="danger"
-              >
-                <Trash2 className="h-4 w-4" />
-                Xoa da chon ({selectedItems.length})
-              </Button>
+              {canDeleteImage ? (
+                <>
+                  <Button
+                    className="w-full sm:w-auto"
+                    disabled={filteredImages.length === 0 || deleting}
+                    onClick={toggleFilteredSelection}
+                    variant="secondary"
+                  >
+                    {allFilteredSelected ? "Bo chon" : "Chon tat ca"}
+                  </Button>
+                  <Button
+                    className="w-full sm:w-auto"
+                    disabled={selectedItems.length === 0 || deleting}
+                    isLoading={deleting}
+                    onClick={() => void handleDeleteSelected()}
+                    variant="danger"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Xoa da chon ({selectedItems.length})
+                  </Button>
+                </>
+              ) : null}
               <Button
                 className="w-full sm:w-auto"
                 disabled={loading || deleting}
@@ -375,15 +395,17 @@ export function CloudinaryImagesPage() {
                 <RefreshCw className="h-4 w-4" />
                 Tai lai
               </Button>
-              <label
-                className={`inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-coal px-4 py-2.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:shadow-lift ${
-                  uploading || deleting ? "pointer-events-none opacity-60" : ""
-                }`}
-              >
-                <Upload className="h-4 w-4" />
-                {uploading ? "Dang tai..." : "Tai anh"}
-                <input accept="image/*" className="hidden" onChange={handleUpload} type="file" />
-              </label>
+              {canUploadImage ? (
+                <label
+                  className={`inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-coal px-4 py-2.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:shadow-lift ${
+                    uploading || deleting ? "pointer-events-none opacity-60" : ""
+                  }`}
+                >
+                  <Upload className="h-4 w-4" />
+                  {uploading ? "Dang tai..." : "Tai anh"}
+                  <input accept="image/*" className="hidden" onChange={handleUpload} type="file" />
+                </label>
+              ) : null}
             </div>
           </div>
 
@@ -422,16 +444,18 @@ export function CloudinaryImagesPage() {
                   }`}
                   key={item.url}
                 >
-                  <label className="absolute left-3 top-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl bg-white/95 shadow-sm ring-1 ring-slate-200">
-                    <input
-                      aria-label={`Chon anh ${item.publicId ?? item.url}`}
-                      checked={selected}
-                      className="h-5 w-5 accent-red-600"
-                      disabled={busy || deleting}
-                      onChange={() => toggleImageSelection(item.url)}
-                      type="checkbox"
-                    />
-                  </label>
+                  {canDeleteImage ? (
+                    <label className="absolute left-3 top-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl bg-white/95 shadow-sm ring-1 ring-slate-200">
+                      <input
+                        aria-label={`Chon anh ${item.publicId ?? item.url}`}
+                        checked={selected}
+                        className="h-5 w-5 accent-red-600"
+                        disabled={busy || deleting}
+                        onChange={() => toggleImageSelection(item.url)}
+                        type="checkbox"
+                      />
+                    </label>
+                  ) : null}
 
                   <div className="aspect-[1.4] bg-slate-100">
                     <img alt={item.publicId ?? "Cloudinary"} className="h-full w-full object-cover" src={item.url} />
@@ -458,7 +482,7 @@ export function CloudinaryImagesPage() {
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className={`grid gap-2 ${canDeleteImage ? "grid-cols-2" : "grid-cols-1"}`}>
                       <Button
                         className="w-full"
                         disabled={busy}
@@ -468,16 +492,18 @@ export function CloudinaryImagesPage() {
                         <Eye className="h-4 w-4" />
                         Chi tiet
                       </Button>
-                      <Button
-                        className="w-full"
-                        disabled={busy}
-                        isLoading={busy}
-                        onClick={() => void handleDeleteCloudinary(item)}
-                        variant="danger"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Xoa
-                      </Button>
+                      {canDeleteImage ? (
+                        <Button
+                          className="w-full"
+                          disabled={busy}
+                          isLoading={busy}
+                          onClick={() => void handleDeleteCloudinary(item)}
+                          variant="danger"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Xoa
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </article>
@@ -493,7 +519,7 @@ export function CloudinaryImagesPage() {
             <Button onClick={() => setSelectedImage(null)} type="button" variant="secondary">
               Dong
             </Button>
-            {selectedImage ? (
+            {selectedImage && canDeleteImage ? (
               <Button
                 disabled={deletingUrls.includes(selectedImage.url)}
                 isLoading={deletingUrls.includes(selectedImage.url)}

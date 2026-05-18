@@ -1,73 +1,50 @@
-import {
-  BadgeDollarSign,
-  Boxes,
-  ClipboardList,
-  Images,
-  LogOut,
-  Menu,
-  PanelLeftClose,
-  ReceiptText,
-  Search,
-  Settings,
-  UsersRound,
-} from "lucide-react";
+import { LogOut, Menu, PanelLeftClose, Search } from "lucide-react";
 import { useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { appPermissions } from "../../lib/permissions";
 import { Button } from "../ui/Button";
 
-const navigation = [
-  { to: "/pos", label: "POS", icon: BadgeDollarSign },
-  { to: "/orders", label: "Hoa don", icon: ReceiptText },
-  { to: "/customers", label: "Khach hang", icon: UsersRound },
-  { to: "/products", label: "San pham", icon: Boxes },
-  { to: "/cloudinary-images", label: "Anh Cloudinary", icon: Images },
-  { to: "/inventory", label: "Ton kho", icon: ClipboardList },
-  { to: "/payment-settings", label: "Thanh toan", icon: Settings },
-];
-
 const pageTitles: Record<string, { title: string }> = {
-  "/pos": {
-    title: "Ban hang tai quay",
-  },
-  "/orders": {
-    title: "Hoa don",
-  },
-  "/customers": {
-    title: "Khach hang",
-  },
-  "/products": {
-    title: "San pham",
-  },
-  "/cloudinary-images": {
-    title: "Anh Cloudinary",
-  },
-  "/inventory": {
-    title: "Ton kho",
-  },
-  "/payment-settings": {
-    title: "Cau hinh thanh toan",
-  },
+  "/cloudinary-images": { title: "Anh Cloudinary" },
+  "/customers": { title: "Khach hang" },
+  "/inventory": { title: "Ton kho" },
+  "/orders": { title: "Hoa don" },
+  "/payment-settings": { title: "Cau hinh thanh toan" },
+  "/pos": { title: "Ban hang tai quay" },
+  "/products": { title: "San pham" },
+  "/roles": { title: "Quan ly role" },
+  "/users": { title: "Quan ly user" },
 };
 
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { profile, signOut, user } = useAuth();
+  const { canAccess, profile, signOut, user } = useAuth();
   const location = useLocation();
   const page = pageTitles[location.pathname] ?? pageTitles["/pos"];
   const displayName = profile?.full_name || user?.email || "Admin";
   const isPosRoute = location.pathname === "/pos";
+  const visibleNavigation = appPermissions.filter((item) => canAccess(item.key));
+  const currentPermission = appPermissions.find((item) => item.path === location.pathname);
+
+  if (profile?.is_active === false) {
+    return <Navigate replace to="/unauthorized" />;
+  }
+
+  if (currentPermission && !canAccess(currentPermission.key)) {
+    return <Navigate replace to="/unauthorized" />;
+  }
 
   return (
     <div className="min-h-screen bg-white text-coal">
       <div className="fixed inset-0 -z-10 bg-grain" />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-[90] flex w-72 flex-col border-r border-white/70 bg-coal p-5 text-white shadow-2xl transition-transform lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-[90] flex h-dvh w-72 flex-col overflow-hidden border-r border-white/70 bg-coal p-5 text-white shadow-2xl transition-transform lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-6 flex shrink-0 items-center justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.35em] text-clay">
               Hoang An
@@ -83,8 +60,8 @@ export function AdminLayout() {
           </button>
         </div>
 
-        <nav className="space-y-2">
-          {navigation.map((item) => (
+        <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
+          {visibleNavigation.map((item) => (
             <NavLink
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-extrabold transition ${
@@ -93,9 +70,9 @@ export function AdminLayout() {
                     : "text-white/72 hover:bg-white/10 hover:text-white"
                 }`
               }
-              key={item.to}
+              key={item.path}
               onClick={() => setSidebarOpen(false)}
-              to={item.to}
+              to={item.path}
             >
               <item.icon className="h-6 w-6" />
               {item.label}
@@ -103,7 +80,7 @@ export function AdminLayout() {
           ))}
         </nav>
 
-        <div className="mt-auto rounded-[1.75rem] bg-white/10 p-4">
+        <div className="mt-4 shrink-0 rounded-[1.75rem] bg-white/10 p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-white/45">Dang nhap</p>
           <p className="mt-1 truncate font-bold">{displayName}</p>
           <Button className="mt-4 w-full bg-white text-coal" onClick={signOut} variant="secondary">

@@ -249,7 +249,7 @@ function QuickCustomerForm({ formId, onCancel, onSubmit, submitting }: QuickCust
 }
 
 export function PosPage() {
-  const { profile, user } = useAuth();
+  const { canAccess, profile, user } = useAuth();
   const productSearchRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLInputElement>(null);
   const discountRef = useRef<HTMLInputElement>(null);
@@ -292,6 +292,11 @@ export function PosPage() {
   const orderNote = activeBill?.orderNote ?? "";
   const paymentMethod = activeBill?.paymentMethod ?? "cash";
   const selectedCustomerId = activeBill?.selectedCustomerId ?? "";
+  const canCheckout = canAccess("pos.checkout");
+  const canApplyDiscount = canAccess("pos.discount");
+  const canCreateQuickCustomer =
+    canAccess("pos.quick-customer.create") || canAccess("customers.create");
+  const canUploadPaymentProof = canAccess("pos.payment-proof.upload");
 
   const showErrorNotice = useCallback((message: string, title = "Thong bao loi") => {
     setError(message);
@@ -395,18 +400,22 @@ export function PosPage() {
 
       if (event.key === "F4") {
         event.preventDefault();
-        setPaymentModalOpen(true);
+        if (canCheckout) {
+          setPaymentModalOpen(true);
+        }
       }
 
       if (event.key === "F6") {
         event.preventDefault();
-        discountRef.current?.focus();
+        if (canApplyDiscount) {
+          discountRef.current?.focus();
+        }
       }
     }
 
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, []);
+  }, [canApplyDiscount, canCheckout]);
 
   const activeProducts = useMemo(() => getActiveProducts(products), [products]);
   const normalizedProductQuery = productQuery.trim().toLowerCase();
@@ -441,7 +450,7 @@ export function PosPage() {
   }, [customers, normalizedCustomerQuery, selectedCustomer]);
 
   const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-  const rawDiscount = Number(discount || 0);
+  const rawDiscount = canApplyDiscount ? Number(discount || 0) : 0;
   const safeDiscount = Math.min(Math.max(Number.isNaN(rawDiscount) ? 0 : rawDiscount, 0), subtotal);
   const total = subtotal - safeDiscount;
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -499,6 +508,10 @@ export function PosPage() {
   }
 
   function addBill() {
+    if (!canCheckout) {
+      return;
+    }
+
     setWorkspace((current) => {
       const nextId = getNextBillId(current.bills);
       return {
@@ -512,6 +525,10 @@ export function PosPage() {
   }
 
   function closeBill(billId: number) {
+    if (!canCheckout) {
+      return;
+    }
+
     setWorkspace((current) => {
       if (current.bills.length === 1) {
         return {
@@ -529,6 +546,10 @@ export function PosPage() {
   }
 
   function addToCart(product: Product, batch?: ProductBatch | null) {
+    if (!canCheckout) {
+      return;
+    }
+
     setSuccess("");
     setError("");
 
@@ -582,6 +603,10 @@ export function PosPage() {
   }
 
   function changeQuantity(lineId: string, nextQuantity: number) {
+    if (!canCheckout) {
+      return;
+    }
+
     updateActiveCart((current) =>
       current
         .map((item) => {
@@ -610,10 +635,18 @@ export function PosPage() {
   }
 
   function removeFromCart(lineId: string) {
+    if (!canCheckout) {
+      return;
+    }
+
     updateActiveCart((current) => current.filter((item) => item.lineId !== lineId));
   }
 
   function clearCart() {
+    if (!canCheckout) {
+      return;
+    }
+
     updateActiveBill((bill) => createEmptyBill(bill.id));
     setError("");
     setSuccess("");
@@ -639,13 +672,17 @@ export function PosPage() {
   }
 
   function handleProductSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter" && productResults[0]) {
+    if (event.key === "Enter" && productResults[0] && canCheckout) {
       event.preventDefault();
       addToCart(productResults[0]);
     }
   }
 
   function handleEan13Detected(value: string) {
+    if (!canCheckout) {
+      return;
+    }
+
     const ean13Code = normalizeEan13Input(value);
     const product = findProductByEan13(products, ean13Code);
 
@@ -683,6 +720,10 @@ export function PosPage() {
   }
 
   async function handleCreateCustomer(input: CustomerInput) {
+    if (!canCreateQuickCustomer) {
+      return;
+    }
+
     setSubmittingCustomer(true);
     setError("");
 
@@ -702,7 +743,7 @@ export function PosPage() {
   }
 
   function getValidatedDiscount() {
-    const discountValue = Number(discount || 0);
+    const discountValue = canApplyDiscount ? Number(discount || 0) : 0;
     setError("");
     setSuccess("");
 
@@ -720,6 +761,10 @@ export function PosPage() {
   }
 
   function openPaymentModal() {
+    if (!canCheckout) {
+      return;
+    }
+
     const discountValue = getValidatedDiscount();
     if (discountValue === null) {
       return;
@@ -741,6 +786,10 @@ export function PosPage() {
   }
 
   function handlePaymentProofChange(file: File | null) {
+    if (!canUploadPaymentProof) {
+      return;
+    }
+
     setPaymentProofFile(file);
     setPaymentProofPreview("");
 
@@ -756,6 +805,10 @@ export function PosPage() {
   }
 
   async function handleCheckout() {
+    if (!canCheckout) {
+      return;
+    }
+
     const discountValue = getValidatedDiscount();
     if (discountValue === null) {
       return;
@@ -779,7 +832,7 @@ export function PosPage() {
 
     try {
       const paymentProofUrl =
-        selectedPaymentMethod === "transfer" && paymentProofFile
+        selectedPaymentMethod === "transfer" && paymentProofFile && canUploadPaymentProof
           ? await uploadPaymentProof(paymentProofFile)
           : null;
 
@@ -818,6 +871,10 @@ export function PosPage() {
   }
 
   function handleSaveBill() {
+    if (!canCheckout) {
+      return;
+    }
+
     setError("");
     setSuccess("");
 
@@ -838,14 +895,16 @@ export function PosPage() {
       <header className="sticky top-0 z-40 rounded-b-[1.5rem] border-b border-white/80 bg-white/95 px-4 py-3 pl-20 shadow-[0_14px_36px_rgba(15,23,42,0.12)] backdrop-blur lg:pl-5 xl:px-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="flex min-w-0 flex-1 gap-2">
-            <button
-              aria-label="Quet EAN-13"
-              className="flex h-14 w-14 flex-none items-center justify-center rounded-xl bg-slate-900 text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 md:h-16 md:w-16"
-              onClick={() => setEan13ScannerOpen(true)}
-              type="button"
-            >
-              <Barcode className="h-6 w-6" />
-            </button>
+            {canCheckout ? (
+              <button
+                aria-label="Quet EAN-13"
+                className="flex h-14 w-14 flex-none items-center justify-center rounded-xl bg-slate-900 text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 md:h-16 md:w-16"
+                onClick={() => setEan13ScannerOpen(true)}
+                type="button"
+              >
+                <Barcode className="h-6 w-6" />
+              </button>
+            ) : null}
             <div className="relative min-w-0 flex-1">
               <input
                 className="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 pr-16 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100 md:h-16 md:px-5 md:pr-20 md:text-xl"
@@ -872,7 +931,8 @@ export function PosPage() {
                     <div className="max-h-[min(70vh,620px)] overflow-y-auto p-2">
                       {productResults.map((product) => {
                         const quantityInCart = getQuantityInCart(product.id);
-                        const disabled = product.stock <= 0 || quantityInCart >= product.stock;
+                        const disabled =
+                          !canCheckout || product.stock <= 0 || quantityInCart >= product.stock;
 
                         return (
                           <button
@@ -919,9 +979,11 @@ export function PosPage() {
                                 {formatCurrency(product.price)}
                               </p>
                             </div>
-                            <span className="rounded-xl bg-green-600 px-4 py-3 text-sm font-extrabold text-white shadow-sm">
-                              Them
-                            </span>
+                            {canCheckout ? (
+                              <span className="rounded-xl bg-green-600 px-4 py-3 text-sm font-extrabold text-white shadow-sm">
+                                Them
+                              </span>
+                            ) : null}
                           </button>
                         );
                       })}
@@ -948,26 +1010,30 @@ export function PosPage() {
                 {bill.savedAt ? (
                   <span className="h-2 w-2 rounded-full bg-green-500" />
                 ) : null}
-                <span
-                  className="rounded-md p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    closeBill(bill.id);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <X className="h-4 w-4" />
-                </span>
+                {canCheckout ? (
+                  <span
+                    className="rounded-md p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      closeBill(bill.id);
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <X className="h-4 w-4" />
+                  </span>
+                ) : null}
               </button>
             ))}
-            <button
-              className="flex h-16 min-w-14 items-center justify-center rounded-t-2xl border border-slate-200 bg-[#eef3f9] text-slate-600 transition hover:bg-slate-100"
-              onClick={addBill}
-              type="button"
-            >
-              <Plus className="h-6 w-6" />
-            </button>
+            {canCheckout ? (
+              <button
+                className="flex h-16 min-w-14 items-center justify-center rounded-t-2xl border border-slate-200 bg-[#eef3f9] text-slate-600 transition hover:bg-slate-100"
+                onClick={addBill}
+                type="button"
+              >
+                <Plus className="h-6 w-6" />
+              </button>
+            ) : null}
           </div>
 
           <div className="hidden shrink-0 items-center justify-end gap-3 md:flex">
@@ -1024,14 +1090,16 @@ export function PosPage() {
                       />
                       Tach dong san pham
                     </label>
-                    <button
-                      className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 text-lg font-extrabold text-red-300 transition hover:border-red-200 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={cart.length === 0}
-                      onClick={clearCart}
-                      type="button"
-                    >
-                      Xoa tat ca
-                    </button>
+                    {canCheckout ? (
+                      <button
+                        className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 text-lg font-extrabold text-red-300 transition hover:border-red-200 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={cart.length === 0}
+                        onClick={clearCart}
+                        type="button"
+                      >
+                        Xoa tat ca
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1095,39 +1163,47 @@ export function PosPage() {
                             </div>
                           </div>
 
-                          <div className="flex w-fit items-center gap-2 rounded-xl bg-slate-50 p-1.5">
-                            <button
-                              className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
-                              onClick={() => changeQuantity(item.lineId, item.quantity - 1)}
-                              type="button"
-                            >
-                              <Minus className="h-4 w-4" />
-                            </button>
-                            <span className="min-w-12 text-center text-2xl font-extrabold text-slate-900">
+                          {canCheckout ? (
+                            <div className="flex w-fit items-center gap-2 rounded-xl bg-slate-50 p-1.5">
+                              <button
+                                className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
+                                onClick={() => changeQuantity(item.lineId, item.quantity - 1)}
+                                type="button"
+                              >
+                                <Minus className="h-4 w-4" />
+                              </button>
+                              <span className="min-w-12 text-center text-2xl font-extrabold text-slate-900">
+                                {item.quantity}
+                              </span>
+                              <button
+                                className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={quantityInProduct >= item.product.stock}
+                                onClick={() => changeQuantity(item.lineId, item.quantity + 1)}
+                                type="button"
+                              >
+                                <Plus className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-2xl font-extrabold text-slate-900">
                               {item.quantity}
                             </span>
-                            <button
-                              className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={quantityInProduct >= item.product.stock}
-                              onClick={() => changeQuantity(item.lineId, item.quantity + 1)}
-                              type="button"
-                            >
-                              <Plus className="h-4 w-4" />
-                            </button>
-                          </div>
+                          )}
 
                           <p className="text-left text-2xl font-extrabold tabular-nums text-slate-900 lg:text-right">
                             {formatCurrency(item.product.price * item.quantity)}
                           </p>
 
-                          <button
-                            aria-label="Xoa san pham"
-                            className="flex h-12 w-12 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-500"
-                            onClick={() => removeFromCart(item.lineId)}
-                            type="button"
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </button>
+                          {canCheckout ? (
+                            <button
+                              aria-label="Xoa san pham"
+                              className="flex h-12 w-12 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+                              onClick={() => removeFromCart(item.lineId)}
+                              type="button"
+                            >
+                              <Trash2 className="h-5 w-5" />
+                            </button>
+                          ) : null}
                         </article>
                       );
                     })}
@@ -1155,15 +1231,17 @@ export function PosPage() {
                   placeholder="Nhap ghi chu don hang"
                   value={orderNote}
                 />
-                <button
-                  className="flex h-[68px] items-center justify-center gap-2 rounded-2xl border border-blue-500 bg-blue-50 px-5 text-xl font-extrabold text-blue-600 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={cart.length === 0 && !selectedCustomerId && !orderNote.trim()}
-                  onClick={handleSaveBill}
-                  type="button"
-                >
-                  <Save className="h-5 w-5" />
-                  Luu don
-                </button>
+                {canCheckout ? (
+                  <button
+                    className="flex h-[68px] items-center justify-center gap-2 rounded-2xl border border-blue-500 bg-blue-50 px-5 text-xl font-extrabold text-blue-600 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={cart.length === 0 && !selectedCustomerId && !orderNote.trim()}
+                    onClick={handleSaveBill}
+                    type="button"
+                  >
+                    <Save className="h-5 w-5" />
+                    Luu don
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -1220,14 +1298,16 @@ export function PosPage() {
                       </div>
                     ) : null}
                   </div>
-                  <button
-                    aria-label="Them khach hang"
-                    className="flex h-[70px] w-[70px] flex-none items-center justify-center rounded-xl bg-green-600 text-white shadow-[0_14px_30px_rgba(22,163,74,0.28)] transition hover:bg-green-700"
-                    onClick={() => setCustomerModalOpen(true)}
-                    type="button"
-                  >
-                    <Plus className="h-6 w-6" />
-                  </button>
+                  {canCreateQuickCustomer ? (
+                    <button
+                      aria-label="Them khach hang"
+                      className="flex h-[70px] w-[70px] flex-none items-center justify-center rounded-xl bg-green-600 text-white shadow-[0_14px_30px_rgba(22,163,74,0.28)] transition hover:bg-green-700"
+                      onClick={() => setCustomerModalOpen(true)}
+                      type="button"
+                    >
+                      <Plus className="h-6 w-6" />
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="mt-10 space-y-5">
@@ -1241,18 +1321,22 @@ export function PosPage() {
                   </div>
 
                   <div className="flex items-center justify-between gap-4">
-                    <label className="flex min-w-0 items-center gap-1 text-xl font-extrabold text-blue-600">
-                      <span>Giam gia:</span>
-                      <input
-                        className="h-12 w-32 rounded-xl border border-slate-100 bg-white px-2 text-right text-xl font-extrabold text-blue-600 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
-                        min="0"
-                        onChange={(event) => updateActiveBillField("discount", event.target.value)}
-                        ref={discountRef}
-                        type="number"
-                        value={discount}
-                      />
-                      <ShortcutTag>F6</ShortcutTag>
-                    </label>
+                    {canApplyDiscount ? (
+                      <label className="flex min-w-0 items-center gap-1 text-xl font-extrabold text-blue-600">
+                        <span>Giam gia:</span>
+                        <input
+                          className="h-12 w-32 rounded-xl border border-slate-100 bg-white px-2 text-right text-xl font-extrabold text-blue-600 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                          min="0"
+                          onChange={(event) => updateActiveBillField("discount", event.target.value)}
+                          ref={discountRef}
+                          type="number"
+                          value={discount}
+                        />
+                        <ShortcutTag>F6</ShortcutTag>
+                      </label>
+                    ) : (
+                      <span className="text-xl font-extrabold text-blue-600">Giam gia</span>
+                    )}
                     <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(safeDiscount)}
                     </span>
@@ -1299,49 +1383,54 @@ export function PosPage() {
                   In hoa don tu dong
                 </label>
 
-                <button
-                  className="mt-6 flex h-[70px] w-full items-center justify-center gap-3 rounded-2xl bg-green-600 text-2xl font-extrabold text-white shadow-[0_18px_36px_rgba(22,163,74,0.28)] transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={cart.length === 0 || submittingSale}
-                  onClick={openPaymentModal}
-                  type="button"
-                >
-                  {submittingSale ? <Loader2 className="h-6 w-6 animate-spin" /> : <Wallet className="h-7 w-7" />}
-                  Thanh toan
-                </button>
+                {canCheckout ? (
+                  <button
+                    className="mt-6 flex h-[70px] w-full items-center justify-center gap-3 rounded-2xl bg-green-600 text-2xl font-extrabold text-white shadow-[0_18px_36px_rgba(22,163,74,0.28)] transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={cart.length === 0 || submittingSale}
+                    onClick={openPaymentModal}
+                    type="button"
+                  >
+                    {submittingSale ? <Loader2 className="h-6 w-6 animate-spin" /> : <Wallet className="h-7 w-7" />}
+                    Thanh toan
+                  </button>
+                ) : null}
               </section>
             </div>
           </div>
         </div>
       </main>
 
-      <Modal
-        footer={
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-            <Button
-              onClick={() => setCustomerModalOpen(false)}
-              type="button"
-              variant="secondary"
-            >
-              Huy
-            </Button>
-            <Button form={quickCustomerFormId} isLoading={submittingCustomer} type="submit">
-              Luu khach
-            </Button>
-          </div>
-        }
-        onClose={() => setCustomerModalOpen(false)}
-        open={customerModalOpen}
-        size="md"
-        title="Them khach nhanh"
-      >
-        <QuickCustomerForm
-          formId={quickCustomerFormId}
-          onCancel={() => setCustomerModalOpen(false)}
-          onSubmit={handleCreateCustomer}
-          submitting={submittingCustomer}
-        />
-      </Modal>
-      <Modal
+      {canCreateQuickCustomer ? (
+        <Modal
+          footer={
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+              <Button
+                onClick={() => setCustomerModalOpen(false)}
+                type="button"
+                variant="secondary"
+              >
+                Huy
+              </Button>
+              <Button form={quickCustomerFormId} isLoading={submittingCustomer} type="submit">
+                Luu khach
+              </Button>
+            </div>
+          }
+          onClose={() => setCustomerModalOpen(false)}
+          open={customerModalOpen}
+          size="md"
+          title="Them khach nhanh"
+        >
+          <QuickCustomerForm
+            formId={quickCustomerFormId}
+            onCancel={() => setCustomerModalOpen(false)}
+            onSubmit={handleCreateCustomer}
+            submitting={submittingCustomer}
+          />
+        </Modal>
+      ) : null}
+      {canCheckout ? (
+        <Modal
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button
@@ -1522,21 +1611,24 @@ export function PosPage() {
                 </span>
                 <span className="min-w-0">
                   <span className="block text-xl font-extrabold text-slate-900">
-                    Chup thanh toan
+                    Xac nhan thanh toan
                   </span>
                   <span className="mt-1 block truncate text-sm font-bold text-slate-600">
                     {paymentProofFile
                       ? `Da co anh: ${paymentProofFile.name}`
                       : paymentProofNote.trim()
                         ? "Da xac nhan thu cong"
-                        : "Chup anh hoac nhap ma giao dich"}
+                        : canUploadPaymentProof
+                          ? "Chup anh hoac nhap ma giao dich"
+                          : "Nhap ma giao dich/ghi chu"}
                   </span>
                 </span>
               </button>
             </div>
           )}
         </div>
-      </Modal>
+        </Modal>
+      ) : null}
       <Modal
         footer={
           <Button onClick={() => setPaymentQrModalOpen(false)} type="button" variant="secondary">
@@ -1590,41 +1682,45 @@ export function PosPage() {
         title="Chup thanh toan"
       >
         <div className="space-y-4">
-          <label className="flex min-h-72 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white p-5 text-center transition hover:bg-slate-50">
-            {paymentProofPreview ? (
-              <img
-                alt="Anh thanh toan"
-                className="max-h-[56vh] w-full rounded-xl object-contain"
-                src={paymentProofPreview}
-              />
-            ) : (
-              <>
-                <ImagePlus className="h-14 w-14 text-slate-400" />
-                <span className="mt-3 text-xl font-extrabold text-slate-800">
-                  Chon hoac chup anh
-                </span>
-                <span className="mt-1 text-sm font-bold text-slate-500">
-                  Anh bien lai chuyen khoan cua khach
-                </span>
-              </>
-            )}
-            <input
-              accept="image/*"
-              capture="environment"
-              className="sr-only"
-              onChange={(event) => handlePaymentProofChange(event.target.files?.[0] ?? null)}
-              type="file"
-            />
-          </label>
-          {paymentProofFile ? (
-            <p className="rounded-2xl bg-green-50 px-4 py-3 text-sm font-extrabold text-green-700">
-              Da chon anh: {paymentProofFile.name}
-            </p>
-          ) : (
-            <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-extrabold text-amber-700">
-              May PC khong co camera co the nhap ma giao dich/ghi chu xac nhan ben duoi.
-            </p>
-          )}
+          {canUploadPaymentProof ? (
+            <>
+              <label className="flex min-h-72 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white p-5 text-center transition hover:bg-slate-50">
+                {paymentProofPreview ? (
+                  <img
+                    alt="Anh thanh toan"
+                    className="max-h-[56vh] w-full rounded-xl object-contain"
+                    src={paymentProofPreview}
+                  />
+                ) : (
+                  <>
+                    <ImagePlus className="h-14 w-14 text-slate-400" />
+                    <span className="mt-3 text-xl font-extrabold text-slate-800">
+                      Chon hoac chup anh
+                    </span>
+                    <span className="mt-1 text-sm font-bold text-slate-500">
+                      Anh bien lai chuyen khoan cua khach
+                    </span>
+                  </>
+                )}
+                <input
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  onChange={(event) => handlePaymentProofChange(event.target.files?.[0] ?? null)}
+                  type="file"
+                />
+              </label>
+              {paymentProofFile ? (
+                <p className="rounded-2xl bg-green-50 px-4 py-3 text-sm font-extrabold text-green-700">
+                  Da chon anh: {paymentProofFile.name}
+                </p>
+              ) : (
+                <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-extrabold text-amber-700">
+                  May PC khong co camera co the nhap ma giao dich/ghi chu xac nhan ben duoi.
+                </p>
+              )}
+            </>
+          ) : null}
           <Textarea
             label="Xac nhan thu cong tren PC"
             onChange={(event) => setPaymentProofNote(event.target.value)}
@@ -1633,7 +1729,8 @@ export function PosPage() {
           />
         </div>
       </Modal>
-      <Modal
+      {canCheckout ? (
+        <Modal
         footer={
           <Button
             onClick={() => {
@@ -1698,14 +1795,17 @@ export function PosPage() {
             </div>
           </div>
         ) : null}
-      </Modal>
-      <Ean13ScannerModal
-        description="Quet EAN-13 de them nhanh san pham vao hoa don hien tai."
-        onClose={() => setEan13ScannerOpen(false)}
-        onDetected={handleEan13Detected}
-        open={ean13ScannerOpen}
-        title="Quet EAN-13 ban hang"
-      />
+        </Modal>
+      ) : null}
+      {canCheckout ? (
+        <Ean13ScannerModal
+          description="Quet EAN-13 de them nhanh san pham vao hoa don hien tai."
+          onClose={() => setEan13ScannerOpen(false)}
+          onDetected={handleEan13Detected}
+          open={ean13ScannerOpen}
+          title="Quet EAN-13 ban hang"
+        />
+      ) : null}
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
     </div>
   );

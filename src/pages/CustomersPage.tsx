@@ -20,6 +20,7 @@ import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
+import { useAuth } from "../contexts/AuthContext";
 import {
   createCustomer,
   deleteCustomer,
@@ -157,6 +158,7 @@ function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
 }
 
 export function CustomersPage() {
+  const { canAccess } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [error, setError] = useState("");
@@ -164,6 +166,9 @@ export function CustomersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const canCreateCustomer = canAccess("customers.create");
+  const canEditCustomer = canAccess("customers.update");
+  const canDeleteCustomer = canAccess("customers.delete");
 
   async function loadCustomers() {
     setLoading(true);
@@ -185,16 +190,28 @@ export function CustomersPage() {
   }, []);
 
   function openCreateModal() {
+    if (!canCreateCustomer) {
+      return;
+    }
+
     setEditingCustomer(null);
     setModalOpen(true);
   }
 
   function openEditModal(customer: Customer) {
+    if (!canEditCustomer) {
+      return;
+    }
+
     setEditingCustomer(customer);
     setModalOpen(true);
   }
 
   async function handleSave(input: CustomerInput) {
+    if ((editingCustomer && !canEditCustomer) || (!editingCustomer && !canCreateCustomer)) {
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
@@ -219,6 +236,10 @@ export function CustomersPage() {
   }
 
   async function handleDelete(customer: Customer) {
+    if (!canDeleteCustomer) {
+      return;
+    }
+
     const confirmed = window.confirm(`Xoa khach hang "${customer.name}"?`);
     if (!confirmed) {
       return;
@@ -262,10 +283,12 @@ export function CustomersPage() {
                 <Badge tone="green">{completeContactCount} co lien he</Badge>
               </div>
             </div>
-            <Button className="w-full sm:w-auto" onClick={openCreateModal}>
-              <UserPlus className="h-4 w-4" />
-              Them khach hang
-            </Button>
+            {canCreateCustomer ? (
+              <Button className="w-full sm:w-auto" onClick={openCreateModal}>
+                <UserPlus className="h-4 w-4" />
+                Them khach hang
+              </Button>
+            ) : null}
           </div>
 
           <div className="relative mt-4 w-full xl:max-w-xl">
@@ -349,20 +372,24 @@ export function CustomersPage() {
                   </div>
 
                   <div className="flex justify-end gap-2">
-                    <Button
-                      className="h-10 w-10 p-0"
-                      onClick={() => openEditModal(customer)}
-                      variant="secondary"
-                    >
-                      <Edit3 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      className="h-10 w-10 p-0"
-                      onClick={() => handleDelete(customer)}
-                      variant="danger"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canEditCustomer ? (
+                      <Button
+                        className="h-10 w-10 p-0"
+                        onClick={() => openEditModal(customer)}
+                        variant="secondary"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                      </Button>
+                    ) : null}
+                    {canDeleteCustomer ? (
+                      <Button
+                        className="h-10 w-10 p-0"
+                        onClick={() => handleDelete(customer)}
+                        variant="danger"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ))}

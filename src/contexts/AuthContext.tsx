@@ -8,13 +8,21 @@ import {
 } from "react";
 import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, requireSupabaseConfig, supabase } from "../lib/supabase";
-import type { Profile } from "../types";
+import type { AppRole, Profile } from "../types";
+import { allRolePermissionKeys, type AppPermissionKey } from "../lib/permissions";
+
+type ProfileWithRole = Profile & {
+  app_roles?: AppRole | null;
+};
 
 type AuthContextValue = {
   user: User | null;
   profile: Profile | null;
+  role: AppRole | null;
+  rolePermissions: string[];
   loading: boolean;
   isAdmin: boolean;
+  canAccess: (permission: AppPermissionKey | string) => boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -25,7 +33,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 async function loadProfile(userId: string) {
   const { data, error } = await supabase
     .from("profiles")
-    .select("*")
+    .select("*, app_roles(*)")
     .eq("id", userId)
     .maybeSingle();
 
@@ -33,12 +41,12 @@ async function loadProfile(userId: string) {
     throw error;
   }
 
-  return data;
+  return data as ProfileWithRole | null;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<ProfileWithRole | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
 
@@ -175,20 +183,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
   }, []);
 
-  const isAdmin = profile?.role === "admin" || user?.app_metadata?.role === "admin";
+  useEffect(() => {
+    if (!user || !profile?.is_active) {
+      return;
+    }
+
+    let mounted = true;
+
+    async function updateLastSeen() {
+      if (!mounted) {
+        return;
+      }
+
+      try {
+        await supabase.rpc("touch_last_seen");
+      } catch {
+        // Older databases may not have this helper until schema.sql is rerun.
+      }
+    }
+
+    void updateLastSeen();
+    const interval = window.setInterval(() => {
+      void updateLastSeen();
+    }, 60_000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, [profile?.is_active, user]);
+
+  const role = profile?.app_roles ?? null;
+  const isSuperAdmin =
+    profile?.role === "admin" ||
+    role?.code === "admin" ||
+    user?.app_metadata?.role === "admin";
+  const hasActiveRolePermissions = Boolean(role?.is_active && role.permissions.length > 0);
+  const isAdmin =
+    profile?.is_active !== false &&
+    (isSuperAdmin || hasActiveRolePermissions);
+  const rolePermissions = useMemo(
+    () => {
+      if (profile?.is_active === false) {
+        return [];
+      }
+
+      if (isSuperAdmin) {
+        return allRolePermissionKeys;
+      }
+
+      return role?.is_active ? role.permissions : [];
+    },
+    [isSuperAdmin, profile?.is_active, role]
+  );
+  const canAccess = useCallback(
+    (permission: AppPermissionKey | string) => rolePermissions.includes(permission),
+    [rolePermissions]
+  );
   const loading = authLoading || profileLoading;
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       profile,
+      role,
+      rolePermissions,
       loading,
       isAdmin,
+      canAccess,
       signIn,
       signOut,
       refreshProfile,
     }),
-    [isAdmin, loading, profile, refreshProfile, signIn, signOut, user]
+    [canAccess, isAdmin, loading, profile, refreshProfile, role, rolePermissions, signIn, signOut, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

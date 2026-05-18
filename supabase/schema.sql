@@ -3,10 +3,132 @@ create extension if not exists pgcrypto;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text,
-  role text not null default 'staff' check (role in ('admin', 'staff')),
+  role text not null default 'staff',
+  role_id uuid,
+  is_active boolean not null default true,
+  last_seen_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.profiles
+drop constraint if exists profiles_role_check;
+
+create table if not exists public.app_roles (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  code text not null unique,
+  description text,
+  permissions text[] not null default '{}',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.app_roles (name, code, description, permissions, is_active)
+values
+  (
+    'Admin',
+    'admin',
+    'Toan quyen quan tri he thong.',
+    array[
+      'pos',
+      'pos.checkout',
+      'pos.discount',
+      'pos.quick-customer.create',
+      'pos.payment-proof.upload',
+      'orders',
+      'customers',
+      'customers.create',
+      'customers.update',
+      'customers.delete',
+      'products',
+      'products.create',
+      'products.update',
+      'products.delete',
+      'products.toggle-active',
+      'products.receive-stock',
+      'products.categories.create',
+      'products.ean13.print',
+      'cloudinary-images',
+      'cloudinary-images.upload',
+      'cloudinary-images.delete',
+      'inventory',
+      'inventory.count',
+      'inventory.report.create',
+      'inventory.history.delete',
+      'payment-settings',
+      'payment-settings.update',
+      'roles',
+      'roles.create',
+      'roles.update',
+      'roles.toggle-active',
+      'roles.delete',
+      'users',
+      'users.create',
+      'users.update',
+      'users.toggle-active',
+      'users.delete'
+    ],
+    true
+  ),
+  (
+    'Staff',
+    'staff',
+    'Nhan vien ban hang mac dinh.',
+    array[
+      'pos',
+      'pos.checkout',
+      'pos.discount',
+      'pos.quick-customer.create',
+      'pos.payment-proof.upload',
+      'orders',
+      'customers',
+      'customers.create',
+      'customers.update',
+      'products',
+      'inventory',
+      'inventory.count',
+      'inventory.report.create'
+    ],
+    true
+  )
+on conflict (code) do update
+set
+  name = excluded.name,
+  description = excluded.description,
+  permissions = case
+    when public.app_roles.code = 'admin' then excluded.permissions
+    when public.app_roles.code = 'staff' then (
+      select array(
+        select distinct permission
+        from unnest(public.app_roles.permissions || excluded.permissions) as permission_key(permission)
+      )
+    )
+    else public.app_roles.permissions
+  end,
+  is_active = true;
+
+alter table public.profiles
+add column if not exists role_id uuid references public.app_roles(id) on delete set null;
+
+alter table public.profiles
+add column if not exists is_active boolean not null default true;
+
+alter table public.profiles
+add column if not exists last_seen_at timestamptz;
+
+update public.profiles p
+set role_id = r.id
+from public.app_roles r
+where p.role_id is null
+  and r.code = p.role;
+
+update public.profiles p
+set role_id = r.id
+from public.app_roles r
+where p.role_id is null
+  and r.code = 'staff';
 
 create table if not exists public.products (
   id uuid primary key default gen_random_uuid(),
@@ -166,6 +288,9 @@ where p.stock > 0
 create index if not exists products_name_idx on public.products using gin (to_tsvector('simple', name));
 create index if not exists products_deleted_at_idx on public.products(deleted_at);
 create index if not exists cloudinary_images_public_id_idx on public.cloudinary_images(public_id);
+create index if not exists app_roles_code_idx on public.app_roles(code);
+create index if not exists profiles_role_id_idx on public.profiles(role_id);
+create index if not exists profiles_last_seen_at_idx on public.profiles(last_seen_at);
 create index if not exists product_categories_name_idx on public.product_categories(name);
 create index if not exists product_batches_product_id_idx on public.product_batches(product_id);
 create index if not exists customers_name_idx on public.customers using gin (to_tsvector('simple', name));
@@ -192,6 +317,11 @@ $$;
 drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
 before update on public.profiles
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_app_roles_updated_at on public.app_roles;
+create trigger set_app_roles_updated_at
+before update on public.app_roles
 for each row execute function public.set_updated_at();
 
 drop trigger if exists set_products_updated_at on public.products;
@@ -239,6 +369,13 @@ begin
   )
   on conflict (id) do nothing;
 
+  update public.profiles p
+  set role_id = r.id
+  from public.app_roles r
+  where p.id = new.id
+    and p.role_id is null
+    and r.code = p.role;
+
   return new;
 end;
 $$;
@@ -257,10 +394,88 @@ set search_path = public
 as $$
   select exists (
     select 1
-    from public.profiles
-    where id = user_id
-      and role = 'admin'
+    from public.profiles p
+    left join public.app_roles r on r.id = p.role_id
+    where p.id = user_id
+      and p.is_active = true
+      and (
+        p.role = 'admin'
+        or r.code = 'admin'
+        or (
+          user_id = auth.uid()
+          and coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
+        )
+      )
+      and coalesce(r.is_active, true) = true
   );
+$$;
+
+create or replace function public.has_permission(
+  permission_key text,
+  user_id uuid default auth.uid()
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    left join public.app_roles r on r.id = p.role_id
+    where p.id = user_id
+      and p.is_active = true
+      and (
+        public.is_admin(user_id)
+        or (
+          r.is_active = true
+          and permission_key = any(coalesce(r.permissions, '{}'))
+        )
+      )
+  );
+$$;
+
+create or replace function public.touch_last_seen()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.profiles
+  set last_seen_at = now()
+  where id = auth.uid()
+    and is_active = true;
+$$;
+
+create or replace function public.set_app_role_active(
+  role_id_input uuid,
+  is_active_input boolean
+)
+returns public.app_roles
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  role_record public.app_roles;
+begin
+  if not public.has_permission('roles.toggle-active') then
+    raise exception 'Permission denied';
+  end if;
+
+  update public.app_roles
+  set is_active = is_active_input
+  where id = role_id_input
+    and code <> 'admin'
+  returning * into role_record;
+
+  if not found then
+    raise exception 'Role is not available';
+  end if;
+
+  return role_record;
+end;
 $$;
 
 create or replace function public.decrement_product_stock(
@@ -273,7 +488,7 @@ security definer
 set search_path = public
 as $$
 begin
-  if not public.is_admin(auth.uid()) then
+  if not public.has_permission('products.update') then
     raise exception 'Only admins can update stock';
   end if;
 
@@ -302,7 +517,7 @@ as $$
 declare
   batch_record public.product_batches;
 begin
-  if not public.is_admin(auth.uid()) then
+  if not public.has_permission('products.receive-stock') then
     raise exception 'Only admins can receive stock';
   end if;
 
@@ -378,7 +593,7 @@ declare
   payment_method_value text := coalesce(nullif(payment_method_input, ''), 'cash');
   cash_received_value numeric(12, 2) := greatest(coalesce(cash_received_input, 0), 0);
 begin
-  if not public.is_admin(auth.uid()) then
+  if not public.has_permission('pos.checkout') then
     raise exception 'Only admins can create orders';
   end if;
 
@@ -538,6 +753,7 @@ end;
 $$;
 
 alter table public.profiles enable row level security;
+alter table public.app_roles enable row level security;
 alter table public.products enable row level security;
 alter table public.cloudinary_images enable row level security;
 alter table public.product_categories enable row level security;
@@ -553,60 +769,226 @@ on public.profiles for select
 using (auth.uid() = id);
 
 drop policy if exists "Admins can read profiles" on public.profiles;
-create policy "Admins can read profiles"
+drop policy if exists "Users page can read profiles" on public.profiles;
+create policy "Users page can read profiles"
 on public.profiles for select
-using (public.is_admin());
+using (public.has_permission('users'));
 
 drop policy if exists "Admins can update profiles" on public.profiles;
-create policy "Admins can update profiles"
+drop policy if exists "Users page can update profiles" on public.profiles;
+create policy "Users page can update profiles"
 on public.profiles for update
-using (public.is_admin())
-with check (public.is_admin());
+using (public.has_permission('users.update'))
+with check (public.has_permission('users.update'));
+
+drop policy if exists "Admins manage app roles" on public.app_roles;
+drop policy if exists "Users can read active roles" on public.app_roles;
+create policy "Users can read active roles"
+on public.app_roles for select
+using (
+  is_active = true
+  or public.has_permission('roles')
+  or public.has_permission('users')
+);
+
+drop policy if exists "Role managers can create roles" on public.app_roles;
+create policy "Role managers can create roles"
+on public.app_roles for insert
+with check (public.has_permission('roles.create'));
+
+drop policy if exists "Role managers can update roles" on public.app_roles;
+create policy "Role managers can update roles"
+on public.app_roles for update
+using (public.has_permission('roles.update'))
+with check (public.has_permission('roles.update'));
+
+drop policy if exists "Role managers can delete roles" on public.app_roles;
+create policy "Role managers can delete roles"
+on public.app_roles for delete
+using (public.has_permission('roles.delete'));
 
 drop policy if exists "Admins manage products" on public.products;
-create policy "Admins manage products"
-on public.products for all
-using (public.is_admin())
-with check (public.is_admin());
+drop policy if exists "Permitted users can read products" on public.products;
+create policy "Permitted users can read products"
+on public.products for select
+using (
+  public.has_permission('products')
+  or public.has_permission('pos')
+  or public.has_permission('inventory')
+  or public.has_permission('cloudinary-images')
+);
+
+drop policy if exists "Product creators can insert products" on public.products;
+create policy "Product creators can insert products"
+on public.products for insert
+with check (public.has_permission('products.create'));
+
+drop policy if exists "Product editors can update products" on public.products;
+create policy "Product editors can update products"
+on public.products for update
+using (
+  public.has_permission('products.update')
+  or public.has_permission('products.toggle-active')
+  or public.has_permission('products.receive-stock')
+  or public.has_permission('cloudinary-images.delete')
+)
+with check (
+  public.has_permission('products.update')
+  or public.has_permission('products.toggle-active')
+  or public.has_permission('products.receive-stock')
+  or public.has_permission('cloudinary-images.delete')
+);
+
+drop policy if exists "Product deleters can delete products" on public.products;
+create policy "Product deleters can delete products"
+on public.products for delete
+using (public.has_permission('products.delete'));
 
 drop policy if exists "Admins manage cloudinary images" on public.cloudinary_images;
-create policy "Admins manage cloudinary images"
-on public.cloudinary_images for all
-using (public.is_admin())
-with check (public.is_admin());
+drop policy if exists "Permitted users can read cloudinary images" on public.cloudinary_images;
+create policy "Permitted users can read cloudinary images"
+on public.cloudinary_images for select
+using (
+  public.has_permission('cloudinary-images')
+  or public.has_permission('products.create')
+  or public.has_permission('products.update')
+);
+
+drop policy if exists "Permitted users can save cloudinary images" on public.cloudinary_images;
+create policy "Permitted users can save cloudinary images"
+on public.cloudinary_images for insert
+with check (
+  public.has_permission('cloudinary-images.upload')
+  or public.has_permission('products.create')
+  or public.has_permission('products.update')
+);
+
+drop policy if exists "Permitted users can update cloudinary images" on public.cloudinary_images;
+create policy "Permitted users can update cloudinary images"
+on public.cloudinary_images for update
+using (
+  public.has_permission('cloudinary-images.upload')
+  or public.has_permission('products.create')
+  or public.has_permission('products.update')
+)
+with check (
+  public.has_permission('cloudinary-images.upload')
+  or public.has_permission('products.create')
+  or public.has_permission('products.update')
+);
+
+drop policy if exists "Cloudinary deleters can delete images" on public.cloudinary_images;
+create policy "Cloudinary deleters can delete images"
+on public.cloudinary_images for delete
+using (public.has_permission('cloudinary-images.delete'));
 
 drop policy if exists "Admins manage product categories" on public.product_categories;
-create policy "Admins manage product categories"
-on public.product_categories for all
-using (public.is_admin())
-with check (public.is_admin());
+drop policy if exists "Permitted users can read product categories" on public.product_categories;
+create policy "Permitted users can read product categories"
+on public.product_categories for select
+using (public.has_permission('products') or public.has_permission('pos'));
+
+drop policy if exists "Product category creators can insert categories" on public.product_categories;
+create policy "Product category creators can insert categories"
+on public.product_categories for insert
+with check (public.has_permission('products.categories.create'));
+
+drop policy if exists "Product category creators can update categories" on public.product_categories;
+create policy "Product category creators can update categories"
+on public.product_categories for update
+using (public.has_permission('products.categories.create'))
+with check (public.has_permission('products.categories.create'));
 
 drop policy if exists "Admins manage product batches" on public.product_batches;
-create policy "Admins manage product batches"
-on public.product_batches for all
-using (public.is_admin())
-with check (public.is_admin());
+drop policy if exists "Permitted users can read product batches" on public.product_batches;
+create policy "Permitted users can read product batches"
+on public.product_batches for select
+using (
+  public.has_permission('products')
+  or public.has_permission('pos')
+  or public.has_permission('inventory')
+);
+
+drop policy if exists "Product stock managers can insert batches" on public.product_batches;
+create policy "Product stock managers can insert batches"
+on public.product_batches for insert
+with check (
+  public.has_permission('products.create')
+  or public.has_permission('products.receive-stock')
+);
+
+drop policy if exists "Product stock managers can update batches" on public.product_batches;
+create policy "Product stock managers can update batches"
+on public.product_batches for update
+using (
+  public.has_permission('products.receive-stock')
+  or public.has_permission('pos.checkout')
+)
+with check (
+  public.has_permission('products.receive-stock')
+  or public.has_permission('pos.checkout')
+);
 
 drop policy if exists "Admins manage payment settings" on public.payment_settings;
-create policy "Admins manage payment settings"
-on public.payment_settings for all
-using (public.is_admin())
-with check (public.is_admin());
+drop policy if exists "Permitted users can read payment settings" on public.payment_settings;
+create policy "Permitted users can read payment settings"
+on public.payment_settings for select
+using (public.has_permission('payment-settings') or public.has_permission('pos'));
+
+drop policy if exists "Payment settings editors can insert settings" on public.payment_settings;
+create policy "Payment settings editors can insert settings"
+on public.payment_settings for insert
+with check (public.has_permission('payment-settings.update'));
+
+drop policy if exists "Payment settings editors can update settings" on public.payment_settings;
+create policy "Payment settings editors can update settings"
+on public.payment_settings for update
+using (public.has_permission('payment-settings.update'))
+with check (public.has_permission('payment-settings.update'));
 
 drop policy if exists "Admins manage customers" on public.customers;
-create policy "Admins manage customers"
-on public.customers for all
-using (public.is_admin())
-with check (public.is_admin());
+drop policy if exists "Permitted users can read customers" on public.customers;
+create policy "Permitted users can read customers"
+on public.customers for select
+using (public.has_permission('customers') or public.has_permission('pos'));
+
+drop policy if exists "Customer creators can insert customers" on public.customers;
+create policy "Customer creators can insert customers"
+on public.customers for insert
+with check (
+  public.has_permission('customers.create')
+  or public.has_permission('pos.quick-customer.create')
+);
+
+drop policy if exists "Customer editors can update customers" on public.customers;
+create policy "Customer editors can update customers"
+on public.customers for update
+using (public.has_permission('customers.update'))
+with check (public.has_permission('customers.update'));
+
+drop policy if exists "Customer deleters can delete customers" on public.customers;
+create policy "Customer deleters can delete customers"
+on public.customers for delete
+using (public.has_permission('customers.delete'));
 
 drop policy if exists "Admins manage orders" on public.orders;
-create policy "Admins manage orders"
-on public.orders for all
-using (public.is_admin())
-with check (public.is_admin());
+drop policy if exists "Order viewers can read orders" on public.orders;
+create policy "Order viewers can read orders"
+on public.orders for select
+using (public.has_permission('orders'));
+
+drop policy if exists "POS can insert orders" on public.orders;
+create policy "POS can insert orders"
+on public.orders for insert
+with check (public.has_permission('pos.checkout'));
 
 drop policy if exists "Admins manage order items" on public.order_items;
-create policy "Admins manage order items"
-on public.order_items for all
-using (public.is_admin())
-with check (public.is_admin());
+drop policy if exists "Order viewers can read order items" on public.order_items;
+create policy "Order viewers can read order items"
+on public.order_items for select
+using (public.has_permission('orders'));
+
+drop policy if exists "POS can insert order items" on public.order_items;
+create policy "POS can insert order items"
+on public.order_items for insert
+with check (public.has_permission('pos.checkout'));

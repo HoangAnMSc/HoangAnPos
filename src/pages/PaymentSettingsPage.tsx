@@ -6,6 +6,7 @@ import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNotice
 import { Input } from "../components/ui/Input";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
+import { useAuth } from "../contexts/AuthContext";
 import { uploadPaymentQr } from "../lib/cloudinary";
 import { fetchPaymentSettings, savePaymentSettings } from "../services/paymentSettings";
 
@@ -15,6 +16,7 @@ function normalizeText(value: string) {
 }
 
 export function PaymentSettingsPage() {
+  const { canAccess } = useAuth();
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState("");
@@ -23,6 +25,7 @@ export function PaymentSettingsPage() {
   const [qrUrl, setQrUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState("");
+  const canUpdateSettings = canAccess("payment-settings.update");
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -47,6 +50,10 @@ export function PaymentSettingsPage() {
   }, [loadSettings]);
 
   function handleFileChange(file: File | null) {
+    if (!canUpdateSettings) {
+      return;
+    }
+
     setQrFile(file);
 
     if (!file) {
@@ -63,6 +70,11 @@ export function PaymentSettingsPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!canUpdateSettings) {
+      return;
+    }
+
     setSaving(true);
     setSuccess("");
 
@@ -110,7 +122,11 @@ export function PaymentSettingsPage() {
             onSubmit={handleSubmit}
           >
             <div className="space-y-4">
-              <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-coal/15 bg-slate-50 p-4 text-center transition hover:bg-slate-100">
+              <label
+                className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-coal/15 bg-slate-50 p-4 text-center transition ${
+                  canUpdateSettings ? "cursor-pointer hover:bg-slate-100" : ""
+                }`}
+              >
                 {qrPreview ? (
                   <img
                     alt="Ma nhan tien"
@@ -123,16 +139,20 @@ export function PaymentSettingsPage() {
                     <span className="mt-3 px-4 text-sm font-bold">Chua co ma nhan tien</span>
                   </div>
                 )}
-                <span className="mt-4 inline-flex items-center gap-2 rounded-xl bg-coal px-4 py-2 text-sm font-extrabold text-white">
-                  <ImagePlus className="h-4 w-4" />
-                  Chon anh QR
-                </span>
-                <input
-                  accept="image/*"
-                  className="sr-only"
-                  onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
-                  type="file"
-                />
+                {canUpdateSettings ? (
+                  <>
+                    <span className="mt-4 inline-flex items-center gap-2 rounded-xl bg-coal px-4 py-2 text-sm font-extrabold text-white">
+                      <ImagePlus className="h-4 w-4" />
+                      Chon anh QR
+                    </span>
+                    <input
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
+                      type="file"
+                    />
+                  </>
+                ) : null}
               </label>
             </div>
 
@@ -146,20 +166,24 @@ export function PaymentSettingsPage() {
                   }
                 }}
                 placeholder="https://..."
+                readOnly={!canUpdateSettings}
                 value={qrUrl}
               />
               <Textarea
                 label="Thong tin hien kem ma"
                 onChange={(event) => setNote(event.target.value)}
                 placeholder="Vi du: STK, ten chu tai khoan, noi dung chuyen khoan..."
+                readOnly={!canUpdateSettings}
                 value={note}
               />
-              <div className="flex justify-end">
-                <Button className="min-w-36" isLoading={saving} type="submit">
-                  <Save className="h-4 w-4" />
-                  Luu cau hinh
-                </Button>
-              </div>
+              {canUpdateSettings ? (
+                <div className="flex justify-end">
+                  <Button className="min-w-36" isLoading={saving} type="submit">
+                    <Save className="h-4 w-4" />
+                    Luu cau hinh
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </form>
         )}

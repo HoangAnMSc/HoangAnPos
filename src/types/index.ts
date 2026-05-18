@@ -1,6 +1,7 @@
 import type { Database } from "./database";
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+export type AppRole = Database["public"]["Tables"]["app_roles"]["Row"];
 export type Product = Database["public"]["Tables"]["products"]["Row"];
 export type CloudinaryImage = Database["public"]["Tables"]["cloudinary_images"]["Row"];
 export type ProductBatch = Database["public"]["Tables"]["product_batches"]["Row"];

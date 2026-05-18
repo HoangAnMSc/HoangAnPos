@@ -27,6 +27,17 @@ type DevApiResponse = {
   statusCode: number;
 };
 
+type ProcessLike = {
+  cwd: () => string;
+  env: Record<string, string | undefined>;
+};
+
+function createFileModuleUrl(path: string) {
+  const normalizedPath = path.replace(/\\/g, "/").replace(/^\/+/, "");
+
+  return encodeURI(`file:///${normalizedPath}`);
+}
+
 function readRequestBody(request: DevApiRequest) {
   return new Promise<string>((resolve, reject) => {
     let body = "";
@@ -179,6 +190,29 @@ export default defineConfig(({ mode }) => {
       react(),
       {
         configureServer(server) {
+          server.middlewares.use("/api/admin-users", async (request, response) => {
+            const apiRequest = request as unknown as DevApiRequest;
+            const apiResponse = response as unknown as DevApiResponse;
+
+            try {
+              const processLike = (globalThis as unknown as {
+                process: ProcessLike;
+              }).process;
+              processLike.env.SUPABASE_URL = env.SUPABASE_URL ?? env.VITE_SUPABASE_URL;
+              processLike.env.SUPABASE_SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+              const adminUsersApiUrl = `${createFileModuleUrl(
+                processLike.cwd()
+              )}/api/admin-users.js`;
+              const { default: handler } = await import(adminUsersApiUrl);
+              await handler(apiRequest, apiResponse);
+            } catch (error) {
+              sendJson(apiResponse, 500, {
+                message:
+                  error instanceof Error ? error.message : "Yeu cau quan ly user that bai.",
+              });
+            }
+          });
+
           server.middlewares.use("/api/cloudinary-images", async (request, response) => {
             const apiRequest = request as unknown as DevApiRequest;
             const apiResponse = response as unknown as DevApiResponse;

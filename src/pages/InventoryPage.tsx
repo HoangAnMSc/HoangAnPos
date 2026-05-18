@@ -453,7 +453,7 @@ function QuantityModal({
 }
 
 export function InventoryPage() {
-  const { profile, user } = useAuth();
+  const { canAccess, profile, user } = useAuth();
   const [ean13ScannerOpen, setEan13ScannerOpen] = useState(false);
   const [counts, setCounts] = useState<CountMap>({});
   const [countingProduct, setCountingProduct] = useState<Product | null>(null);
@@ -469,6 +469,9 @@ export function InventoryPage() {
   const [viewingReport, setViewingReport] = useState<ReportHistoryItem | null>(null);
   const [success, setSuccess] = useState("");
   const staffName = profile?.full_name || user?.email || "Nhan vien";
+  const canCountInventory = canAccess("inventory.count");
+  const canCreateReport = canAccess("inventory.report.create");
+  const canDeleteHistory = canAccess("inventory.history.delete");
 
   const showErrorNotice = useCallback((message: string, title = "Thong bao loi") => {
     setError(message);
@@ -513,6 +516,10 @@ export function InventoryPage() {
   }, [normalizedQuery, products]);
 
   function openQuantityModal(product: Product) {
+    if (!canCountInventory) {
+      return;
+    }
+
     setCountingProduct(product);
     setQuantityDraft(counts[product.id] ?? "");
     setQuantityError("");
@@ -527,7 +534,7 @@ export function InventoryPage() {
   }
 
   function saveQuantityDraft() {
-    if (!countingProduct) {
+    if (!canCountInventory || !countingProduct) {
       return;
     }
 
@@ -545,6 +552,10 @@ export function InventoryPage() {
   }
 
   function removeCount(productId: string) {
+    if (!canCountInventory) {
+      return;
+    }
+
     setCounts((current) => {
       const nextCounts = { ...current };
       delete nextCounts[productId];
@@ -553,12 +564,20 @@ export function InventoryPage() {
   }
 
   function clearCounts() {
+    if (!canCountInventory) {
+      return;
+    }
+
     setCounts({});
     setSuccess("");
     setError("");
   }
 
   function handleEan13Detected(value: string) {
+    if (!canCountInventory) {
+      return;
+    }
+
     const ean13Code = normalizeEan13Input(value);
     const product = findProductByEan13(products, ean13Code);
 
@@ -581,6 +600,10 @@ export function InventoryPage() {
   }
 
   function handleCreateReportImage() {
+    if (!canCreateReport) {
+      return;
+    }
+
     if (rows.length === 0) {
       showErrorNotice(
         "Nhap so luong thuc te cho it nhat mot san pham truoc khi tao bao cao.",
@@ -613,6 +636,10 @@ export function InventoryPage() {
   }
 
   function clearHistory() {
+    if (!canDeleteHistory) {
+      return;
+    }
+
     window.localStorage.removeItem(reportHistoryStorageKey);
     setHistory([]);
     setViewingReport(null);
@@ -638,67 +665,73 @@ export function InventoryPage() {
               </div>
             </div>
             <div className="grid gap-2 sm:flex">
-              <Button onClick={() => setEan13ScannerOpen(true)} variant="secondary">
-                <Barcode className="h-4 w-4" />
-                Quet EAN-13
-              </Button>
+              {canCountInventory ? (
+                <Button onClick={() => setEan13ScannerOpen(true)} variant="secondary">
+                  <Barcode className="h-4 w-4" />
+                  Quet EAN-13
+                </Button>
+              ) : null}
               <Button onClick={() => setHistoryOpen(true)} variant="secondary">
                 <History className="h-4 w-4" />
                 Lich su
               </Button>
-              <Button disabled={rows.length === 0} onClick={handleCreateReportImage}>
-                <FileImage className="h-4 w-4" />
-                Tao bao cao
-              </Button>
+              {canCreateReport ? (
+                <Button disabled={rows.length === 0} onClick={handleCreateReportImage}>
+                  <FileImage className="h-4 w-4" />
+                  Tao bao cao
+                </Button>
+              ) : null}
             </div>
           </div>
 
-          <div className="relative mt-4 w-full xl:max-w-xl">
-            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
-            <Input
-              className="pl-11"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tim san pham de nhap tay neu khong quet duoc..."
-              value={query}
-            />
+          {canCountInventory ? (
+            <div className="relative mt-4 w-full xl:max-w-xl">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
+              <Input
+                className="pl-11"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Tim san pham de nhap tay neu khong quet duoc..."
+                value={query}
+              />
 
-            {searchResults.length > 0 ? (
-              <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.16)]">
-                <div className="max-h-80 overflow-y-auto p-2">
-                  {searchResults.map((product) => (
-                    <button
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-slate-50"
-                      key={product.id}
-                      onClick={() => openQuantityModal(product)}
-                      type="button"
-                    >
-                      <div className="h-11 w-11 flex-none overflow-hidden rounded-xl bg-slate-100">
-                        {product.image_url ? (
-                          <img
-                            alt={product.name}
-                            className="h-full w-full object-contain p-1"
-                            src={product.image_url}
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-slate-400">
-                            <Boxes className="h-5 w-5" />
-                          </div>
-                        )}
-                      </div>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-extrabold text-slate-950">
-                          {product.name}
+              {searchResults.length > 0 ? (
+                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.16)]">
+                  <div className="max-h-80 overflow-y-auto p-2">
+                    {searchResults.map((product) => (
+                      <button
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-slate-50"
+                        key={product.id}
+                        onClick={() => openQuantityModal(product)}
+                        type="button"
+                      >
+                        <div className="h-11 w-11 flex-none overflow-hidden rounded-xl bg-slate-100">
+                          {product.image_url ? (
+                            <img
+                              alt={product.name}
+                              className="h-full w-full object-contain p-1"
+                              src={product.image_url}
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-slate-400">
+                              <Boxes className="h-5 w-5" />
+                            </div>
+                          )}
+                        </div>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-extrabold text-slate-950">
+                            {product.name}
+                          </span>
+                          <span className="block truncate text-xs font-semibold text-slate-500">
+                            {getProductEan13Value(product)}
+                          </span>
                         </span>
-                        <span className="block truncate text-xs font-semibold text-slate-500">
-                          {getProductEan13Value(product)}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ) : null}
-          </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {error ? (
@@ -716,9 +749,11 @@ export function InventoryPage() {
           <section>
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-lg font-extrabold text-coal">San pham da nhap</h3>
-              <Button disabled={rows.length === 0} onClick={clearCounts} variant="secondary">
-                Xoa danh sach
-              </Button>
+              {canCountInventory ? (
+                <Button disabled={rows.length === 0} onClick={clearCounts} variant="secondary">
+                  Xoa danh sach
+                </Button>
+              ) : null}
             </div>
 
             {loading ? (
@@ -780,24 +815,26 @@ export function InventoryPage() {
                       </div>
                     </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-                      <Button
-                        className="h-10 px-3"
-                        onClick={() => openQuantityModal(row.product)}
-                        variant="secondary"
-                      >
-                        <Edit3 className="h-4 w-4" />
-                        Sua
-                      </Button>
-                      <Button
-                        className="h-10 px-3"
-                        onClick={() => removeCount(row.product.id)}
-                        variant="danger"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Xoa
-                      </Button>
-                    </div>
+                    {canCountInventory ? (
+                      <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                        <Button
+                          className="h-10 px-3"
+                          onClick={() => openQuantityModal(row.product)}
+                          variant="secondary"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                          Sua
+                        </Button>
+                        <Button
+                          className="h-10 px-3"
+                          onClick={() => removeCount(row.product.id)}
+                          variant="danger"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Xoa
+                        </Button>
+                      </div>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -821,9 +858,11 @@ export function InventoryPage() {
             <Button onClick={() => setHistoryOpen(false)} variant="secondary">
               Dong
             </Button>
-            <Button disabled={history.length === 0} onClick={clearHistory} variant="danger">
-              Xoa lich su
-            </Button>
+            {canDeleteHistory ? (
+              <Button disabled={history.length === 0} onClick={clearHistory} variant="danger">
+                Xoa lich su
+              </Button>
+            ) : null}
           </div>
         }
         onClose={() => setHistoryOpen(false)}

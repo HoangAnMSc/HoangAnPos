@@ -23,6 +23,7 @@ Tạo file `.env` từ `.env.example`:
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 CLOUDINARY_CLOUD_NAME=your-cloud-name
 CLOUDINARY_UPLOAD_PRESET=your-unsigned-upload-preset
 CLOUDINARY_API_KEY=your-api-key
@@ -60,6 +61,10 @@ from public.profiles p
 join auth.users u on u.id = p.id
 order by p.created_at desc;
 ```
+
+De trang quan ly user tao/sua/xoa duoc tai khoan Auth, can them `SUPABASE_SERVICE_ROLE_KEY` vao `.env` khi chay local va vao Environment Variables tren Vercel. Day la server-side secret, khong doi thanh `VITE_SUPABASE_SERVICE_ROLE_KEY` va khong commit gia tri that len git. Sau khi them tren Vercel, redeploy project de API route doc duoc bien moi truong moi.
+
+Neu da co database truoc do, hay chay lai `supabase/schema.sql` de cap nhat bang role, danh sach permission chi tiet va cac policy `has_permission()`.
 
 ## Cloudinary
 

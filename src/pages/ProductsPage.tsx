@@ -26,6 +26,7 @@ import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNotice
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
+import { useAuth } from "../contexts/AuthContext";
 import { formatCurrency } from "../lib/format";
 import {
   createVietnamEan13FromSeed,
@@ -278,6 +279,7 @@ function ProductEan13GateModal({
 }
 
 type MediaPickerModalProps = {
+  canUploadImage: boolean;
   currentImageUrl: string;
   libraryImages: string[];
   open: boolean;
@@ -286,6 +288,7 @@ type MediaPickerModalProps = {
 };
 
 function MediaPickerModal({
+  canUploadImage,
   currentImageUrl,
   libraryImages,
   onClose,
@@ -317,6 +320,10 @@ function MediaPickerModal({
     Boolean(draftFile) || selectedUrl !== currentImageUrl || Boolean(selectedUrl);
 
   function handleUploadChange(event: ChangeEvent<HTMLInputElement>) {
+    if (!canUploadImage) {
+      return;
+    }
+
     const nextFile = event.target.files?.[0] ?? null;
 
     if (draftPreview.startsWith("blob:")) {
@@ -375,17 +382,19 @@ function MediaPickerModal({
           >
             Content Library
           </button>
-          <button
-            className={`rounded-xl border px-4 py-2 text-sm font-extrabold transition ${
-              activeTab === "upload"
-                ? "border-slate-950 bg-slate-950 text-white"
-                : "border-slate-200 bg-white text-slate-950"
-            }`}
-            onClick={() => setActiveTab("upload")}
-            type="button"
-          >
-            Upload New
-          </button>
+          {canUploadImage ? (
+            <button
+              className={`rounded-xl border px-4 py-2 text-sm font-extrabold transition ${
+                activeTab === "upload"
+                  ? "border-slate-950 bg-slate-950 text-white"
+                  : "border-slate-200 bg-white text-slate-950"
+              }`}
+              onClick={() => setActiveTab("upload")}
+              type="button"
+            >
+              Upload New
+            </button>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-between text-sm">
@@ -469,6 +478,9 @@ function MediaPickerModal({
 }
 
 type ProductFormProps = {
+  canCreateCategory: boolean;
+  canSetVisibility: boolean;
+  canUploadImage: boolean;
   categories: string[];
   ean13Locked?: boolean;
   ean13Required?: boolean;
@@ -482,6 +494,9 @@ type ProductFormProps = {
 };
 
 function ProductForm({
+  canCreateCategory,
+  canSetVisibility,
+  canUploadImage,
   categories,
   ean13Locked = false,
   ean13Required = false,
@@ -542,7 +557,7 @@ function ProductForm({
   }
 
   async function saveCategoryDraft() {
-    if (categorySubmitting) {
+    if (!canCreateCategory || categorySubmitting) {
       return;
     }
 
@@ -679,39 +694,41 @@ function ProductForm({
           />
         </label>
 
-        <section className="space-y-3">
-          <h3 className="text-sm font-extrabold text-slate-950">Status</h3>
-          <div className="grid gap-3 sm:grid-cols-2 sm:gap-40">
-            <button
-              className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
-                form.is_active
-                  ? "border-green-500 bg-green-50 text-green-700"
-                  : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
-              }`}
-              onClick={() => updateField("is_active", true)}
-              type="button"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-green-700 shadow-sm">
-                <Eye className="h-5 w-5" />
-              </span>
-              Hien thi
-            </button>
-            <button
-              className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
-                !form.is_active
-                  ? "border-red-500 bg-red-50 text-red-700"
-                  : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
-              }`}
-              onClick={() => updateField("is_active", false)}
-              type="button"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-700 shadow-sm">
-                <EyeOff className="h-5 w-5" />
-              </span>
-              An
-            </button>
-          </div>
-        </section>
+        {canSetVisibility ? (
+          <section className="space-y-3">
+            <h3 className="text-sm font-extrabold text-slate-950">Status</h3>
+            <div className="grid gap-3 sm:grid-cols-2 sm:gap-40">
+              <button
+                className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
+                  form.is_active
+                    ? "border-green-500 bg-green-50 text-green-700"
+                    : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
+                }`}
+                onClick={() => updateField("is_active", true)}
+                type="button"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-green-700 shadow-sm">
+                  <Eye className="h-5 w-5" />
+                </span>
+                Hien thi
+              </button>
+              <button
+                className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
+                  !form.is_active
+                    ? "border-red-500 bg-red-50 text-red-700"
+                    : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
+                }`}
+                onClick={() => updateField("is_active", false)}
+                type="button"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-700 shadow-sm">
+                  <EyeOff className="h-5 w-5" />
+                </span>
+                An
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <label className="block">
           <span className={labelClassName}>Descriptions</span>
@@ -738,14 +755,16 @@ function ProductForm({
                 </option>
               ))}
             </select>
-            <button
-              className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:h-[58px] sm:px-5"
-              onClick={openCategoryModal}
-              type="button"
-            >
-              <Plus className="h-4 w-4" />
-              Add
-            </button>
+            {canCreateCategory ? (
+              <button
+                className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:h-[58px] sm:px-5"
+                onClick={openCategoryModal}
+                type="button"
+              >
+                <Plus className="h-4 w-4" />
+                Add
+              </button>
+            ) : null}
           </div>
         </label>
 
@@ -854,6 +873,7 @@ function ProductForm({
       </form>
 
       <MediaPickerModal
+        canUploadImage={canUploadImage}
         currentImageUrl={form.image_url}
         libraryImages={libraryImages}
         onClose={() => setMediaOpen(false)}
@@ -870,52 +890,54 @@ function ProductForm({
         open={mediaOpen}
       />
 
-      <Modal
-        footer={
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-            <button
-              className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:min-w-28"
-              onClick={closeCategoryModal}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 sm:min-w-32"
-              disabled={categorySubmitting}
-              onClick={() => void saveCategoryDraft()}
-              type="button"
-            >
-              {categorySubmitting ? "Saving..." : "Add"}
-            </button>
-          </div>
-        }
-        onClose={closeCategoryModal}
-        open={categoryModalOpen}
-        size="sm"
-        title="Add Category"
-      >
-        <form className="space-y-3" id="product-category-form" onSubmit={handleAddCategory}>
-          <label className="block">
-            <span className={labelClassName}>Category name</span>
-            <input
-              autoFocus
-              className={fieldClassName}
-              onChange={(event) => {
-                setCategoryDraft(event.target.value);
-                setCategoryError("");
-              }}
-              placeholder="Vi du: Sua bot, Sua tuoi..."
-              value={categoryDraft}
-            />
-          </label>
-          {categoryError ? (
-            <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-              {categoryError}
+      {canCreateCategory ? (
+        <Modal
+          footer={
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+              <button
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:min-w-28"
+                onClick={closeCategoryModal}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 sm:min-w-32"
+                disabled={categorySubmitting}
+                onClick={() => void saveCategoryDraft()}
+                type="button"
+              >
+                {categorySubmitting ? "Saving..." : "Add"}
+              </button>
             </div>
-          ) : null}
-        </form>
-      </Modal>
+          }
+          onClose={closeCategoryModal}
+          open={categoryModalOpen}
+          size="sm"
+          title="Add Category"
+        >
+          <form className="space-y-3" id="product-category-form" onSubmit={handleAddCategory}>
+            <label className="block">
+              <span className={labelClassName}>Category name</span>
+              <input
+                autoFocus
+                className={fieldClassName}
+                onChange={(event) => {
+                  setCategoryDraft(event.target.value);
+                  setCategoryError("");
+                }}
+                placeholder="Vi du: Sua bot, Sua tuoi..."
+                value={categoryDraft}
+              />
+            </label>
+            {categoryError ? (
+              <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                {categoryError}
+              </div>
+            ) : null}
+          </form>
+        </Modal>
+      ) : null}
       <Ean13ScannerModal
         description="Quet EAN-13 co san tren bao bi san pham. Ma quet duoc se luu vao truong EAN-13 cua san pham."
         onClose={() => setEan13ScannerOpen(false)}
@@ -931,6 +953,11 @@ function ProductForm({
 }
 
 type ProductEditorModalProps = {
+  canCreateCategory: boolean;
+  canDeleteProduct: boolean;
+  canSetVisibility: boolean;
+  canSubmit: boolean;
+  canUploadImage: boolean;
   categories: string[];
   initialEan13?: string;
   libraryImages: string[];
@@ -944,6 +971,11 @@ type ProductEditorModalProps = {
 };
 
 function ProductEditorModal({
+  canCreateCategory,
+  canDeleteProduct,
+  canSetVisibility,
+  canSubmit,
+  canUploadImage,
   categories,
   initialEan13 = "",
   libraryImages,
@@ -962,7 +994,7 @@ function ProductEditorModal({
       bodyClassName="sm:px-8 sm:py-7"
       footer={
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          {product ? (
+          {product && canDeleteProduct ? (
             <button
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-6 py-3 text-sm font-extrabold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-32"
               disabled={submitting}
@@ -983,14 +1015,16 @@ function ProductEditorModal({
             >
               Cancel
             </button>
-            <button
-              className="rounded-2xl bg-green-600 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
-              disabled={submitting}
-              form={formId}
-              type="submit"
-            >
-              {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
-            </button>
+            {canSubmit ? (
+              <button
+                className="rounded-2xl bg-green-600 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
+                disabled={submitting}
+                form={formId}
+                type="submit"
+              >
+                {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
+              </button>
+            ) : null}
           </div>
         </div>
       }
@@ -1000,6 +1034,9 @@ function ProductEditorModal({
       title={product ? "Edit Product" : "Nhap thong tin san pham"}
     >
       <ProductForm
+        canCreateCategory={canCreateCategory}
+        canSetVisibility={canSetVisibility}
+        canUploadImage={canUploadImage}
         categories={categories}
         ean13Locked={!product}
         ean13Required={!product}
@@ -1017,13 +1054,21 @@ function ProductEditorModal({
 
 type ProductDetailModalProps = {
   batches: ProductBatch[];
+  canEditProduct: boolean;
   open: boolean;
   product: Product | null;
   onClose: () => void;
   onEdit: (product: Product) => void;
 };
 
-function ProductDetailModal({ batches, onClose, onEdit, open, product }: ProductDetailModalProps) {
+function ProductDetailModal({
+  batches,
+  canEditProduct,
+  onClose,
+  onEdit,
+  open,
+  product,
+}: ProductDetailModalProps) {
   if (!product) {
     return null;
   }
@@ -1054,13 +1099,15 @@ function ProductDetailModal({ batches, onClose, onEdit, open, product }: Product
           >
             Dong
           </button>
-          <button
-            className="rounded-2xl bg-coal px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-coal/15 transition hover:-translate-y-0.5 sm:min-w-32"
-            onClick={() => onEdit(product)}
-            type="button"
-          >
-            Sua
-          </button>
+          {canEditProduct ? (
+            <button
+              className="rounded-2xl bg-coal px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-coal/15 transition hover:-translate-y-0.5 sm:min-w-32"
+              onClick={() => onEdit(product)}
+              type="button"
+            >
+              Sua
+            </button>
+          ) : null}
         </div>
       }
       onClose={onClose}
@@ -1304,6 +1351,7 @@ function ReceiveStockModal({
 }
 
 export function ProductsPage() {
+  const { canAccess } = useAuth();
   const [createEan13Open, setCreateEan13Open] = useState(false);
   const [ean13LabelsOpen, setEan13LabelsOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -1322,6 +1370,14 @@ export function ProductsPage() {
   const [submittingReceive, setSubmittingReceive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
+  const canCreateProduct = canAccess("products.create");
+  const canEditProduct = canAccess("products.update");
+  const canDeleteProduct = canAccess("products.delete");
+  const canSetProductVisibility = canAccess("products.toggle-active");
+  const canReceiveStock = canAccess("products.receive-stock");
+  const canCreateCategory = canAccess("products.categories.create");
+  const canPrintEan13 = canAccess("products.ean13.print");
+  const canUploadCloudinaryImage = canAccess("cloudinary-images.upload");
 
   const showErrorNotice = useCallback((message: string, title = "Thong bao loi", detail?: string) => {
     setError(message);
@@ -1364,6 +1420,10 @@ export function ProductsPage() {
   }, [loadProducts]);
 
   function openCreateModal() {
+    if (!canCreateProduct) {
+      return;
+    }
+
     setEditingProduct(null);
     setInitialCreateEan13("");
     setCreateEan13Open(true);
@@ -1371,6 +1431,10 @@ export function ProductsPage() {
   }
 
   function openEditModal(product: Product) {
+    if (!canEditProduct) {
+      return;
+    }
+
     setEditingProduct(product);
     setInitialCreateEan13("");
     setCreateEan13Open(false);
@@ -1378,6 +1442,10 @@ export function ProductsPage() {
   }
 
   function openCreateForm(ean13: string) {
+    if (!canCreateProduct) {
+      return;
+    }
+
     setEditingProduct(null);
     setInitialCreateEan13(ean13);
     setCreateEan13Open(false);
@@ -1397,11 +1465,19 @@ export function ProductsPage() {
   }
 
   function openEditFromDetail(product: Product) {
+    if (!canEditProduct) {
+      return;
+    }
+
     setViewingProduct(null);
     openEditModal(product);
   }
 
   function openReceiveModal(product?: Product | null) {
+    if (!canReceiveStock) {
+      return;
+    }
+
     setReceivingProduct(product ?? null);
     setReceiveModalOpen(true);
   }
@@ -1412,19 +1488,35 @@ export function ProductsPage() {
   }
 
   async function handleAddCategory(name: string) {
+    if (!canCreateCategory) {
+      throw new Error("Ban khong co quyen them nhom hang.");
+    }
+
     const savedCategory = await createProductCategory(name);
     setSavedCategories((current) => mergeCategoryNames([...current, savedCategory]));
     return savedCategory;
   }
 
   async function handleSave(input: ProductInput, imageFile: File | null) {
+    if ((editingProduct && !canEditProduct) || (!editingProduct && !canCreateProduct)) {
+      return;
+    }
+
+    if (imageFile && !canUploadCloudinaryImage) {
+      throw new Error("Ban khong co quyen tai anh len Cloudinary.");
+    }
+
     setSubmitting(true);
     setError("");
 
     try {
+      const guardedInput =
+        canSetProductVisibility
+          ? input
+          : { ...input, is_active: editingProduct?.is_active ?? true };
       const imageUpload = imageFile ? await uploadProductImageAsset(imageFile) : null;
-      const imageUrl = imageUpload ? imageUpload.url : input.image_url;
-      const payload = { ...input, image_url: imageUrl };
+      const imageUrl = imageUpload ? imageUpload.url : guardedInput.image_url;
+      const payload = { ...guardedInput, image_url: imageUrl };
 
       if (imageUpload) {
         await saveCloudinaryImageAsset(imageUpload);
@@ -1452,6 +1544,10 @@ export function ProductsPage() {
   }
 
   async function handleReceiveStock(input: ReceiveStockInput) {
+    if (!canReceiveStock) {
+      return;
+    }
+
     setSubmittingReceive(true);
     setError("");
 
@@ -1471,6 +1567,10 @@ export function ProductsPage() {
   }
 
   async function handleDelete(product: Product) {
+    if (!canDeleteProduct) {
+      return;
+    }
+
     const confirmed = window.confirm(`Xoa san pham "${product.name}"?`);
     if (!confirmed) {
       return;
@@ -1590,28 +1690,34 @@ export function ProductsPage() {
               </div>
             </div>
             <div className="grid gap-2 sm:flex sm:w-auto">
-              <Button
-                className="w-full sm:w-auto"
-                disabled={products.length === 0}
-                onClick={() => openReceiveModal()}
-                variant="secondary"
-              >
-                <PackagePlus className="h-4 w-4" />
-                Nhap kho
-              </Button>
-              <Button
-                className="w-full sm:w-auto"
-                disabled={products.length === 0}
-                onClick={() => setEan13LabelsOpen(true)}
-                variant="secondary"
-              >
-                <Barcode className="h-4 w-4" />
-                Tao EAN-13
-              </Button>
-              <Button className="w-full sm:w-auto" onClick={openCreateModal}>
-                <PackagePlus className="h-4 w-4" />
-                Them san pham
-              </Button>
+              {canReceiveStock ? (
+                <Button
+                  className="w-full sm:w-auto"
+                  disabled={products.length === 0}
+                  onClick={() => openReceiveModal()}
+                  variant="secondary"
+                >
+                  <PackagePlus className="h-4 w-4" />
+                  Nhap kho
+                </Button>
+              ) : null}
+              {canPrintEan13 ? (
+                <Button
+                  className="w-full sm:w-auto"
+                  disabled={products.length === 0}
+                  onClick={() => setEan13LabelsOpen(true)}
+                  variant="secondary"
+                >
+                  <Barcode className="h-4 w-4" />
+                  Tao EAN-13
+                </Button>
+              ) : null}
+              {canCreateProduct ? (
+                <Button className="w-full sm:w-auto" onClick={openCreateModal}>
+                  <PackagePlus className="h-4 w-4" />
+                  Them san pham
+                </Button>
+              ) : null}
             </div>
           </div>
 
@@ -1662,6 +1768,11 @@ export function ProductsPage() {
       </Card>
 
       <ProductEditorModal
+        canCreateCategory={canCreateCategory}
+        canDeleteProduct={canDeleteProduct}
+        canSetVisibility={canSetProductVisibility}
+        canSubmit={editingProduct ? canEditProduct : canCreateProduct}
+        canUploadImage={canUploadCloudinaryImage}
         categories={categories}
         initialEan13={initialCreateEan13}
         libraryImages={libraryImages}
@@ -1673,33 +1784,40 @@ export function ProductsPage() {
         product={editingProduct}
         submitting={submitting}
       />
-      <ProductEan13GateModal
-        onClose={() => setCreateEan13Open(false)}
-        onError={(notice) => setErrorNotice(notice)}
-        onSelect={openCreateForm}
-        open={createEan13Open}
-        products={products}
-      />
+      {canCreateProduct ? (
+        <ProductEan13GateModal
+          onClose={() => setCreateEan13Open(false)}
+          onError={(notice) => setErrorNotice(notice)}
+          onSelect={openCreateForm}
+          open={createEan13Open}
+          products={products}
+        />
+      ) : null}
       <ProductDetailModal
         batches={viewingProduct ? getProductActiveBatches(viewingProduct.id) : []}
+        canEditProduct={canEditProduct}
         onClose={() => setViewingProduct(null)}
         onEdit={openEditFromDetail}
         open={Boolean(viewingProduct)}
         product={viewingProduct}
       />
-      <ReceiveStockModal
-        onClose={closeReceiveModal}
-        onSubmit={handleReceiveStock}
-        open={receiveModalOpen}
-        product={receivingProduct}
-        products={products}
-        submitting={submittingReceive}
-      />
-      <Ean13LabelsModal
-        onClose={() => setEan13LabelsOpen(false)}
-        open={ean13LabelsOpen}
-        products={products}
-      />
+      {canReceiveStock ? (
+        <ReceiveStockModal
+          onClose={closeReceiveModal}
+          onSubmit={handleReceiveStock}
+          open={receiveModalOpen}
+          product={receivingProduct}
+          products={products}
+          submitting={submittingReceive}
+        />
+      ) : null}
+      {canPrintEan13 ? (
+        <Ean13LabelsModal
+          onClose={() => setEan13LabelsOpen(false)}
+          open={ean13LabelsOpen}
+          products={products}
+        />
+      ) : null}
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
     </div>
   );

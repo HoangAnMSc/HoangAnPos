@@ -13,21 +13,71 @@ export type Database = {
         Row: {
           id: string;
           full_name: string | null;
-          role: "admin" | "staff";
+          role: string;
+          role_id: string | null;
+          is_active: boolean;
+          last_seen_at: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id: string;
           full_name?: string | null;
-          role?: "admin" | "staff";
+          role?: "admin" | "staff" | string;
+          role_id?: string | null;
+          is_active?: boolean;
+          last_seen_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           full_name?: string | null;
-          role?: "admin" | "staff";
+          role?: "admin" | "staff" | string;
+          role_id?: string | null;
+          is_active?: boolean;
+          last_seen_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "profiles_role_id_fkey";
+            columns: ["role_id"];
+            isOneToOne: false;
+            referencedRelation: "app_roles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      app_roles: {
+        Row: {
+          id: string;
+          name: string;
+          code: string;
+          description: string | null;
+          permissions: string[];
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          code: string;
+          description?: string | null;
+          permissions?: string[];
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          code?: string;
+          description?: string | null;
+          permissions?: string[];
+          is_active?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -426,6 +476,26 @@ export type Database = {
           created_at: string;
           updated_at: string;
         };
+      };
+      set_app_role_active: {
+        Args: {
+          role_id_input: string;
+          is_active_input: boolean;
+        };
+        Returns: {
+          id: string;
+          name: string;
+          code: string;
+          description: string | null;
+          permissions: string[];
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      touch_last_seen: {
+        Args: Record<string, never>;
+        Returns: void;
       };
     };
     Enums: Record<string, never>;

@@ -1,3 +1,4 @@
+import { createAuthHeaders } from "./apiClient";
 import { requireSupabaseConfig, supabase } from "./supabase";
 
 const cloudName =
@@ -149,7 +150,7 @@ async function deleteCloudinaryImageByToken(deleteToken: string) {
 async function deleteCloudinaryImageViaAppApi(publicId: string) {
   const response = await fetch("/api/cloudinary-images", {
     body: JSON.stringify({ publicId }),
-    headers: { "Content-Type": "application/json" },
+    headers: await createAuthHeaders({ "Content-Type": "application/json" }),
     method: "POST",
   });
   const contentType = response.headers.get("content-type") ?? "";
@@ -168,7 +169,9 @@ async function deleteCloudinaryImageViaAppApi(publicId: string) {
 }
 
 export async function fetchCloudinaryImageResources() {
-  const response = await fetch("/api/cloudinary-images");
+  const response = await fetch("/api/cloudinary-images", {
+    headers: await createAuthHeaders(),
+  });
   const contentType = response.headers.get("content-type") ?? "";
 
   if (!contentType.includes("application/json")) {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { authorizeApiRequest } from "./_auth.js";
 
 function sendJson(response, statusCode, body) {
   response.statusCode = statusCode;
@@ -29,6 +30,18 @@ function createBasicAuthHeader(apiKey, apiSecret) {
 }
 
 export default async function handler(request, response) {
+  const auth = await authorizeApiRequest(
+    request,
+    request.method === "POST"
+      ? ["cloudinary-images.delete"]
+      : ["cloudinary-images", "products.create", "products.update"]
+  );
+
+  if (!auth.ok) {
+    sendJson(response, auth.status, { message: auth.message, ok: false });
+    return;
+  }
+
   const config = getCloudinaryConfig();
 
   if (!config) {
