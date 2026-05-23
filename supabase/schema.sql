@@ -57,6 +57,11 @@ values
       'inventory.count',
       'inventory.report.create',
       'inventory.history.delete',
+      'attendance',
+      'attendance.clock',
+      'attendance.history.view',
+      'attendance.history.update',
+      'attendance.history.delete',
       'payment-settings',
       'payment-settings.update',
       'roles',
@@ -89,7 +94,10 @@ values
       'products',
       'inventory',
       'inventory.count',
-      'inventory.report.create'
+      'inventory.report.create',
+      'attendance',
+      'attendance.clock',
+      'attendance.history.view'
     ],
     true
   )
@@ -275,6 +283,42 @@ create table if not exists public.payment_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.attendance_records (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  clock_in_at timestamptz not null default now(),
+  clock_out_at timestamptz,
+  work_date date not null default ((now() at time zone 'Asia/Ho_Chi_Minh')::date),
+  clock_in_latitude numeric(10, 7),
+  clock_in_longitude numeric(10, 7),
+  clock_in_accuracy_m numeric(10, 2),
+  clock_out_latitude numeric(10, 7),
+  clock_out_longitude numeric(10, 7),
+  clock_out_accuracy_m numeric(10, 2),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint attendance_records_clock_order_check
+    check (clock_out_at is null or clock_out_at >= clock_in_at)
+);
+
+alter table public.attendance_records
+add column if not exists clock_in_latitude numeric(10, 7);
+
+alter table public.attendance_records
+add column if not exists clock_in_longitude numeric(10, 7);
+
+alter table public.attendance_records
+add column if not exists clock_in_accuracy_m numeric(10, 2);
+
+alter table public.attendance_records
+add column if not exists clock_out_latitude numeric(10, 7);
+
+alter table public.attendance_records
+add column if not exists clock_out_longitude numeric(10, 7);
+
+alter table public.attendance_records
+add column if not exists clock_out_accuracy_m numeric(10, 2);
+
 insert into public.product_batches (product_id, quantity, import_date, expiry_date)
 select p.id, p.stock, p.import_date, p.expiry_date
 from public.products p
@@ -296,6 +340,104 @@ create index if not exists product_batches_product_id_idx on public.product_batc
 create index if not exists customers_name_idx on public.customers using gin (to_tsvector('simple', name));
 create index if not exists orders_customer_id_idx on public.orders(customer_id);
 create index if not exists order_items_order_id_idx on public.order_items(order_id);
+create index if not exists attendance_records_user_work_date_idx
+on public.attendance_records(user_id, work_date desc);
+create unique index if not exists attendance_records_one_open_shift_idx
+on public.attendance_records(user_id)
+where clock_out_at is null;
+
+-- Merge old duplicate attendance rows before enforcing one shift per day.
+with duplicate_groups as (
+  select
+    user_id,
+    work_date,
+    (array_agg(id order by clock_in_at asc, created_at asc, id asc))[1] as keep_id,
+    min(clock_in_at) as merged_clock_in_at,
+    max(clock_out_at) as merged_clock_out_at
+  from public.attendance_records
+  group by user_id, work_date
+  having count(*) > 1
+),
+clock_in_locations as (
+  select distinct on (d.user_id, d.work_date)
+    d.user_id,
+    d.work_date,
+    a.clock_in_latitude,
+    a.clock_in_longitude,
+    a.clock_in_accuracy_m
+  from duplicate_groups d
+  join public.attendance_records a
+    on a.user_id = d.user_id
+   and a.work_date = d.work_date
+  where a.clock_in_latitude is not null
+    and a.clock_in_longitude is not null
+  order by d.user_id, d.work_date, a.clock_in_at asc, a.created_at asc, a.id asc
+),
+clock_out_locations as (
+  select distinct on (d.user_id, d.work_date)
+    d.user_id,
+    d.work_date,
+    a.clock_out_latitude,
+    a.clock_out_longitude,
+    a.clock_out_accuracy_m
+  from duplicate_groups d
+  join public.attendance_records a
+    on a.user_id = d.user_id
+   and a.work_date = d.work_date
+  where a.clock_out_latitude is not null
+    and a.clock_out_longitude is not null
+  order by d.user_id, d.work_date, a.clock_out_at desc nulls last, a.updated_at desc, a.id desc
+),
+merged_records as (
+  select
+    d.user_id,
+    d.work_date,
+    d.keep_id,
+    d.merged_clock_in_at,
+    case
+      when d.merged_clock_out_at is not null
+        and d.merged_clock_out_at >= d.merged_clock_in_at
+      then d.merged_clock_out_at
+      else null
+    end as merged_clock_out_at,
+    i.clock_in_latitude,
+    i.clock_in_longitude,
+    i.clock_in_accuracy_m,
+    o.clock_out_latitude,
+    o.clock_out_longitude,
+    o.clock_out_accuracy_m
+  from duplicate_groups d
+  left join clock_in_locations i
+    on i.user_id = d.user_id
+   and i.work_date = d.work_date
+  left join clock_out_locations o
+    on o.user_id = d.user_id
+   and o.work_date = d.work_date
+),
+updated_records as (
+  update public.attendance_records a
+  set
+    clock_in_at = m.merged_clock_in_at,
+    clock_out_at = m.merged_clock_out_at,
+    clock_in_latitude = coalesce(m.clock_in_latitude, a.clock_in_latitude),
+    clock_in_longitude = coalesce(m.clock_in_longitude, a.clock_in_longitude),
+    clock_in_accuracy_m = coalesce(m.clock_in_accuracy_m, a.clock_in_accuracy_m),
+    clock_out_latitude = coalesce(m.clock_out_latitude, a.clock_out_latitude),
+    clock_out_longitude = coalesce(m.clock_out_longitude, a.clock_out_longitude),
+    clock_out_accuracy_m = coalesce(m.clock_out_accuracy_m, a.clock_out_accuracy_m)
+  from merged_records m
+  where a.id = m.keep_id
+  returning a.id
+)
+delete from public.attendance_records a
+using merged_records m, updated_records u
+where a.user_id = m.user_id
+  and a.work_date = m.work_date
+  and a.id <> m.keep_id
+  and u.id = m.keep_id;
+
+create unique index if not exists attendance_records_user_work_date_unique_idx
+on public.attendance_records(user_id, work_date);
 
 insert into public.product_categories (name)
 select distinct trim(category)
@@ -352,6 +494,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists set_customers_updated_at on public.customers;
 create trigger set_customers_updated_at
 before update on public.customers
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_attendance_records_updated_at on public.attendance_records;
+create trigger set_attendance_records_updated_at
+before update on public.attendance_records
 for each row execute function public.set_updated_at();
 
 create or replace function public.handle_new_user()
@@ -475,6 +622,196 @@ begin
   end if;
 
   return role_record;
+end;
+$$;
+
+drop function if exists public.clock_in_attendance();
+drop function if exists public.clock_in_attendance(numeric, numeric, numeric);
+drop function if exists public.clock_in_attendance(numeric, numeric, numeric, text);
+
+create or replace function public.clock_in_attendance(
+  latitude_input numeric,
+  longitude_input numeric,
+  accuracy_input numeric
+)
+returns public.attendance_records
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  attendance_record public.attendance_records;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if not public.has_permission('attendance.clock') then
+    raise exception 'Permission denied';
+  end if;
+
+  if latitude_input is null or longitude_input is null then
+    raise exception 'Location is required';
+  end if;
+
+  select *
+  into attendance_record
+  from public.attendance_records
+  where user_id = auth.uid()
+    and clock_out_at is null
+  order by clock_in_at desc
+  limit 1;
+
+  if found then
+    return attendance_record;
+  end if;
+
+  select *
+  into attendance_record
+  from public.attendance_records
+  where user_id = auth.uid()
+    and work_date = ((now() at time zone 'Asia/Ho_Chi_Minh')::date)
+  order by clock_in_at desc
+  limit 1;
+
+  if found then
+    raise exception 'Attendance for today is already completed';
+  end if;
+
+  insert into public.attendance_records (
+    user_id,
+    clock_in_latitude,
+    clock_in_longitude,
+    clock_in_accuracy_m
+  )
+  values (
+    auth.uid(),
+    latitude_input,
+    longitude_input,
+    accuracy_input
+  )
+  returning * into attendance_record;
+
+  return attendance_record;
+end;
+$$;
+
+drop function if exists public.clock_out_attendance(uuid);
+drop function if exists public.clock_out_attendance(uuid, numeric, numeric, numeric);
+
+create or replace function public.clock_out_attendance(
+  record_id_input uuid,
+  latitude_input numeric default null,
+  longitude_input numeric default null,
+  accuracy_input numeric default null
+)
+returns public.attendance_records
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  attendance_record public.attendance_records;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if not public.has_permission('attendance.clock') then
+    raise exception 'Permission denied';
+  end if;
+
+  update public.attendance_records
+  set
+    clock_out_at = now(),
+    clock_out_latitude = latitude_input,
+    clock_out_longitude = longitude_input,
+    clock_out_accuracy_m = accuracy_input
+  where id = record_id_input
+    and user_id = auth.uid()
+    and clock_out_at is null
+  returning * into attendance_record;
+
+  if not found then
+    raise exception 'Attendance record is not available';
+  end if;
+
+  return attendance_record;
+end;
+$$;
+
+drop function if exists public.update_attendance_record(uuid, timestamptz, timestamptz);
+
+create or replace function public.update_attendance_record(
+  record_id_input uuid,
+  clock_in_at_input timestamptz,
+  clock_out_at_input timestamptz
+)
+returns public.attendance_records
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  attendance_record public.attendance_records;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if not public.has_permission('attendance.history.update') then
+    raise exception 'Permission denied';
+  end if;
+
+  if clock_in_at_input is null then
+    raise exception 'Clock in time is required';
+  end if;
+
+  if clock_out_at_input is not null and clock_out_at_input < clock_in_at_input then
+    raise exception 'Clock out time must be after clock in time';
+  end if;
+
+  update public.attendance_records
+  set
+    clock_in_at = clock_in_at_input,
+    clock_out_at = clock_out_at_input,
+    work_date = ((clock_in_at_input at time zone 'Asia/Ho_Chi_Minh')::date)
+  where id = record_id_input
+    and user_id = auth.uid()
+  returning * into attendance_record;
+
+  if not found then
+    raise exception 'Attendance record is not available';
+  end if;
+
+  return attendance_record;
+end;
+$$;
+
+drop function if exists public.delete_attendance_record(uuid);
+
+create or replace function public.delete_attendance_record(record_id_input uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if not public.has_permission('attendance.history.delete') then
+    raise exception 'Permission denied';
+  end if;
+
+  delete from public.attendance_records
+  where id = record_id_input
+    and user_id = auth.uid();
+
+  if not found then
+    raise exception 'Attendance record is not available';
+  end if;
 end;
 $$;
 
@@ -762,6 +1099,7 @@ alter table public.customers enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 alter table public.payment_settings enable row level security;
+alter table public.attendance_records enable row level security;
 
 drop policy if exists "Users can read own profile" on public.profiles;
 create policy "Users can read own profile"
@@ -992,3 +1330,35 @@ drop policy if exists "POS can insert order items" on public.order_items;
 create policy "POS can insert order items"
 on public.order_items for insert
 with check (public.has_permission('pos.checkout'));
+
+drop policy if exists "Attendance users can read own records" on public.attendance_records;
+create policy "Attendance users can read own records"
+on public.attendance_records for select
+using (
+  auth.uid() = user_id
+  and (
+    public.has_permission('attendance')
+    or public.has_permission('attendance.clock')
+    or public.has_permission('attendance.history.view')
+  )
+);
+
+drop policy if exists "Attendance users can update own records" on public.attendance_records;
+create policy "Attendance users can update own records"
+on public.attendance_records for update
+using (
+  auth.uid() = user_id
+  and public.has_permission('attendance.history.update')
+)
+with check (
+  auth.uid() = user_id
+  and public.has_permission('attendance.history.update')
+);
+
+drop policy if exists "Attendance users can delete own records" on public.attendance_records;
+create policy "Attendance users can delete own records"
+on public.attendance_records for delete
+using (
+  auth.uid() = user_id
+  and public.has_permission('attendance.history.delete')
+);

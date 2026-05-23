@@ -6,6 +6,7 @@ import { appPermissions } from "../../lib/permissions";
 import { Button } from "../ui/Button";
 
 const pageTitles: Record<string, { title: string }> = {
+  "/attendance": { title: "Cham cong" },
   "/cloudinary-images": { title: "Anh Cloudinary" },
   "/customers": { title: "Khach hang" },
   "/inventory": { title: "Ton kho" },

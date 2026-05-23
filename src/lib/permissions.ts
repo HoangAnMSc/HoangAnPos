@@ -1,6 +1,7 @@
 import {
   BadgeDollarSign,
   Boxes,
+  CalendarClock,
   ClipboardList,
   Images,
   ReceiptText,
@@ -171,6 +172,35 @@ export const permissionGroups = [
         key: "inventory.history.delete",
         label: "Xoa lich su",
         description: "Xoa lich su bao cao luu tren may hien tai.",
+      },
+    ],
+  },
+  {
+    key: "attendance",
+    label: "Cham cong",
+    path: "/attendance",
+    icon: CalendarClock,
+    description: "Mo trang cham cong va lich su ca lam.",
+    actions: [
+      {
+        key: "attendance.clock",
+        label: "Cham cong / tan lam",
+        description: "Ghi nhan gio vao ca va gio tan lam.",
+      },
+      {
+        key: "attendance.history.view",
+        label: "Xem lich su cham cong",
+        description: "Xem danh sach gio da cham cong trong thang.",
+      },
+      {
+        key: "attendance.history.update",
+        label: "Sua lich su cham cong",
+        description: "Chinh sua gio cham cong va gio tan lam da luu.",
+      },
+      {
+        key: "attendance.history.delete",
+        label: "Xoa lich su cham cong",
+        description: "Xoa mot ca cham cong da luu.",
       },
     ],
   },

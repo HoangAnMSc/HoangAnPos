@@ -3,6 +3,7 @@ import { AdminLayout } from "./components/layout/AdminLayout";
 import { ProtectedRoute } from "./components/routing/ProtectedRoute";
 import { useAuth } from "./contexts/AuthContext";
 import { appPermissions } from "./lib/permissions";
+import { AttendancePage } from "./pages/AttendancePage";
 import { CloudinaryImagesPage } from "./pages/CloudinaryImagesPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { InventoryPage } from "./pages/InventoryPage";
@@ -37,6 +38,7 @@ export function App() {
           <Route path="products" element={<ProductsPage />} />
           <Route path="cloudinary-images" element={<CloudinaryImagesPage />} />
           <Route path="inventory" element={<InventoryPage />} />
+          <Route path="attendance" element={<AttendancePage />} />
           <Route path="payment-settings" element={<PaymentSettingsPage />} />
           <Route path="roles" element={<RolesPage />} />
           <Route path="users" element={<UsersPage />} />

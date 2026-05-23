@@ -9,6 +9,7 @@ export type Customer = Database["public"]["Tables"]["customers"]["Row"];
 export type Order = Database["public"]["Tables"]["orders"]["Row"];
 export type OrderItem = Database["public"]["Tables"]["order_items"]["Row"];
 export type PaymentSettings = Database["public"]["Tables"]["payment_settings"]["Row"];
+export type AttendanceRecord = Database["public"]["Tables"]["attendance_records"]["Row"];
 
 export type CartItem = {
   batch?: ProductBatch | null;

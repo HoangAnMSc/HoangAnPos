@@ -419,9 +419,138 @@ export type Database = {
         };
         Relationships: [];
       };
+      attendance_records: {
+        Row: {
+          id: string;
+          user_id: string;
+          clock_in_at: string;
+          clock_out_at: string | null;
+          work_date: string;
+          clock_in_latitude: number | null;
+          clock_in_longitude: number | null;
+          clock_in_accuracy_m: number | null;
+          clock_out_latitude: number | null;
+          clock_out_longitude: number | null;
+          clock_out_accuracy_m: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          clock_in_at?: string;
+          clock_out_at?: string | null;
+          work_date?: string;
+          clock_in_latitude?: number | null;
+          clock_in_longitude?: number | null;
+          clock_in_accuracy_m?: number | null;
+          clock_out_latitude?: number | null;
+          clock_out_longitude?: number | null;
+          clock_out_accuracy_m?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          clock_in_at?: string;
+          clock_out_at?: string | null;
+          work_date?: string;
+          clock_in_latitude?: number | null;
+          clock_in_longitude?: number | null;
+          clock_in_accuracy_m?: number | null;
+          clock_out_latitude?: number | null;
+          clock_out_longitude?: number | null;
+          clock_out_accuracy_m?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attendance_records_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      clock_in_attendance: {
+        Args: {
+          accuracy_input: number | null;
+          latitude_input: number;
+          longitude_input: number;
+        };
+        Returns: {
+          id: string;
+          user_id: string;
+          clock_in_at: string;
+          clock_out_at: string | null;
+          work_date: string;
+          clock_in_latitude: number | null;
+          clock_in_longitude: number | null;
+          clock_in_accuracy_m: number | null;
+          clock_out_latitude: number | null;
+          clock_out_longitude: number | null;
+          clock_out_accuracy_m: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      clock_out_attendance: {
+        Args: {
+          accuracy_input?: number | null;
+          latitude_input?: number | null;
+          longitude_input?: number | null;
+          record_id_input: string;
+        };
+        Returns: {
+          id: string;
+          user_id: string;
+          clock_in_at: string;
+          clock_out_at: string | null;
+          work_date: string;
+          clock_in_latitude: number | null;
+          clock_in_longitude: number | null;
+          clock_in_accuracy_m: number | null;
+          clock_out_latitude: number | null;
+          clock_out_longitude: number | null;
+          clock_out_accuracy_m: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      delete_attendance_record: {
+        Args: {
+          record_id_input: string;
+        };
+        Returns: void;
+      };
+      update_attendance_record: {
+        Args: {
+          clock_in_at_input: string;
+          clock_out_at_input: string | null;
+          record_id_input: string;
+        };
+        Returns: {
+          id: string;
+          user_id: string;
+          clock_in_at: string;
+          clock_out_at: string | null;
+          work_date: string;
+          clock_in_latitude: number | null;
+          clock_in_longitude: number | null;
+          clock_in_accuracy_m: number | null;
+          clock_out_latitude: number | null;
+          clock_out_longitude: number | null;
+          clock_out_accuracy_m: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
       create_pos_order: {
         Args: {
           cashier_id_input: string | null;
