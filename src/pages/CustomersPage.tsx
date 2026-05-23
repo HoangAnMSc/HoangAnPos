@@ -8,7 +8,6 @@ import {
   StickyNote,
   Trash2,
   UserPlus,
-  UserRound,
   UsersRound,
 } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
@@ -112,7 +111,7 @@ function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
   }
 
   return (
-    <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
+    <form className="space-y-4" id={formId} onSubmit={handleSubmit}>
       <div className="grid gap-4 md:grid-cols-2">
         <Input
           label="Ten khach hang"
@@ -166,6 +165,7 @@ export function CustomersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const canCreateCustomer = canAccess("customers.create");
   const canEditCustomer = canAccess("customers.update");
   const canDeleteCustomer = canAccess("customers.delete");
@@ -195,6 +195,7 @@ export function CustomersPage() {
     }
 
     setEditingCustomer(null);
+    setViewingCustomer(null);
     setModalOpen(true);
   }
 
@@ -204,6 +205,7 @@ export function CustomersPage() {
     }
 
     setEditingCustomer(customer);
+    setViewingCustomer(null);
     setModalOpen(true);
   }
 
@@ -224,6 +226,7 @@ export function CustomersPage() {
 
       setModalOpen(false);
       setEditingCustomer(null);
+      setViewingCustomer(null);
       await loadCustomers();
     } catch (requestError) {
       const message =
@@ -250,6 +253,9 @@ export function CustomersPage() {
     try {
       await deleteCustomer(customer.id);
       setCustomers((current) => current.filter((item) => item.id !== customer.id));
+      setModalOpen(false);
+      setEditingCustomer(null);
+      setViewingCustomer(null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Xoa khach hang that bai.");
     }
@@ -267,34 +273,35 @@ export function CustomersPage() {
   const completeContactCount = customers.filter((customer) => customer.phone || customer.email).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <ConfigNotice />
 
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-coal/10 p-4 sm:p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <Card className="overflow-hidden rounded-xl p-0">
+        <div className="border-b border-coal/10 p-3 sm:p-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
                 Ho so khach hang
               </p>
-              <h2 className="mt-1 font-display text-2xl font-bold text-coal">Khach hang</h2>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <h2 className="mt-1 font-display text-xl font-bold text-coal">Khach hang</h2>
+              <div className="mt-2 flex flex-wrap gap-2">
                 <Badge tone="neutral">{customers.length} khach</Badge>
+                <Badge tone="neutral">{filteredCustomers.length} dang hien thi</Badge>
                 <Badge tone="green">{completeContactCount} co lien he</Badge>
               </div>
             </div>
             {canCreateCustomer ? (
-              <Button className="w-full sm:w-auto" onClick={openCreateModal}>
+              <Button className="h-10 w-full rounded-xl px-3 sm:w-auto" onClick={openCreateModal}>
                 <UserPlus className="h-4 w-4" />
                 Them khach hang
               </Button>
             ) : null}
           </div>
 
-          <div className="relative mt-4 w-full xl:max-w-xl">
+          <div className="relative mt-3 w-full xl:max-w-xl">
             <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
             <Input
-              className="pl-11"
+              className="h-10 rounded-xl py-2 pl-11"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Tim theo ten, SDT, email, dia chi..."
               value={query}
@@ -303,7 +310,7 @@ export function CustomersPage() {
         </div>
 
         {error && !modalOpen ? (
-          <div className="m-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 sm:m-5">
+          <div className="m-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 sm:m-4">
             {error}
           </div>
         ) : null}
@@ -322,33 +329,33 @@ export function CustomersPage() {
           </div>
         ) : (
           <div className="overflow-hidden">
-            <div className="hidden grid-cols-[1.2fr_1.05fr_1.15fr_1fr_0.55fr] gap-4 border-b border-coal/10 bg-coal px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
+            <div className="hidden grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.3fr)_auto] gap-3 border-b border-coal/10 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
               <span>Khach hang</span>
               <span>Lien he</span>
-              <span>Dia chi</span>
-              <span>Ghi chu</span>
+              <span>Thong tin them</span>
               <span className="text-right">Thao tac</span>
             </div>
             <div className="divide-y divide-coal/10 bg-white/70">
               {filteredCustomers.map((customer) => (
-                <div
-                  className="grid gap-4 p-4 transition hover:bg-cream/35 lg:grid-cols-[1.2fr_1.05fr_1.15fr_1fr_0.55fr] lg:items-center lg:px-5"
+                <button
+                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-3 text-left transition hover:bg-cream/35 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.3fr)_auto] lg:gap-3 lg:px-4"
                   key={customer.id}
+                  onClick={() => setViewingCustomer(customer)}
+                  type="button"
                 >
-                  <div className="flex min-w-0 items-center gap-4">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-moss/12 text-lg font-extrabold text-moss">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-moss/12 text-sm font-extrabold text-moss">
                       {getCustomerInitial(customer.name)}
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate font-display text-lg font-bold">{customer.name}</p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <UserRound className="h-4 w-4 text-coal/35" />
-                        <Badge tone="amber">Khach hang</Badge>
-                      </div>
+                      <p className="truncate font-display text-base font-bold">{customer.name}</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-coal/45 lg:hidden">
+                        {customer.phone || customer.email || "Chua co lien he"}
+                      </p>
                     </div>
                   </div>
 
-                  <div className="grid gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm lg:bg-transparent lg:p-0">
+                  <div className="hidden gap-1.5 text-sm lg:grid">
                     <div className="flex min-w-0 items-center gap-2">
                       <Phone className="h-4 w-4 shrink-0 text-clay" />
                       <span className="truncate font-semibold text-coal">
@@ -361,37 +368,21 @@ export function CustomersPage() {
                     </div>
                   </div>
 
-                  <div className="flex min-w-0 items-start gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-coal/70 lg:bg-transparent lg:p-0">
-                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-clay" />
-                    <span className="line-clamp-2">{customer.address || "Chua co dia chi"}</span>
+                  <div className="hidden gap-1.5 text-sm text-coal/65 lg:grid">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <MapPin className="h-4 w-4 shrink-0 text-clay" />
+                      <span className="truncate">{customer.address || "Chua co dia chi"}</span>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <StickyNote className="h-4 w-4 shrink-0 text-clay" />
+                      <span className="truncate">{customer.note || "Chua co ghi chu"}</span>
+                    </div>
                   </div>
 
-                  <div className="flex min-w-0 items-start gap-2 rounded-2xl bg-cream/60 px-4 py-3 text-sm text-coal/70 lg:bg-transparent lg:p-0">
-                    <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-clay" />
-                    <span className="line-clamp-2">{customer.note || "Chua co ghi chu"}</span>
+                  <div className="flex justify-end">
+                    <Badge tone="neutral">Xem</Badge>
                   </div>
-
-                  <div className="flex justify-end gap-2">
-                    {canEditCustomer ? (
-                      <Button
-                        className="h-10 w-10 p-0"
-                        onClick={() => openEditModal(customer)}
-                        variant="secondary"
-                      >
-                        <Edit3 className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                    {canDeleteCustomer ? (
-                      <Button
-                        className="h-10 w-10 p-0"
-                        onClick={() => handleDelete(customer)}
-                        variant="danger"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -401,12 +392,70 @@ export function CustomersPage() {
       <Modal
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-            <Button onClick={() => setModalOpen(false)} type="button" variant="secondary">
-              Huy
+            <Button onClick={() => setViewingCustomer(null)} type="button" variant="secondary">
+              Dong
             </Button>
-            <Button form={customerFormId} isLoading={submitting} type="submit">
-              {editingCustomer ? "Cap nhat" : "Them khach hang"}
-            </Button>
+            {viewingCustomer && canEditCustomer ? (
+              <Button onClick={() => openEditModal(viewingCustomer)} type="button">
+                <Edit3 className="h-4 w-4" />
+                Sua
+              </Button>
+            ) : null}
+          </div>
+        }
+        onClose={() => setViewingCustomer(null)}
+        open={Boolean(viewingCustomer)}
+        size="md"
+        title="Xem khach hang"
+      >
+        {viewingCustomer ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-moss/12 text-base font-extrabold text-moss">
+                {getCustomerInitial(viewingCustomer.name)}
+              </div>
+              <div className="min-w-0">
+                <h3 className="truncate text-lg font-extrabold text-slate-950">
+                  {viewingCustomer.name}
+                </h3>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  Tao {new Intl.DateTimeFormat("vi-VN").format(new Date(viewingCustomer.created_at))}
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-2 text-sm font-semibold text-slate-700">
+              <p><span className="text-slate-400">SDT:</span> {viewingCustomer.phone || "Chua co"}</p>
+              <p><span className="text-slate-400">Email:</span> {viewingCustomer.email || "Chua co"}</p>
+              <p><span className="text-slate-400">Dia chi:</span> {viewingCustomer.address || "Chua co"}</p>
+              <p className="whitespace-pre-line"><span className="text-slate-400">Ghi chu:</span> {viewingCustomer.note || "Chua co"}</p>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        footer={
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              {editingCustomer && canDeleteCustomer ? (
+                <Button
+                  onClick={() => void handleDelete(editingCustomer)}
+                  type="button"
+                  variant="danger"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Xoa
+                </Button>
+              ) : null}
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+              <Button onClick={() => setModalOpen(false)} type="button" variant="secondary">
+                Huy
+              </Button>
+              <Button form={customerFormId} isLoading={submitting} type="submit">
+                {editingCustomer ? "Cap nhat" : "Them khach hang"}
+              </Button>
+            </div>
           </div>
         }
         onClose={() => setModalOpen(false)}

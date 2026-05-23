@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { Edit3, Plus, Power, Trash2, UserCog } from "lucide-react";
+import { Edit3, Plus, Power, Search, Trash2, UserCog } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -80,13 +80,21 @@ type UserEditorModalProps = {
   roles: AppRole[];
   submitting: boolean;
   user: ManagedUser | null;
+  canDeleteUser: boolean;
+  canToggleUser: boolean;
   onClose: () => void;
+  onDelete: (user: ManagedUser) => Promise<void>;
   onSubmit: (input: UserInput) => Promise<void>;
+  onToggle: (user: ManagedUser) => Promise<void>;
 };
 
 function UserEditorModal({
+  canDeleteUser,
+  canToggleUser,
   onClose,
+  onDelete,
   onSubmit,
+  onToggle,
   open,
   roles,
   submitting,
@@ -130,13 +138,29 @@ function UserEditorModal({
   return (
     <Modal
       footer={
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-          <Button onClick={onClose} type="button" variant="secondary">
-            Huy
-          </Button>
-          <Button form={formId} isLoading={submitting} type="submit">
-            Luu user
-          </Button>
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {user && canToggleUser ? (
+              <Button onClick={() => void onToggle(user)} type="button" variant="secondary">
+                <Power className="h-4 w-4" />
+                {user.is_active ? "Vo hieu hoa" : "Kich hoat"}
+              </Button>
+            ) : null}
+            {user && canDeleteUser ? (
+              <Button onClick={() => void onDelete(user)} type="button" variant="danger">
+                <Trash2 className="h-4 w-4" />
+                Xoa
+              </Button>
+            ) : null}
+          </div>
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button onClick={onClose} type="button" variant="secondary">
+              Huy
+            </Button>
+            <Button form={formId} isLoading={submitting} type="submit">
+              Luu user
+            </Button>
+          </div>
         </div>
       }
       onClose={onClose}
@@ -212,9 +236,11 @@ export function UsersPage() {
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [viewingUser, setViewingUser] = useState<ManagedUser | null>(null);
   const canCreateUser = canAccess("users.create");
   const canEditUser = canAccess("users.update");
   const canToggleUser = canAccess("users.toggle-active");
@@ -253,6 +279,7 @@ export function UsersPage() {
     }
 
     setEditingUser(null);
+    setViewingUser(null);
     setModalOpen(true);
   }
 
@@ -262,6 +289,7 @@ export function UsersPage() {
     }
 
     setEditingUser(user);
+    setViewingUser(null);
     setModalOpen(true);
   }
 
@@ -281,6 +309,7 @@ export function UsersPage() {
 
       setModalOpen(false);
       setEditingUser(null);
+      setViewingUser(null);
       await loadData();
     } finally {
       setSubmitting(false);
@@ -299,6 +328,9 @@ export function UsersPage() {
         is_active: !user.is_active,
         role_id: user.role_id ?? roles[0]?.id ?? "",
       });
+      setModalOpen(false);
+      setEditingUser(null);
+      setViewingUser(null);
       await loadData();
     } catch (requestError) {
       setErrorNotice({
@@ -319,6 +351,9 @@ export function UsersPage() {
 
     try {
       await deleteManagedUser(user.id);
+      setModalOpen(false);
+      setEditingUser(null);
+      setViewingUser(null);
       await loadData();
     } catch (requestError) {
       setErrorNotice({
@@ -328,34 +363,59 @@ export function UsersPage() {
     }
   }
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredUsers = users.filter((user) => {
+    const online = getOnlineState(user.last_seen_at);
+    return [user.email, user.full_name, user.role?.name, user.is_active ? "hoat dong" : "vo hieu hoa", online.label]
+      .filter(Boolean)
+      .some((value) => value!.toLowerCase().includes(normalizedQuery));
+  });
+
   return (
-    <div className="px-4 pb-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-5">
-        <section className="rounded-3xl bg-white p-5 shadow-soft ring-1 ring-coal/5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-2">
-              <Badge tone="neutral">{users.length} user</Badge>
-              <Badge tone="green">{onlineCount} dang online</Badge>
-              <Badge tone="red">{users.filter((user) => !user.is_active).length} vo hieu hoa</Badge>
+    <div className="px-3 pb-8 sm:px-4 lg:px-6">
+      <div className="mx-auto max-w-7xl space-y-4">
+        <section className="rounded-xl bg-white p-4 shadow-soft ring-1 ring-coal/5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
+                Tai khoan noi bo
+              </p>
+              <h2 className="mt-1 font-display text-xl font-bold text-coal">Quan ly user</h2>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Badge tone="neutral">{users.length} user</Badge>
+                <Badge tone="neutral">{filteredUsers.length} dang hien thi</Badge>
+                <Badge tone="green">{onlineCount} dang online</Badge>
+                <Badge tone="red">{users.filter((user) => !user.is_active).length} vo hieu hoa</Badge>
+              </div>
             </div>
             {canCreateUser ? (
-              <Button onClick={openCreateModal}>
+              <Button className="h-10 rounded-xl px-3" onClick={openCreateModal}>
                 <Plus className="h-4 w-4" />
                 Tao quan tri
               </Button>
             ) : null}
           </div>
+
+          <div className="relative mt-3 w-full xl:max-w-xl">
+            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
+            <Input
+              className="h-10 rounded-xl py-2 pl-11"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tim email, ten, role, trang thai..."
+              value={query}
+            />
+          </div>
         </section>
 
         {loading ? (
-          <div className="rounded-3xl bg-white p-8 shadow-soft">
+          <div className="rounded-xl bg-white p-6 shadow-soft">
             <Spinner label="Dang tai user..." />
           </div>
-        ) : users.length === 0 ? (
+        ) : filteredUsers.length === 0 ? (
           <EmptyState description="Tao nguoi quan tri dau tien de phan quyen." icon={UserCog} title="Chua co user" />
         ) : (
-          <div className="overflow-hidden rounded-3xl bg-white shadow-soft ring-1 ring-coal/5">
-            <div className="hidden grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.6fr] gap-4 border-b border-coal/5 px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-coal/45 lg:grid">
+          <div className="overflow-hidden rounded-xl bg-white shadow-soft ring-1 ring-coal/5">
+            <div className="hidden grid-cols-[minmax(0,1.45fr)_minmax(0,0.85fr)_minmax(0,0.95fr)_minmax(0,1fr)_auto] gap-3 border-b border-coal/5 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
               <span>User</span>
               <span>Role</span>
               <span>Trang thai</span>
@@ -363,55 +423,49 @@ export function UsersPage() {
               <span />
             </div>
             <div className="divide-y divide-coal/5">
-              {users.map((user) => {
+              {filteredUsers.map((user) => {
                 const online = getOnlineState(user.last_seen_at);
 
                 return (
-                  <article
-                    className="grid gap-3 px-5 py-4 lg:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.6fr] lg:items-center"
+                  <button
+                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3 text-left transition hover:bg-cream/30 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,0.85fr)_minmax(0,0.95fr)_minmax(0,1fr)_auto] lg:gap-3"
                     key={user.id}
+                    onClick={() => setViewingUser(user)}
+                    type="button"
                   >
-                    <div>
-                      <p className="font-extrabold text-coal">{user.full_name || user.email}</p>
-                      <p className="mt-1 text-sm font-semibold text-coal/45">{user.email}</p>
-                      <p className="mt-1 text-xs font-semibold text-coal/35">
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-extrabold text-coal">{user.full_name || user.email}</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-coal/45">{user.email}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5 lg:hidden">
+                        <Badge tone="neutral">{user.role?.name ?? "Chua gan role"}</Badge>
+                        <Badge tone={user.is_active ? "green" : "red"}>
+                          {user.is_active ? "Hoat dong" : "Vo hieu hoa"}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 hidden text-xs font-semibold text-coal/35 lg:block">
                         Tao {user.created_at ? formatDateTime(user.created_at) : "khong ro"}
                       </p>
                     </div>
-                    <div>
+                    <div className="hidden lg:block">
                       <Badge tone="neutral">{user.role?.name ?? "Chua gan role"}</Badge>
                     </div>
-                    <div>
+                    <div className="hidden lg:block">
                       <Badge tone={user.is_active ? "green" : "red"}>
                         {user.is_active ? "Hoat dong" : "Vo hieu hoa"}
                       </Badge>
                     </div>
-                    <div>
+                    <div className="hidden lg:block">
                       <Badge tone={online.online ? "green" : "neutral"}>{online.label}</Badge>
                       {user.last_seen_at ? (
-                        <p className="mt-1 text-xs font-semibold text-coal/40">
+                        <p className="mt-1 truncate text-xs font-semibold text-coal/40">
                           {formatDateTime(user.last_seen_at)}
                         </p>
                       ) : null}
                     </div>
-                    <div className="flex gap-2 lg:justify-end">
-                      {canEditUser ? (
-                        <Button className="h-10 w-10 p-0" onClick={() => openEditModal(user)} variant="secondary">
-                          <Edit3 className="h-4 w-4" />
-                        </Button>
-                      ) : null}
-                      {canToggleUser ? (
-                        <Button className="h-10 w-10 p-0" onClick={() => void handleToggle(user)} variant="secondary">
-                          <Power className="h-4 w-4" />
-                        </Button>
-                      ) : null}
-                      {canDeleteUser ? (
-                        <Button className="h-10 w-10 p-0" onClick={() => void handleDelete(user)} variant="danger">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      ) : null}
+                    <div className="flex justify-end">
+                      <Badge tone="neutral">Xem</Badge>
                     </div>
-                  </article>
+                  </button>
                 );
               })}
             </div>
@@ -419,9 +473,68 @@ export function UsersPage() {
         )}
       </div>
 
+      <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button onClick={() => setViewingUser(null)} type="button" variant="secondary">
+              Dong
+            </Button>
+            {viewingUser && canEditUser ? (
+              <Button onClick={() => openEditModal(viewingUser)} type="button">
+                <Edit3 className="h-4 w-4" />
+                Sua
+              </Button>
+            ) : null}
+          </div>
+        }
+        onClose={() => setViewingUser(null)}
+        open={Boolean(viewingUser)}
+        size="md"
+        title="Xem user"
+      >
+        {viewingUser ? (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-slate-50 p-4">
+              <h3 className="truncate text-lg font-extrabold text-slate-950">
+                {viewingUser.full_name || viewingUser.email}
+              </h3>
+              <p className="mt-1 truncate text-sm font-semibold text-slate-500">
+                {viewingUser.email}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge tone="neutral">{viewingUser.role?.name ?? "Chua gan role"}</Badge>
+                <Badge tone={viewingUser.is_active ? "green" : "red"}>
+                  {viewingUser.is_active ? "Hoat dong" : "Vo hieu hoa"}
+                </Badge>
+              </div>
+            </div>
+            <div className="grid gap-2 text-sm font-semibold text-slate-700">
+              <p>
+                <span className="text-slate-400">Tao:</span>{" "}
+                {viewingUser.created_at ? formatDateTime(viewingUser.created_at) : "Khong ro"}
+              </p>
+              <p>
+                <span className="text-slate-400">Hoat dong:</span>{" "}
+                {getOnlineState(viewingUser.last_seen_at).label}
+              </p>
+              {viewingUser.last_seen_at ? (
+                <p>
+                  <span className="text-slate-400">Lan cuoi:</span>{" "}
+                  {formatDateTime(viewingUser.last_seen_at)}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
       <UserEditorModal
+        canDeleteUser={canDeleteUser}
+        canToggleUser={canToggleUser}
         onClose={() => setModalOpen(false)}
+        onDelete={handleDelete}
         onSubmit={handleSubmit}
+        onToggle={handleToggle}
         open={modalOpen}
         roles={roles}
         submitting={submitting}

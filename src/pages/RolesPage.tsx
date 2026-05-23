@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { Edit3, Plus, Power, ShieldCheck, Trash2 } from "lucide-react";
+import { Edit3, Plus, Power, Search, ShieldCheck, Trash2 } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -52,19 +52,34 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+const permissionLabels = permissionGroups.flatMap((group) => [
+  { key: group.key, label: group.label },
+  ...group.actions.map((action) => ({ key: action.key, label: action.label })),
+]);
+
+function getPermissionLabel(permission: string) {
+  return permissionLabels.find((item) => item.key === permission)?.label ?? permission;
+}
+
 type RoleEditorModalProps = {
   open: boolean;
   role: AppRole | null;
   submitting: boolean;
+  canDeleteRole: boolean;
   canToggleActive: boolean;
   onClose: () => void;
+  onDelete: (role: AppRole) => Promise<void>;
   onSubmit: (input: RoleInput) => Promise<void>;
+  onToggle: (role: AppRole) => Promise<void>;
 };
 
 function RoleEditorModal({
+  canDeleteRole,
   canToggleActive,
   onClose,
+  onDelete,
   onSubmit,
+  onToggle,
   open,
   role,
   submitting,
@@ -144,13 +159,29 @@ function RoleEditorModal({
   return (
     <Modal
       footer={
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-          <Button onClick={onClose} type="button" variant="secondary">
-            Huy
-          </Button>
-          <Button form={formId} isLoading={submitting} type="submit">
-            Luu role
-          </Button>
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {role && canToggleActive && role.code !== "admin" ? (
+              <Button onClick={() => void onToggle(role)} type="button" variant="secondary">
+                <Power className="h-4 w-4" />
+                {role.is_active ? "Vo hieu hoa" : "Kich hoat"}
+              </Button>
+            ) : null}
+            {role && canDeleteRole ? (
+              <Button onClick={() => void onDelete(role)} type="button" variant="danger">
+                <Trash2 className="h-4 w-4" />
+                Xoa
+              </Button>
+            ) : null}
+          </div>
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button onClick={onClose} type="button" variant="secondary">
+              Huy
+            </Button>
+            <Button form={formId} isLoading={submitting} type="submit">
+              Luu role
+            </Button>
+          </div>
         </div>
       }
       onClose={onClose}
@@ -309,8 +340,10 @@ export function RolesPage() {
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [viewingRole, setViewingRole] = useState<AppRole | null>(null);
   const canCreateRole = canAccess("roles.create");
   const canEditRole = canAccess("roles.update");
   const canToggleRole = canAccess("roles.toggle-active");
@@ -341,6 +374,7 @@ export function RolesPage() {
     }
 
     setEditingRole(null);
+    setViewingRole(null);
     setModalOpen(true);
   }
 
@@ -350,6 +384,7 @@ export function RolesPage() {
     }
 
     setEditingRole(role);
+    setViewingRole(null);
     setModalOpen(true);
   }
 
@@ -369,6 +404,7 @@ export function RolesPage() {
 
       setModalOpen(false);
       setEditingRole(null);
+      setViewingRole(null);
       await loadRoles();
     } finally {
       setSubmitting(false);
@@ -402,6 +438,9 @@ export function RolesPage() {
 
     try {
       await deleteRole(role);
+      setModalOpen(false);
+      setEditingRole(null);
+      setViewingRole(null);
       await loadRoles();
     } catch (requestError) {
       setErrorNotice({
@@ -411,95 +450,176 @@ export function RolesPage() {
     }
   }
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRoles = roles.filter((role) =>
+    [role.name, role.code, role.description]
+      .filter(Boolean)
+      .some((value) => value!.toLowerCase().includes(normalizedQuery))
+  );
+
   return (
-    <div className="px-4 pb-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-5">
-        <section className="rounded-3xl bg-white p-5 shadow-soft ring-1 ring-coal/5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-2">
-              <Badge tone="neutral">{roles.length} role</Badge>
-              <Badge tone="green">{roles.filter((role) => role.is_active).length} hoat dong</Badge>
+    <div className="px-3 pb-8 sm:px-4 lg:px-6">
+      <div className="mx-auto max-w-7xl space-y-4">
+        <section className="rounded-xl bg-white p-4 shadow-soft ring-1 ring-coal/5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
+                Phan quyen
+              </p>
+              <h2 className="mt-1 font-display text-xl font-bold text-coal">Quan ly role</h2>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Badge tone="neutral">{roles.length} role</Badge>
+                <Badge tone="neutral">{filteredRoles.length} dang hien thi</Badge>
+                <Badge tone="green">{roles.filter((role) => role.is_active).length} hoat dong</Badge>
+              </div>
             </div>
             {canCreateRole ? (
-              <Button onClick={openCreateModal}>
+              <Button className="h-10 rounded-xl px-3" onClick={openCreateModal}>
                 <Plus className="h-4 w-4" />
                 Tao role
               </Button>
             ) : null}
           </div>
+
+          <div className="relative mt-3 w-full xl:max-w-xl">
+            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
+            <Input
+              className="h-10 rounded-xl py-2 pl-11"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tim role, ma role, mo ta..."
+              value={query}
+            />
+          </div>
         </section>
 
         {loading ? (
-          <div className="rounded-3xl bg-white p-8 shadow-soft">
+          <div className="rounded-xl bg-white p-6 shadow-soft">
             <Spinner label="Dang tai role..." />
           </div>
-        ) : roles.length === 0 ? (
+        ) : filteredRoles.length === 0 ? (
           <EmptyState description="Tao role dau tien de phan quyen sidebar." icon={ShieldCheck} title="Chua co role" />
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {roles.map((role) => (
-              <article className="rounded-3xl bg-white p-5 shadow-soft ring-1 ring-coal/5" key={role.id}>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={role.is_active ? "green" : "red"}>
-                        {role.is_active ? "Hoat dong" : "Vo hieu hoa"}
-                      </Badge>
-                      <Badge tone="neutral">{role.code}</Badge>
+          <div className="overflow-hidden rounded-xl bg-white shadow-soft ring-1 ring-coal/5">
+            <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_auto] gap-3 border-b border-coal/5 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
+              <span>Role</span>
+              <span>Mo ta</span>
+              <span>Quyen</span>
+              <span className="text-right">Thao tac</span>
+            </div>
+            <div className="divide-y divide-coal/5">
+              {filteredRoles.map((role) => {
+                const visiblePermissions = role.permissions.slice(0, 4);
+                const hiddenPermissionCount = Math.max(role.permissions.length - visiblePermissions.length, 0);
+
+                return (
+                  <button
+                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3 text-left transition hover:bg-cream/30 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_auto] lg:gap-3"
+                    key={role.id}
+                    onClick={() => setViewingRole(role)}
+                    type="button"
+                  >
+                    <div className="min-w-0">
+                      <h3 className="truncate text-base font-extrabold text-coal">{role.name}</h3>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 lg:mt-2 lg:gap-2">
+                        <Badge tone="neutral">{role.code}</Badge>
+                        <Badge tone={role.is_active ? "green" : "red"}>
+                          {role.is_active ? "Hoat dong" : "Vo hieu hoa"}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs font-semibold text-coal/45 lg:hidden">
+                        {role.permissions.length} quyen duoc gan
+                      </p>
                     </div>
-                    <h3 className="mt-3 text-xl font-extrabold text-coal">{role.name}</h3>
-                    <p className="mt-1 text-sm font-semibold leading-6 text-coal/55">
+
+                    <p className="hidden line-clamp-2 text-sm font-semibold leading-5 text-coal/55 lg:block">
                       {role.description || "Chua co mo ta."}
                     </p>
-                  </div>
-                  {canEditRole || canToggleRole || canDeleteRole ? (
-                    <div className="flex gap-2">
-                      {canEditRole ? (
-                        <Button className="h-10 w-10 p-0" onClick={() => openEditModal(role)} variant="secondary">
-                          <Edit3 className="h-4 w-4" />
-                        </Button>
-                      ) : null}
-                      {canToggleRole ? (
-                        <Button className="h-10 w-10 p-0" onClick={() => void handleToggle(role)} variant="secondary">
-                          <Power className="h-4 w-4" />
-                        </Button>
-                      ) : null}
-                      {canDeleteRole ? (
-                        <Button className="h-10 w-10 p-0" onClick={() => void handleDelete(role)} variant="danger">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      ) : null}
+
+                    <div className="hidden min-w-0 lg:block">
+                      <div className="flex flex-wrap gap-1.5">
+                        {visiblePermissions.map((permission) => (
+                          <Badge key={permission} tone="neutral">
+                            {getPermissionLabel(permission)}
+                          </Badge>
+                        ))}
+                        {hiddenPermissionCount > 0 ? (
+                          <Badge tone="amber">+{hiddenPermissionCount} quyen</Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-xs font-semibold text-coal/40">
+                        {role.permissions.length} quyen duoc gan
+                      </p>
                     </div>
-                  ) : null}
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {role.permissions.map((permission) => {
-                    const permissionInfo = permissionGroups
-                      .flatMap((group) => [
-                        { key: group.key, label: group.label },
-                        ...group.actions.map((action) => ({
-                          key: action.key,
-                          label: action.label,
-                        })),
-                      ])
-                      .find((item) => item.key === permission);
-                    return (
-                      <Badge key={permission} tone="neutral">
-                        {permissionInfo?.label ?? permission}
-                      </Badge>
-                    );
-                  })}
-                </div>
-              </article>
-            ))}
+
+                    <div className="flex justify-end">
+                      <Badge tone="neutral">Xem</Badge>
+                      </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
 
+      <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button onClick={() => setViewingRole(null)} type="button" variant="secondary">
+              Dong
+            </Button>
+            {viewingRole && canEditRole ? (
+              <Button onClick={() => openEditModal(viewingRole)} type="button">
+                <Edit3 className="h-4 w-4" />
+                Sua
+              </Button>
+            ) : null}
+          </div>
+        }
+        onClose={() => setViewingRole(null)}
+        open={Boolean(viewingRole)}
+        size="lg"
+        title="Xem role"
+      >
+        {viewingRole ? (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-slate-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="neutral">{viewingRole.code}</Badge>
+                <Badge tone={viewingRole.is_active ? "green" : "red"}>
+                  {viewingRole.is_active ? "Hoat dong" : "Vo hieu hoa"}
+                </Badge>
+              </div>
+              <h3 className="mt-3 text-xl font-extrabold text-slate-950">{viewingRole.name}</h3>
+              <p className="mt-2 text-sm font-semibold text-slate-600">
+                {viewingRole.description || "Chua co mo ta."}
+              </p>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-extrabold text-slate-950">
+                {viewingRole.permissions.length} quyen
+              </p>
+              <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-100 p-3">
+                <div className="flex flex-wrap gap-2">
+                  {viewingRole.permissions.map((permission) => (
+                    <Badge key={permission} tone="neutral">
+                      {getPermissionLabel(permission)}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
       <RoleEditorModal
+        canDeleteRole={canDeleteRole}
         canToggleActive={canToggleRole}
         onClose={() => setModalOpen(false)}
+        onDelete={handleDelete}
         onSubmit={handleSubmit}
+        onToggle={handleToggle}
         open={modalOpen}
         role={editingRole}
         submitting={submitting}

@@ -432,6 +432,10 @@ export function PosPage() {
       )
       .slice(0, 8);
   }, [activeProducts, normalizedProductQuery]);
+  const quickProducts = useMemo(
+    () => activeProducts.filter((product) => product.stock > 0).slice(0, 8),
+    [activeProducts]
+  );
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId) ?? null;
   const normalizedCustomerQuery = customerQuery.trim().toLowerCase();
@@ -454,6 +458,7 @@ export function PosPage() {
   const safeDiscount = Math.min(Math.max(Number.isNaN(rawDiscount) ? 0 : rawDiscount, 0), subtotal);
   const total = subtotal - safeDiscount;
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const availableProductCount = activeProducts.filter((product) => product.stock > 0).length;
   const paidAmount = Number(cashReceived || 0) || 0;
   const changeAmount = Math.max(paidAmount - total, 0);
   const displayName = profile?.full_name || user?.email || "Nguoi dung";
@@ -559,7 +564,9 @@ export function PosPage() {
     }
 
     const batches = getProductBatches(product.id);
-    if (batch === undefined && batches.length > 0) {
+    const selectedBatch = batch === undefined && batches.length === 1 ? batches[0] : batch;
+
+    if (batch === undefined && batches.length > 1) {
       setProductToBatchSelect(product);
       setBatchModalOpen(true);
       return;
@@ -569,23 +576,30 @@ export function PosPage() {
       const quantityInCart = current
         .filter((item) => item.product.id === product.id)
         .reduce((sum, item) => sum + item.quantity, 0);
-      const quantityInBatch = batch
+      const quantityInBatch = selectedBatch
         ? current
-            .filter((item) => item.batch?.id === batch.id)
+            .filter((item) => item.batch?.id === selectedBatch?.id)
             .reduce((sum, item) => sum + item.quantity, 0)
         : 0;
-      const maxByBatch = batch ? batch.quantity - quantityInBatch : product.stock - quantityInCart;
+      const maxByBatch = selectedBatch
+        ? selectedBatch.quantity - quantityInBatch
+        : product.stock - quantityInCart;
 
       if (quantityInCart >= product.stock || maxByBatch <= 0) {
         return current;
       }
 
       if (lineSeparated) {
-        return [...current, { batch: batch ?? null, lineId: createLineId(product.id), product, quantity: 1 }];
+        return [
+          ...current,
+          { batch: selectedBatch ?? null, lineId: createLineId(product.id), product, quantity: 1 },
+        ];
       }
 
       const existingItem = current.find(
-        (item) => item.product.id === product.id && (item.batch?.id ?? null) === (batch?.id ?? null)
+        (item) =>
+          item.product.id === product.id &&
+          (item.batch?.id ?? null) === (selectedBatch?.id ?? null)
       );
 
       if (existingItem) {
@@ -594,7 +608,10 @@ export function PosPage() {
         );
       }
 
-      return [...current, { batch: batch ?? null, lineId: createLineId(product.id), product, quantity: 1 }];
+      return [
+        ...current,
+        { batch: selectedBatch ?? null, lineId: createLineId(product.id), product, quantity: 1 },
+      ];
     });
     setBatchModalOpen(false);
     setProductToBatchSelect(null);
@@ -892,13 +909,13 @@ export function PosPage() {
 
   return (
     <div className="min-h-screen bg-[#e8eef6]">
-      <header className="sticky top-0 z-40 rounded-b-[1.5rem] border-b border-white/80 bg-white/95 px-4 py-3 pl-20 shadow-[0_14px_36px_rgba(15,23,42,0.12)] backdrop-blur lg:pl-5 xl:px-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+      <header className="sticky top-0 z-40 rounded-b-2xl border-b border-white/80 bg-white/95 px-3 py-2 pl-16 shadow-[0_10px_28px_rgba(15,23,42,0.10)] backdrop-blur lg:pl-4 xl:px-4">
+        <div className="flex flex-col gap-2 2xl:flex-row 2xl:items-center">
           <div className="flex min-w-0 flex-1 gap-2">
             {canCheckout ? (
               <button
                 aria-label="Quet EAN-13"
-                className="flex h-14 w-14 flex-none items-center justify-center rounded-xl bg-slate-900 text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 md:h-16 md:w-16"
+                className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-slate-900 text-white shadow-[0_10px_22px_rgba(15,23,42,0.16)] transition hover:bg-slate-800 md:h-14 md:w-14"
                 onClick={() => setEan13ScannerOpen(true)}
                 type="button"
               >
@@ -907,7 +924,7 @@ export function PosPage() {
             ) : null}
             <div className="relative min-w-0 flex-1">
               <input
-                className="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 pr-16 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100 md:h-16 md:px-5 md:pr-20 md:text-xl"
+                className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-16 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100 md:h-14 md:px-5 md:pr-20 md:text-lg"
                 onChange={(event) => setProductQuery(event.target.value)}
                 onKeyDown={handleProductSearchKeyDown}
                 placeholder="Nhap ten san pham hoac EAN-13"
@@ -994,10 +1011,10 @@ export function PosPage() {
             </div>
           </div>
 
-          <div className="hidden min-w-0 shrink-0 items-end gap-1 overflow-x-auto pb-1 md:flex">
+          <div className="hidden min-w-0 items-end gap-1 overflow-x-auto pb-1 md:flex 2xl:shrink-0">
             {workspace.bills.map((bill) => (
               <button
-                className={`flex h-16 min-w-24 items-center justify-center gap-2 whitespace-nowrap rounded-t-2xl border px-4 text-lg font-extrabold transition ${
+                className={`flex h-11 min-w-20 items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-3 text-sm font-extrabold transition ${
                   activeBill.id === bill.id
                     ? "border-slate-300 bg-[#dfe7f2] text-slate-900"
                     : "border-slate-200 bg-[#eef3f9] text-slate-500"
@@ -1027,28 +1044,28 @@ export function PosPage() {
             ))}
             {canCheckout ? (
               <button
-                className="flex h-16 min-w-14 items-center justify-center rounded-t-2xl border border-slate-200 bg-[#eef3f9] text-slate-600 transition hover:bg-slate-100"
+                className="flex h-11 min-w-11 items-center justify-center rounded-xl border border-slate-200 bg-[#eef3f9] text-slate-600 transition hover:bg-slate-100"
                 onClick={addBill}
                 type="button"
               >
-                <Plus className="h-6 w-6" />
+                <Plus className="h-5 w-5" />
               </button>
             ) : null}
           </div>
 
-          <div className="hidden shrink-0 items-center justify-end gap-3 md:flex">
-            <div className="flex h-14 w-14 items-center justify-center rounded-[1.2rem] bg-white text-slate-700 shadow-[0_12px_35px_rgba(15,23,42,0.08)] ring-1 ring-slate-100">
-              <Bell className="h-6 w-6" />
+          <div className="hidden shrink-0 items-center justify-end gap-2 2xl:flex">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
+              <Bell className="h-5 w-5" />
             </div>
-            <div className="flex h-16 min-w-56 items-center gap-3 rounded-full bg-white px-4 pr-5 text-left shadow-[0_14px_35px_rgba(15,23,42,0.08)] ring-1 ring-slate-100">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-xl font-extrabold text-green-700">
+            <div className="flex h-12 min-w-52 items-center gap-3 rounded-xl bg-white px-3 pr-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 text-base font-extrabold text-green-700">
                 {userInitial}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-lg font-extrabold text-slate-900">
+                <span className="block truncate text-sm font-extrabold text-slate-900">
                   {displayName}
                 </span>
-                <span className="block truncate text-base font-bold text-slate-500">
+                <span className="block truncate text-xs font-bold text-slate-500">
                   {roleLabel}
                 </span>
               </span>
@@ -1058,7 +1075,7 @@ export function PosPage() {
         </div>
       </header>
 
-      <main className="w-full max-w-[100vw] px-[1.2vw] py-4">
+      <main className="w-full max-w-[100vw] px-3 py-3 xl:px-4">
         <div className="mx-auto w-full max-w-none space-y-4">
           <ConfigNotice />
 
@@ -1073,18 +1090,80 @@ export function PosPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-[1.2vw] xl:grid-cols-[minmax(0,1fr)_clamp(420px,32vw,560px)]">
-            <div className="space-y-6">
-              <section className="overflow-hidden rounded-[1.75rem] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.10)] ring-1 ring-slate-100">
-                <div className="flex flex-col gap-4 border-b border-slate-100 px-7 py-5 sm:flex-row sm:items-center sm:justify-between">
-                  <h1 className="whitespace-nowrap text-2xl font-extrabold text-slate-900">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_clamp(360px,26vw,480px)]">
+            <div className="space-y-3">
+              {!loading && quickProducts.length > 0 ? (
+                <section className="overflow-hidden rounded-xl bg-white shadow-[0_10px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
+                  <div className="flex flex-col gap-2 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-base font-extrabold text-slate-900">San pham nhanh</h2>
+                      <p className="mt-0.5 text-xs font-bold text-slate-500">
+                        {availableProductCount} mat hang con ton
+                      </p>
+                    </div>
+                    <button
+                      className="w-fit rounded-xl bg-slate-100 px-3 py-2 text-xs font-extrabold text-slate-600 transition hover:bg-slate-200"
+                      onClick={() => productSearchRef.current?.focus()}
+                      type="button"
+                    >
+                      Tim bang F3
+                    </button>
+                  </div>
+                  <div className="grid gap-2 p-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+                    {quickProducts.map((product) => {
+                      const quantityInCart = getQuantityInCart(product.id);
+                      const disabled = !canCheckout || quantityInCart >= product.stock;
+
+                      return (
+                        <button
+                          className="grid min-h-[76px] grid-cols-[42px_minmax(0,1fr)] gap-2 rounded-lg border border-slate-200 bg-white p-2 text-left transition hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-55"
+                          disabled={disabled}
+                          key={product.id}
+                          onClick={() => addToCart(product)}
+                          type="button"
+                        >
+                          <div className="h-10 w-10 overflow-hidden rounded-md bg-slate-100">
+                            {product.image_url ? (
+                              <img
+                                alt={product.name}
+                                className="h-full w-full object-cover"
+                                src={product.image_url}
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-slate-400">
+                                <ShoppingBag className="h-5 w-5" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex min-w-0 flex-col">
+                            <span className="line-clamp-2 text-xs font-extrabold leading-tight text-slate-900">
+                              {product.name}
+                            </span>
+                            <span className="mt-0.5 text-xs font-extrabold tabular-nums text-green-700">
+                              {formatCurrency(product.price)}
+                            </span>
+                            <span className="mt-auto truncate text-[11px] font-bold text-slate-500">
+                              Ton {product.stock}
+                              {quantityInCart > 0 ? ` / Da chon ${quantityInCart}` : ""}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
+
+              <section className="overflow-hidden rounded-xl bg-white shadow-[0_10px_26px_rgba(15,23,42,0.08)] ring-1 ring-slate-100">
+                <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h1 className="whitespace-nowrap text-xl font-extrabold text-slate-900">
                     San pham ({totalItems})
                   </h1>
-                  <div className="flex flex-wrap items-center gap-4">
-                    <label className="flex cursor-pointer items-center gap-3 text-lg font-semibold text-slate-800">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
                       <input
                         checked={lineSeparated}
-                        className="h-6 w-6 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                        className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
                         onChange={(event) => setLineSeparated(event.target.checked)}
                         type="checkbox"
                       />
@@ -1092,7 +1171,7 @@ export function PosPage() {
                     </label>
                     {canCheckout ? (
                       <button
-                        className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 text-lg font-extrabold text-red-300 transition hover:border-red-200 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm font-extrabold text-red-400 transition hover:border-red-200 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-60"
                         disabled={cart.length === 0}
                         onClick={clearCart}
                         type="button"
@@ -1104,33 +1183,33 @@ export function PosPage() {
                 </div>
 
                 {loading ? (
-                  <div className="min-h-[290px]">
+                  <div className="min-h-[220px]">
                     <Spinner label="Dang tai du lieu POS..." />
                   </div>
                 ) : cart.length === 0 ? (
-                  <div className="flex min-h-[245px] flex-col items-center justify-center px-6 py-8 text-center md:min-h-[290px] md:py-10">
-                    <div className="mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-slate-100 text-slate-500 md:mb-5 md:h-32 md:w-32">
-                      <DollarSign className="h-16 w-16 stroke-[1.5] md:h-24 md:w-24" />
+                  <div className="flex min-h-[180px] flex-col items-center justify-center px-6 py-6 text-center md:min-h-[210px]">
+                    <div className="mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                      <DollarSign className="h-12 w-12 stroke-[1.5]" />
                     </div>
-                    <h2 className="text-2xl font-extrabold text-slate-500 md:text-3xl">
+                    <h2 className="text-xl font-extrabold text-slate-500">
                       Ban chua them san pham nao
                     </h2>
-                    <p className="mt-3 text-base font-medium text-slate-500 md:mt-4 md:text-xl">
+                    <p className="mt-2 text-sm font-medium text-slate-500">
                       Nhan phim: F3 de tim kiem nhanh san pham
                     </p>
                   </div>
                 ) : (
-                  <div className="max-h-[calc(100vh-300px)] divide-y divide-slate-100 overflow-y-auto">
+                  <div className="max-h-[calc(100vh-285px)] divide-y divide-slate-100 overflow-y-auto">
                     {cart.map((item) => {
                       const quantityInProduct = getQuantityInCart(item.product.id);
 
                       return (
                         <article
-                          className="grid gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_180px_150px_52px] lg:items-center"
+                          className="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,1fr)_150px_130px_44px] md:items-center"
                           key={item.lineId}
                         >
-                          <div className="flex min-w-0 items-center gap-4">
-                            <div className="h-24 w-24 flex-none overflow-hidden rounded-xl bg-slate-100">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="h-16 w-16 flex-none overflow-hidden rounded-lg bg-slate-100">
                               {item.product.image_url ? (
                                 <img
                                   alt={item.product.name}
@@ -1139,23 +1218,23 @@ export function PosPage() {
                                 />
                               ) : (
                                 <div className="flex h-full w-full items-center justify-center text-slate-400">
-                                  <ShoppingBag className="h-8 w-8" />
+                                  <ShoppingBag className="h-6 w-6" />
                                 </div>
                               )}
                             </div>
                             <div className="min-w-0">
-                              <h3 className="line-clamp-2 text-xl font-extrabold leading-tight text-slate-900">
+                              <h3 className="line-clamp-2 text-base font-extrabold leading-tight text-slate-900">
                                 {item.product.name}
                               </h3>
-                              <p className="mt-1 text-sm font-semibold text-slate-500">
+                              <p className="mt-1 truncate text-xs font-semibold text-slate-500">
                                 EAN-13 {getProductEan13Value(item.product)} -{" "}
                                 {formatCurrency(item.product.price)}
                               </p>
-                              <p className="mt-1 text-sm font-semibold text-slate-400">
+                              <p className="mt-0.5 text-xs font-semibold text-slate-400">
                                 Ton kho: {item.product.stock}
                               </p>
                               {item.batch ? (
-                                <p className="mt-1 text-sm font-extrabold text-blue-600">
+                                <p className="mt-0.5 truncate text-xs font-extrabold text-blue-600">
                                   Lo: {formatProductDate(item.batch.import_date)} - HSD{" "}
                                   {formatProductDate(item.batch.expiry_date)} ({item.batch.quantity})
                                 </p>
@@ -1164,19 +1243,19 @@ export function PosPage() {
                           </div>
 
                           {canCheckout ? (
-                            <div className="flex w-fit items-center gap-2 rounded-xl bg-slate-50 p-1.5">
+                            <div className="flex w-fit items-center gap-1 rounded-lg bg-slate-50 p-1">
                               <button
-                                className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
+                                className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
                                 onClick={() => changeQuantity(item.lineId, item.quantity - 1)}
                                 type="button"
                               >
                                 <Minus className="h-4 w-4" />
                               </button>
-                              <span className="min-w-12 text-center text-2xl font-extrabold text-slate-900">
+                              <span className="min-w-9 text-center text-lg font-extrabold text-slate-900">
                                 {item.quantity}
                               </span>
                               <button
-                                className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                                 disabled={quantityInProduct >= item.product.stock}
                                 onClick={() => changeQuantity(item.lineId, item.quantity + 1)}
                                 type="button"
@@ -1185,19 +1264,19 @@ export function PosPage() {
                               </button>
                             </div>
                           ) : (
-                            <span className="text-2xl font-extrabold text-slate-900">
+                            <span className="text-lg font-extrabold text-slate-900">
                               {item.quantity}
                             </span>
                           )}
 
-                          <p className="text-left text-2xl font-extrabold tabular-nums text-slate-900 lg:text-right">
+                          <p className="text-left text-lg font-extrabold tabular-nums text-slate-900 md:text-right">
                             {formatCurrency(item.product.price * item.quantity)}
                           </p>
 
                           {canCheckout ? (
                             <button
                               aria-label="Xoa san pham"
-                              className="flex h-12 w-12 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+                              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-500"
                               onClick={() => removeFromCart(item.lineId)}
                               type="button"
                             >
@@ -1211,29 +1290,44 @@ export function PosPage() {
                 )}
               </section>
 
-              <div className="hidden gap-5 md:grid md:grid-cols-2">
-                <section className="rounded-3xl bg-white px-6 py-5 shadow-[0_14px_35px_rgba(15,23,42,0.08)] ring-1 ring-slate-100">
-                  <h2 className="text-xl font-extrabold text-slate-900">Sapo Invoice</h2>
-                  <p className="mt-3 text-lg font-medium text-orange-500">Can thiet lap mau hoa don</p>
+              <div className="hidden gap-3 md:grid md:grid-cols-2">
+                <section className="rounded-xl bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)] ring-1 ring-slate-100">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+                    Don dang xu ly
+                  </p>
+                  <div className="mt-1 flex items-end justify-between gap-4">
+                    <h2 className="text-xl font-extrabold text-slate-900">Don {activeBill.id}</h2>
+                    <span className="text-right text-base font-extrabold tabular-nums text-green-700">
+                      {formatCurrency(total)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs font-bold text-slate-500">
+                    {activeBill.savedAt ? "Da luu tam tren may nay" : "Chua luu tam"}
+                  </p>
                 </section>
-                <section className="rounded-3xl bg-white px-6 py-5 shadow-[0_14px_35px_rgba(15,23,42,0.08)] ring-1 ring-slate-100">
-                  <h2 className="text-xl font-extrabold text-slate-900">Nhan vien xu ly</h2>
-                  <p className="mt-3 text-lg font-medium text-orange-500">
-                    {profile?.full_name || "Chua chon"}
+                <section className="rounded-xl bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)] ring-1 ring-slate-100">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+                    Nhan vien
+                  </p>
+                  <h2 className="mt-1 truncate text-xl font-extrabold text-slate-900">
+                    {profile?.full_name || user?.email || "Chua co ten"}
+                  </h2>
+                  <p className="mt-1 text-xs font-bold text-slate-500">
+                    {availableProductCount} san pham san sang ban
                   </p>
                 </section>
               </div>
 
-              <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_330px]">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
                 <input
-                  className="h-[68px] rounded-2xl border-0 bg-white px-5 text-xl font-medium text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.06)] outline-none ring-1 ring-slate-100 transition placeholder:text-slate-500 focus:ring-4 focus:ring-blue-100"
+                  className="h-12 rounded-xl border-0 bg-white px-4 text-base font-medium text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)] outline-none ring-1 ring-slate-100 transition placeholder:text-slate-500 focus:ring-4 focus:ring-blue-100"
                   onChange={(event) => updateActiveBillField("orderNote", event.target.value)}
                   placeholder="Nhap ghi chu don hang"
                   value={orderNote}
                 />
                 {canCheckout ? (
                   <button
-                    className="flex h-[68px] items-center justify-center gap-2 rounded-2xl border border-blue-500 bg-blue-50 px-5 text-xl font-extrabold text-blue-600 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-12 items-center justify-center gap-2 rounded-xl border border-blue-500 bg-blue-50 px-4 text-base font-extrabold text-blue-600 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={cart.length === 0 && !selectedCustomerId && !orderNote.trim()}
                     onClick={handleSaveBill}
                     type="button"
@@ -1245,12 +1339,12 @@ export function PosPage() {
               </div>
             </div>
 
-            <div className="space-y-6 xl:sticky xl:top-28 xl:self-start">
-              <section className="rounded-[1.75rem] bg-white p-7 shadow-[0_18px_45px_rgba(15,23,42,0.10)] ring-1 ring-slate-100">
-                <div className="relative flex gap-4">
+             <div className="space-y-3 xl:sticky xl:top-[4.75rem] xl:flex xl:max-h-[calc(100dvh-5.25rem)] xl:flex-col xl:self-start xl:overflow-hidden">
+              <section className="min-h-0 rounded-xl bg-white p-4 shadow-[0_10px_26px_rgba(15,23,42,0.08)] ring-1 ring-slate-100 xl:flex-1 xl:overflow-y-auto xl:overscroll-contain">
+                <div className="flex gap-2">
                   <div className="relative min-w-0 flex-1">
                     <input
-                      className="h-[68px] w-full rounded-xl border border-slate-200 bg-white px-5 pr-16 text-xl font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                      className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-14 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                       onChange={(event) => {
                         updateActiveBill((bill) => ({
                           ...bill,
@@ -1277,31 +1371,11 @@ export function PosPage() {
                         <ShortcutTag>F2</ShortcutTag>
                       </span>
                     )}
-
-                    {customerResults.length > 0 ? (
-                      <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.16)]">
-                        <div className="max-h-72 overflow-y-auto p-2">
-                          {customerResults.map((customer) => (
-                            <button
-                              className="flex w-full flex-col rounded-xl px-4 py-3 text-left transition hover:bg-slate-50"
-                              key={customer.id}
-                              onClick={() => selectCustomer(customer)}
-                              type="button"
-                            >
-                              <span className="font-extrabold text-slate-900">{customer.name}</span>
-                              <span className="mt-1 text-sm font-semibold text-slate-500">
-                                {customer.phone || "Chua co so dien thoai"}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
                   </div>
                   {canCreateQuickCustomer ? (
                     <button
                       aria-label="Them khach hang"
-                      className="flex h-[70px] w-[70px] flex-none items-center justify-center rounded-xl bg-green-600 text-white shadow-[0_14px_30px_rgba(22,163,74,0.28)] transition hover:bg-green-700"
+                      className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-green-600 text-white shadow-[0_10px_22px_rgba(22,163,74,0.22)] transition hover:bg-green-700"
                       onClick={() => setCustomerModalOpen(true)}
                       type="button"
                     >
@@ -1310,22 +1384,44 @@ export function PosPage() {
                   ) : null}
                 </div>
 
-                <div className="mt-10 space-y-5">
+                {customerResults.length > 0 ? (
+                  <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div className="max-h-48 overflow-y-auto overscroll-contain p-1.5">
+                      {customerResults.map((customer) => (
+                        <button
+                          className="flex w-full flex-col rounded-lg px-3 py-2 text-left transition hover:bg-slate-50"
+                          key={customer.id}
+                          onClick={() => selectCustomer(customer)}
+                          type="button"
+                        >
+                          <span className="truncate text-sm font-extrabold text-slate-900">
+                            {customer.name}
+                          </span>
+                          <span className="mt-0.5 truncate text-xs font-semibold text-slate-500">
+                            {customer.phone || "Chua co so dien thoai"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-1">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold text-slate-900">
+                    <span className="text-sm font-extrabold text-slate-600">
                       Tam tinh ({totalItems} san pham)
                     </span>
-                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
+                    <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(subtotal)}
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between gap-4">
                     {canApplyDiscount ? (
-                      <label className="flex min-w-0 items-center gap-1 text-xl font-extrabold text-blue-600">
+                      <label className="flex min-w-0 items-center gap-1 text-sm font-extrabold text-blue-600">
                         <span>Giam gia:</span>
                         <input
-                          className="h-12 w-32 rounded-xl border border-slate-100 bg-white px-2 text-right text-xl font-extrabold text-blue-600 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                          className="h-9 w-28 rounded-lg border border-slate-100 bg-white px-2 text-right text-sm font-extrabold text-blue-600 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                           min="0"
                           onChange={(event) => updateActiveBillField("discount", event.target.value)}
                           ref={discountRef}
@@ -1335,36 +1431,36 @@ export function PosPage() {
                         <ShortcutTag>F6</ShortcutTag>
                       </label>
                     ) : (
-                      <span className="text-xl font-extrabold text-blue-600">Giam gia</span>
+                      <span className="text-sm font-extrabold text-blue-600">Giam gia</span>
                     )}
-                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
+                    <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(safeDiscount)}
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold text-slate-900">Thanh tien</span>
-                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
+                    <span className="text-sm font-extrabold text-slate-600">Thanh tien</span>
+                    <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(total)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold text-slate-900">Khach dua</span>
-                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
+                    <span className="text-sm font-extrabold text-slate-600">Khach dua</span>
+                    <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(paidAmount)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold text-slate-900">Tien thua</span>
-                    <span className="min-w-[11ch] text-right text-[clamp(1.1rem,1.4vw,1.5rem)] font-extrabold tabular-nums text-slate-900">
+                    <span className="text-sm font-extrabold text-slate-600">Tien thua</span>
+                    <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(changeAmount)}
                     </span>
                   </div>
 
-                  <div className="border-t border-slate-100 pt-6">
+                  <div className="rounded-xl border border-green-100 bg-green-50 px-4 py-3 md:col-span-2 xl:col-span-1">
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-[clamp(1.8rem,2.4vw,2.5rem)] font-extrabold text-slate-900">Can thu</span>
-                      <span className="min-w-[11ch] text-right text-[clamp(1.8rem,2.4vw,2.5rem)] font-extrabold tabular-nums text-slate-900">
+                      <span className="text-lg font-extrabold text-green-800">Can thu</span>
+                      <span className="min-w-[10ch] text-right text-2xl font-extrabold tabular-nums text-green-800">
                         {formatCurrency(total)}
                       </span>
                     </div>
@@ -1372,11 +1468,11 @@ export function PosPage() {
                 </div>
               </section>
 
-              <section className="rounded-[1.75rem] bg-white p-7 shadow-[0_18px_45px_rgba(15,23,42,0.10)] ring-1 ring-slate-100">
-                <label className="flex cursor-pointer items-center gap-3 text-xl font-semibold text-slate-800">
+              <section className="rounded-xl bg-white p-4 shadow-[0_10px_26px_rgba(15,23,42,0.08)] ring-1 ring-slate-100 xl:flex-none">
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
                   <input
                     checked={autoPrint}
-                    className="h-6 w-6 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
                     onChange={(event) => setAutoPrint(event.target.checked)}
                     type="checkbox"
                   />
@@ -1385,12 +1481,12 @@ export function PosPage() {
 
                 {canCheckout ? (
                   <button
-                    className="mt-6 flex h-[70px] w-full items-center justify-center gap-3 rounded-2xl bg-green-600 text-2xl font-extrabold text-white shadow-[0_18px_36px_rgba(22,163,74,0.28)] transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-green-600 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(22,163,74,0.24)] transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={cart.length === 0 || submittingSale}
                     onClick={openPaymentModal}
                     type="button"
                   >
-                    {submittingSale ? <Loader2 className="h-6 w-6 animate-spin" /> : <Wallet className="h-7 w-7" />}
+                    {submittingSale ? <Loader2 className="h-5 w-5 animate-spin" /> : <Wallet className="h-5 w-5" />}
                     Thanh toan
                   </button>
                 ) : null}

@@ -103,7 +103,8 @@ export function AdminLayout() {
         {isPosRoute ? (
           <>
             <button
-              className="fixed left-4 top-4 z-50 rounded-2xl bg-white p-4 text-coal shadow-soft lg:hidden"
+              aria-label="Mo menu"
+              className="fixed left-3 top-2 z-50 flex h-12 w-12 items-center justify-center rounded-xl bg-white text-coal shadow-soft lg:hidden"
               onClick={() => setSidebarOpen(true)}
               type="button"
             >

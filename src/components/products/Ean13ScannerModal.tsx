@@ -21,9 +21,35 @@ export function Ean13ScannerModal({
   title = "Quet EAN-13",
 }: Ean13ScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const controlsRef = useRef<IScannerControls | null>(null);
   const [manualCode, setManualCode] = useState("");
   const [status, setStatus] = useState("Dang khoi dong camera...");
   const [error, setError] = useState("");
+
+  const stopScanner = useCallback(() => {
+    controlsRef.current?.stop();
+    controlsRef.current = null;
+
+    const videoElement = videoRef.current;
+    if (!videoElement) {
+      return;
+    }
+
+    const stream = videoElement.srcObject;
+    if (stream instanceof MediaStream) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+
+    videoElement.pause();
+    videoElement.srcObject = null;
+    videoElement.removeAttribute("src");
+    videoElement.load();
+  }, []);
+
+  const closeScanner = useCallback(() => {
+    stopScanner();
+    onClose();
+  }, [onClose, stopScanner]);
 
   const submitCode = useCallback(
     (value: string) => {
@@ -39,11 +65,12 @@ export function Ean13ScannerModal({
         return;
       }
 
+      stopScanner();
       onDetected(code);
       setManualCode("");
       onClose();
     },
-    [onClose, onDetected]
+    [onClose, onDetected, stopScanner]
   );
 
   function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
@@ -87,7 +114,7 @@ export function Ean13ScannerModal({
           tryPlayVideoTimeout: 7000,
         });
 
-        controls = await reader.decodeFromConstraints(
+        const scannerControls = await reader.decodeFromConstraints(
           {
             audio: false,
             video: {
@@ -122,6 +149,14 @@ export function Ean13ScannerModal({
             }
           }
         );
+        controls = scannerControls;
+        controlsRef.current = scannerControls;
+
+        if (stopped) {
+          scannerControls.stop();
+          stopScanner();
+          return;
+        }
 
         setStatus("Dang quet EAN-13...");
       } catch {
@@ -136,19 +171,21 @@ export function Ean13ScannerModal({
 
     return () => {
       stopped = true;
-      controls?.stop();
-
-      if (videoElement) {
-        videoElement.srcObject = null;
+      if (controls) {
+        controls.stop();
       }
+      if (controlsRef.current === controls) {
+        controlsRef.current = null;
+      }
+      stopScanner();
     };
-  }, [open, submitCode]);
+  }, [open, stopScanner, submitCode]);
 
   return (
     <Modal
       footer={
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-          <Button onClick={onClose} variant="secondary">
+          <Button onClick={closeScanner} variant="secondary">
             Dong
           </Button>
           <Button form="manual-ean13-form" type="submit">
@@ -157,7 +194,7 @@ export function Ean13ScannerModal({
           </Button>
         </div>
       }
-      onClose={onClose}
+      onClose={closeScanner}
       open={open}
       size="md"
       title={title}

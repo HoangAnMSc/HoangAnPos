@@ -501,19 +501,30 @@ export function InventoryPage() {
   const rows = useMemo(() => createInventoryRows(products, counts), [counts, products]);
   const stats = useMemo(() => getInventoryStats(rows), [rows]);
   const normalizedQuery = query.trim().toLowerCase();
-  const searchResults = useMemo(() => {
-    if (!normalizedQuery) {
-      return [];
-    }
+  const visibleProducts = useMemo(() => {
+    const matchedProducts = normalizedQuery
+      ? products.filter((product) =>
+          [product.name, product.sku, product.category, getProductEan13Value(product)]
+            .filter(Boolean)
+            .some((value) => value!.toLowerCase().includes(normalizedQuery))
+        )
+      : products;
 
-    return products
-      .filter((product) =>
-        [product.name, product.sku, product.category, getProductEan13Value(product)]
-          .filter(Boolean)
-          .some((value) => value!.toLowerCase().includes(normalizedQuery))
-      )
-      .slice(0, 6);
-  }, [normalizedQuery, products]);
+    return [...matchedProducts].sort((first, second) => {
+      const firstCounted = hasInventoryCount(counts[first.id]);
+      const secondCounted = hasInventoryCount(counts[second.id]);
+
+      if (firstCounted !== secondCounted) {
+        return firstCounted ? 1 : -1;
+      }
+
+      if (first.is_active !== second.is_active) {
+        return first.is_active ? -1 : 1;
+      }
+
+      return first.name.localeCompare(second.name, "vi");
+    });
+  }, [counts, normalizedQuery, products]);
 
   function openQuantityModal(product: Product) {
     if (!canCountInventory) {
@@ -646,18 +657,18 @@ export function InventoryPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <ConfigNotice />
 
-      <Card className="p-0">
-        <div className="border-b border-coal/10 p-4 sm:p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <Card className="overflow-hidden rounded-xl p-0">
+        <div className="border-b border-coal/10 p-3 sm:p-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
                 Kiem ke
               </p>
-              <h2 className="mt-1 font-display text-2xl font-bold text-coal">Ton kho</h2>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <h2 className="mt-1 font-display text-xl font-bold text-coal">Ton kho</h2>
+              <div className="mt-2 flex flex-wrap gap-2">
                 <Badge tone="neutral">{products.length} mat hang</Badge>
                 <Badge tone="green">{rows.length} da nhap</Badge>
                 {stats.shortCount > 0 ? <Badge tone="red">{stats.shortCount} thieu</Badge> : null}
@@ -666,17 +677,17 @@ export function InventoryPage() {
             </div>
             <div className="grid gap-2 sm:flex">
               {canCountInventory ? (
-                <Button onClick={() => setEan13ScannerOpen(true)} variant="secondary">
+                <Button className="h-10 rounded-xl px-3" onClick={() => setEan13ScannerOpen(true)} variant="secondary">
                   <Barcode className="h-4 w-4" />
                   Quet EAN-13
                 </Button>
               ) : null}
-              <Button onClick={() => setHistoryOpen(true)} variant="secondary">
+              <Button className="h-10 rounded-xl px-3" onClick={() => setHistoryOpen(true)} variant="secondary">
                 <History className="h-4 w-4" />
                 Lich su
               </Button>
               {canCreateReport ? (
-                <Button disabled={rows.length === 0} onClick={handleCreateReportImage}>
+                <Button className="h-10 rounded-xl px-3" disabled={rows.length === 0} onClick={handleCreateReportImage}>
                   <FileImage className="h-4 w-4" />
                   Tao bao cao
                 </Button>
@@ -685,26 +696,71 @@ export function InventoryPage() {
           </div>
 
           {canCountInventory ? (
-            <div className="relative mt-4 w-full xl:max-w-xl">
+            <div className="relative mt-3 w-full xl:max-w-xl">
               <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
               <Input
-                className="pl-11"
+                className="h-10 rounded-xl py-2 pl-11"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Tim san pham de nhap tay neu khong quet duoc..."
+                placeholder="Tim ten, SKU hoac EAN-13 de loc danh sach..."
                 value={query}
               />
+            </div>
+          ) : null}
+        </div>
 
-              {searchResults.length > 0 ? (
-                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.16)]">
-                  <div className="max-h-80 overflow-y-auto p-2">
-                    {searchResults.map((product) => (
+        {error ? (
+          <div className="m-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 sm:m-4">
+            {error}
+          </div>
+        ) : null}
+        {success ? (
+          <div className="m-3 rounded-xl bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 sm:m-4">
+            {success}
+          </div>
+        ) : null}
+
+        <div className="p-3 sm:p-4">
+          <div className="grid gap-3 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.35fr)]">
+            <section className="min-w-0">
+              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-base font-extrabold text-coal">Danh sach san pham</h3>
+                  <p className="mt-0.5 text-xs font-semibold text-coal/55">
+                    Bam vao san pham de nhap so luong thuc te.
+                  </p>
+                </div>
+                <Badge tone="neutral">{visibleProducts.length} hien thi</Badge>
+              </div>
+
+              {loading ? (
+                <Spinner label="Dang tai san pham..." />
+              ) : visibleProducts.length === 0 ? (
+                <EmptyState
+                  description="Khong co san pham phu hop voi tu khoa dang tim."
+                  icon={Search}
+                  title="Khong tim thay san pham"
+                />
+              ) : (
+                <div className="max-h-[72vh] space-y-1.5 overflow-y-auto pr-1">
+                  {visibleProducts.map((product) => {
+                    const countedValue = counts[product.id];
+                    const counted = hasInventoryCount(countedValue);
+                    const diff = counted ? parseInventoryCount(countedValue) - product.stock : null;
+                    const status = diff === null ? null : getInventoryStatus(diff);
+
+                    return (
                       <button
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-slate-50"
+                        className={`grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border bg-white p-2 text-left shadow-sm transition ${
+                          counted
+                            ? "border-green-200 hover:border-green-300 hover:bg-green-50"
+                            : "border-slate-200 hover:border-blue-200 hover:bg-blue-50"
+                        } disabled:cursor-not-allowed disabled:opacity-70`}
+                        disabled={!canCountInventory}
                         key={product.id}
                         onClick={() => openQuantityModal(product)}
                         type="button"
                       >
-                        <div className="h-11 w-11 flex-none overflow-hidden rounded-xl bg-slate-100">
+                        <div className="h-11 w-11 overflow-hidden rounded-lg bg-slate-100">
                           {product.image_url ? (
                             <img
                               alt={product.name}
@@ -712,135 +768,152 @@ export function InventoryPage() {
                               src={product.image_url}
                             />
                           ) : (
-                            <div className="flex h-full w-full items-center justify-center text-slate-400">
+                              <div className="flex h-full w-full items-center justify-center text-slate-400">
                               <Boxes className="h-5 w-5" />
                             </div>
                           )}
                         </div>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-extrabold text-slate-950">
-                            {product.name}
-                          </span>
-                          <span className="block truncate text-xs font-semibold text-slate-500">
-                            {getProductEan13Value(product)}
-                          </span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-
-        {error ? (
-          <div className="m-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 sm:m-5">
-            {error}
-          </div>
-        ) : null}
-        {success ? (
-          <div className="m-4 rounded-2xl bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 sm:m-5">
-            {success}
-          </div>
-        ) : null}
-
-        <div className="p-4">
-          <section>
-            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-lg font-extrabold text-coal">San pham da nhap</h3>
-              {canCountInventory ? (
-                <Button disabled={rows.length === 0} onClick={clearCounts} variant="secondary">
-                  Xoa danh sach
-                </Button>
-              ) : null}
-            </div>
-
-            {loading ? (
-              <Spinner label="Dang tai ton kho..." />
-            ) : rows.length === 0 ? (
-              <EmptyState
-                description="Bam Quet EAN-13, quet tem san pham, nhap so luong va luu tung san pham vao danh sach."
-                icon={Boxes}
-                title="Chua nhap san pham nao"
-              />
-            ) : (
-              <div className="space-y-3">
-                {rows.map((row) => (
-                  <article
-                    className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
-                    key={row.product.id}
-                  >
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="h-16 w-16 flex-none overflow-hidden rounded-xl bg-slate-100">
-                          {row.product.image_url ? (
-                            <img
-                              alt={row.product.name}
-                              className="h-full w-full object-contain p-1"
-                              src={row.product.image_url}
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-slate-400">
-                              <Boxes className="h-6 w-6" />
-                            </div>
-                          )}
-                        </div>
                         <div className="min-w-0">
-                          <h4 className="truncate font-extrabold text-slate-950">
-                            {row.product.name}
+                          <h4 className="truncate text-sm font-extrabold text-slate-950">
+                            {product.name}
                           </h4>
                           <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                            {row.ean13} / HSD {formatProductDate(row.product.expiry_date)}
+                            {getProductEan13Value(product)} / HSD {formatProductDate(product.expiry_date)}
                           </p>
-                          <Badge className="mt-2 w-fit" tone={getStatusTone(row.status)}>
-                            {getStatusLabel(row)}
-                          </Badge>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            <Badge tone={product.is_active ? "green" : "red"}>
+                              {product.is_active ? "Dang ban" : "Dang an"}
+                            </Badge>
+                            {counted ? (
+                              <Badge tone={getStatusTone(status ?? "ok")}>
+                                Da nhap {parseInventoryCount(countedValue)}
+                              </Badge>
+                            ) : (
+                              <Badge tone="neutral">Chua nhap</Badge>
+                            )}
+                          </div>
                         </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="rounded-xl bg-slate-50 p-2">
+                        <div className="text-right">
                           <p className="text-[11px] font-bold uppercase text-slate-400">Kho</p>
-                          <p className="mt-1 font-extrabold text-slate-950">{row.product.stock}</p>
+                          <p className="mt-0.5 text-lg font-extrabold tabular-nums text-slate-950">
+                            {product.stock}
+                          </p>
+                          {diff !== null ? (
+                            <p
+                              className={`mt-1 text-xs font-extrabold ${
+                                diff < 0
+                                  ? "text-red-600"
+                                  : diff > 0
+                                    ? "text-amber-600"
+                                    : "text-green-700"
+                              }`}
+                            >
+                              Lech {diff}
+                            </p>
+                          ) : null}
                         </div>
-                        <div className="rounded-xl bg-green-50 p-2">
-                          <p className="text-[11px] font-bold uppercase text-green-700">Dem</p>
-                          <p className="mt-1 font-extrabold text-green-800">{row.counted}</p>
-                        </div>
-                        <div className="rounded-xl bg-amber-50 p-2">
-                          <p className="text-[11px] font-bold uppercase text-amber-700">Lech</p>
-                          <p className="mt-1 font-extrabold text-amber-800">{row.diff}</p>
-                        </div>
-                      </div>
-                    </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
 
-                    {canCountInventory ? (
-                      <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-                        <Button
-                          className="h-10 px-3"
-                          onClick={() => openQuantityModal(row.product)}
-                          variant="secondary"
-                        >
-                          <Edit3 className="h-4 w-4" />
-                          Sua
-                        </Button>
-                        <Button
-                          className="h-10 px-3"
-                          onClick={() => removeCount(row.product.id)}
-                          variant="danger"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Xoa
-                        </Button>
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
+            <section className="min-w-0">
+              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-base font-extrabold text-coal">San pham da nhap</h3>
+                {canCountInventory ? (
+                  <Button className="h-10 rounded-xl px-3" disabled={rows.length === 0} onClick={clearCounts} variant="secondary">
+                    Xoa danh sach
+                  </Button>
+                ) : null}
               </div>
-            )}
-          </section>
 
+              {loading ? (
+                <Spinner label="Dang tai ton kho..." />
+              ) : rows.length === 0 ? (
+                <EmptyState
+                  description="Bam Quet EAN-13 hoac chon san pham ben trai de nhap so luong thuc te."
+                  icon={Boxes}
+                  title="Chua nhap san pham nao"
+                />
+              ) : (
+                <div className="space-y-2">
+                  {rows.map((row) => (
+                    <article
+                      className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm"
+                      key={row.product.id}
+                    >
+                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_200px] sm:items-center">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="h-12 w-12 flex-none overflow-hidden rounded-lg bg-slate-100">
+                            {row.product.image_url ? (
+                              <img
+                                alt={row.product.name}
+                                className="h-full w-full object-contain p-1"
+                                src={row.product.image_url}
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-slate-400">
+                                <Boxes className="h-5 w-5" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="truncate text-sm font-extrabold text-slate-950">
+                              {row.product.name}
+                            </h4>
+                            <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+                              {row.ean13} / HSD {formatProductDate(row.product.expiry_date)}
+                            </p>
+                            <Badge className="mt-1 w-fit" tone={getStatusTone(row.status)}>
+                              {getStatusLabel(row)}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="rounded-lg bg-slate-50 p-1.5">
+                            <p className="text-[11px] font-bold uppercase text-slate-400">Kho</p>
+                            <p className="mt-1 font-extrabold text-slate-950">{row.product.stock}</p>
+                          </div>
+                          <div className="rounded-lg bg-green-50 p-1.5">
+                            <p className="text-[11px] font-bold uppercase text-green-700">Dem</p>
+                            <p className="mt-1 font-extrabold text-green-800">{row.counted}</p>
+                          </div>
+                          <div className="rounded-lg bg-amber-50 p-1.5">
+                            <p className="text-[11px] font-bold uppercase text-amber-700">Lech</p>
+                            <p className="mt-1 font-extrabold text-amber-800">{row.diff}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {canCountInventory ? (
+                        <div className="mt-2 flex flex-wrap gap-2 border-t border-slate-100 pt-2">
+                          <Button
+                            className="h-9 rounded-lg px-3"
+                            onClick={() => openQuantityModal(row.product)}
+                            variant="secondary"
+                          >
+                            <Edit3 className="h-4 w-4" />
+                            Sua
+                          </Button>
+                          <Button
+                            className="h-9 rounded-lg px-3"
+                            onClick={() => removeCount(row.product.id)}
+                            variant="danger"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Xoa
+                          </Button>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       </Card>
 
