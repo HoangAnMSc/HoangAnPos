@@ -6,16 +6,16 @@ import { appPermissions } from "../../lib/permissions";
 import { Button } from "../ui/Button";
 
 const pageTitles: Record<string, { title: string }> = {
-  "/attendance": { title: "Cham cong" },
-  "/cloudinary-images": { title: "Anh Cloudinary" },
-  "/customers": { title: "Khach hang" },
-  "/inventory": { title: "Ton kho" },
-  "/orders": { title: "Hoa don" },
-  "/payment-settings": { title: "Cau hinh thanh toan" },
-  "/pos": { title: "Ban hang tai quay" },
-  "/products": { title: "San pham" },
-  "/roles": { title: "Quan ly role" },
-  "/users": { title: "Quan ly user" },
+  "/attendance": { title: "Chấm công" },
+  "/cloudinary-images": { title: "Media" },
+  "/customers": { title: "Khách hàng" },
+  "/inventory": { title: "Quản lý tồn kho" },
+  "/orders": { title: "Danh sách hóa đơn" },
+  "/payment-settings": { title: "Cấu hình" },
+  "/pos": { title: "Pos" },
+  "/products": { title: "Sản phầm" },
+  "/roles": { title: "Quản lý role" },
+  "/users": { title: "Quản lý nhân viên" },
 };
 
 export function AdminLayout() {
@@ -86,7 +86,7 @@ export function AdminLayout() {
           <p className="mt-1 truncate font-bold">{displayName}</p>
           <Button className="mt-4 w-full bg-white text-coal" onClick={signOut} variant="secondary">
             <LogOut className="h-4 w-4" />
-            Dang xuat
+            Đăng xuất
           </Button>
         </div>
       </aside>
