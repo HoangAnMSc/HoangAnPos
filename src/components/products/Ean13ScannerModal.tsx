@@ -200,7 +200,7 @@ export function Ean13ScannerModal({
       title={title}
     >
       <div className="space-y-4">
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
+        <div className="rounded-2xl border border-moss-100 bg-moss-50 px-4 py-3 text-sm font-semibold text-moss-800">
           {description}
         </div>
 
@@ -230,7 +230,7 @@ export function Ean13ScannerModal({
               <Barcode className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 autoComplete="off"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
                 inputMode="numeric"
                 maxLength={13}
                 onChange={(event) => {

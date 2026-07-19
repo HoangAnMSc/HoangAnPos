@@ -208,7 +208,7 @@ function RoleEditorModal({
         <label className="block">
           <span className="mb-2 block text-sm font-extrabold text-slate-950">Mo ta</span>
           <textarea
-            className="min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+            className="min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
             onChange={(event) =>
               setForm((current) => ({ ...current, description: event.target.value }))
             }
@@ -314,7 +314,7 @@ function RoleEditorModal({
         <label className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-bold text-coal">
           <input
             checked={form.is_active}
-            className="h-4 w-4 accent-green-600"
+            className="h-4 w-4 accent-moss-600"
             disabled={!canToggleActive || role?.code === "admin"}
             onChange={(event) =>
               setForm((current) => ({ ...current, is_active: event.target.checked }))

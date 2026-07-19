@@ -24,8 +24,8 @@ type ProductCardProps = {
 
 const badgeToneClassNames = {
   amber: "bg-amber-100 text-amber-700",
-  blue: "bg-blue-100 text-blue-700",
-  green: "bg-green-100 text-green-700",
+  blue: "bg-moss-100 text-moss-700",
+  green: "bg-moss-100 text-moss-700",
   neutral: "bg-slate-100 text-slate-600",
 };
 
@@ -66,7 +66,7 @@ export function ProductCard({
     >
       <button
         className={clsx(
-          "flex h-full w-full flex-col text-left focus:outline-none focus:ring-4 focus:ring-blue-100",
+          "flex h-full w-full flex-col text-left focus:outline-none focus:ring-4 focus:ring-moss-100",
           compact ? "p-1.5" : "p-2"
         )}
         disabled={disabled || !onSelect}

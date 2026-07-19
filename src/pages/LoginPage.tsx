@@ -1,9 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
+import { useAuth } from "../contexts/AuthContext";
 
 type LocationState = {
   from?: {
@@ -51,13 +51,14 @@ export function LoginPage() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-cream text-coal">
-      <Card className="mx-auto w-full max-w-md bg-white/90">
-        <div className="mb-6 flex flex-column items-center">
-          <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-clay">
-              Admin Login
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-cream px-4 py-10 text-coal">
+      <div className="absolute inset-0 bg-grain" />
+      <Card className="relative w-full max-w-md border-moss-100 bg-white/95 p-7 sm:p-8">
+        <div className="mb-7 flex flex-col items-center text-center">
+          <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-moss-700">
+            Admin Login
           </p>
-          <h2 className="font-display text-3xl font-bold">Đăng nhập</h2>
+          <h2 className="mt-2 font-display text-3xl font-bold">Đăng nhập</h2>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -83,7 +84,7 @@ export function LoginPage() {
           />
 
           {error ? (
-            <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
               {error}
             </div>
           ) : null}

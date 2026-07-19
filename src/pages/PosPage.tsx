@@ -908,8 +908,8 @@ export function PosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#e8eef6]">
-      <header className="sticky top-0 z-40 rounded-b-2xl border-b border-white/80 bg-white/95 px-3 py-2 pl-16 shadow-[0_10px_28px_rgba(15,23,42,0.10)] backdrop-blur lg:pl-4 xl:px-4">
+    <div className="min-h-screen bg-moss-50">
+      <header className="sticky top-0 z-40 rounded-b-2xl border-b border-moss-100 bg-white/95 px-3 py-2 pl-16 shadow-[0_10px_28px_rgba(16,32,24,0.10)] backdrop-blur lg:pl-4 xl:px-4">
         <div className="flex flex-col gap-2 2xl:flex-row 2xl:items-center">
           <div className="flex min-w-0 flex-1 gap-2">
             {canCheckout ? (
@@ -924,7 +924,7 @@ export function PosPage() {
             ) : null}
             <div className="relative min-w-0 flex-1">
               <input
-                className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-16 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100 md:h-14 md:px-5 md:pr-20 md:text-lg"
+                className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-16 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-moss-300 focus:ring-4 focus:ring-moss-100 md:h-14 md:px-5 md:pr-20 md:text-lg"
                 onChange={(event) => setProductQuery(event.target.value)}
                 onKeyDown={handleProductSearchKeyDown}
                 placeholder="Nhap ten san pham hoac EAN-13"
@@ -984,7 +984,7 @@ export function PosPage() {
                                   Ton {product.stock}
                                 </span>
                                 {quantityInCart > 0 ? (
-                                  <span className="rounded-lg bg-blue-50 px-2 py-1 text-blue-700">
+                                  <span className="rounded-lg bg-moss-50 px-2 py-1 text-moss-700">
                                     Da chon {quantityInCart}
                                   </span>
                                 ) : null}
@@ -997,7 +997,7 @@ export function PosPage() {
                               </p>
                             </div>
                             {canCheckout ? (
-                              <span className="rounded-xl bg-green-600 px-4 py-3 text-sm font-extrabold text-white shadow-sm">
+                              <span className="rounded-xl bg-moss-600 px-4 py-3 text-sm font-extrabold text-white shadow-sm">
                                 Them
                               </span>
                             ) : null}
@@ -1016,8 +1016,8 @@ export function PosPage() {
               <button
                 className={`flex h-11 min-w-20 items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-3 text-sm font-extrabold transition ${
                   activeBill.id === bill.id
-                    ? "border-slate-300 bg-[#dfe7f2] text-slate-900"
-                    : "border-slate-200 bg-[#eef3f9] text-slate-500"
+                    ? "border-moss-300 bg-moss-100 text-moss-900"
+                    : "border-moss-100 bg-white text-slate-500"
                 }`}
                 key={bill.id}
                 onClick={() => switchBill(bill.id)}
@@ -1025,7 +1025,7 @@ export function PosPage() {
               >
                 Don {bill.id}
                 {bill.savedAt ? (
-                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                  <span className="h-2 w-2 rounded-full bg-moss-500" />
                 ) : null}
                 {canCheckout ? (
                   <span
@@ -1044,7 +1044,7 @@ export function PosPage() {
             ))}
             {canCheckout ? (
               <button
-                className="flex h-11 min-w-11 items-center justify-center rounded-xl border border-slate-200 bg-[#eef3f9] text-slate-600 transition hover:bg-slate-100"
+                className="flex h-11 min-w-11 items-center justify-center rounded-xl border border-moss-100 bg-white text-moss-700 transition hover:bg-moss-50"
                 onClick={addBill}
                 type="button"
               >
@@ -1058,7 +1058,7 @@ export function PosPage() {
               <Bell className="h-5 w-5" />
             </div>
             <div className="flex h-12 min-w-52 items-center gap-3 rounded-xl bg-white px-3 pr-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 text-base font-extrabold text-green-700">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-moss-100 text-base font-extrabold text-moss-700">
                 {userInitial}
               </span>
               <span className="min-w-0 flex-1">
@@ -1085,7 +1085,7 @@ export function PosPage() {
             </div>
           ) : null}
           {success ? (
-            <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700 shadow-sm">
+            <div className="rounded-2xl border border-moss-200 bg-moss-50 px-5 py-4 text-sm font-bold text-moss-700 shadow-sm">
               {success}
             </div>
           ) : null}
@@ -1116,7 +1116,7 @@ export function PosPage() {
 
                       return (
                         <button
-                          className="grid min-h-[76px] grid-cols-[42px_minmax(0,1fr)] gap-2 rounded-lg border border-slate-200 bg-white p-2 text-left transition hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-55"
+                          className="grid min-h-[76px] grid-cols-[42px_minmax(0,1fr)] gap-2 rounded-lg border border-slate-200 bg-white p-2 text-left transition hover:border-moss-200 hover:bg-moss-50 disabled:cursor-not-allowed disabled:opacity-55"
                           disabled={disabled}
                           key={product.id}
                           onClick={() => addToCart(product)}
@@ -1139,7 +1139,7 @@ export function PosPage() {
                             <span className="line-clamp-2 text-xs font-extrabold leading-tight text-slate-900">
                               {product.name}
                             </span>
-                            <span className="mt-0.5 text-xs font-extrabold tabular-nums text-green-700">
+                            <span className="mt-0.5 text-xs font-extrabold tabular-nums text-moss-700">
                               {formatCurrency(product.price)}
                             </span>
                             <span className="mt-auto truncate text-[11px] font-bold text-slate-500">
@@ -1163,7 +1163,7 @@ export function PosPage() {
                     <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
                       <input
                         checked={lineSeparated}
-                        className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                        className="h-4 w-4 rounded border-slate-300 text-moss-600 focus:ring-moss-500"
                         onChange={(event) => setLineSeparated(event.target.checked)}
                         type="checkbox"
                       />
@@ -1234,7 +1234,7 @@ export function PosPage() {
                                 Ton kho: {item.product.stock}
                               </p>
                               {item.batch ? (
-                                <p className="mt-0.5 truncate text-xs font-extrabold text-blue-600">
+                                <p className="mt-0.5 truncate text-xs font-extrabold text-moss-600">
                                   Lo: {formatProductDate(item.batch.import_date)} - HSD{" "}
                                   {formatProductDate(item.batch.expiry_date)} ({item.batch.quantity})
                                 </p>
@@ -1297,7 +1297,7 @@ export function PosPage() {
                   </p>
                   <div className="mt-1 flex items-end justify-between gap-4">
                     <h2 className="text-xl font-extrabold text-slate-900">Don {activeBill.id}</h2>
-                    <span className="text-right text-base font-extrabold tabular-nums text-green-700">
+                    <span className="text-right text-base font-extrabold tabular-nums text-moss-700">
                       {formatCurrency(total)}
                     </span>
                   </div>
@@ -1320,14 +1320,14 @@ export function PosPage() {
 
               <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
                 <input
-                  className="h-12 rounded-xl border-0 bg-white px-4 text-base font-medium text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)] outline-none ring-1 ring-slate-100 transition placeholder:text-slate-500 focus:ring-4 focus:ring-blue-100"
+                  className="h-12 rounded-xl border-0 bg-white px-4 text-base font-medium text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)] outline-none ring-1 ring-slate-100 transition placeholder:text-slate-500 focus:ring-4 focus:ring-moss-100"
                   onChange={(event) => updateActiveBillField("orderNote", event.target.value)}
                   placeholder="Nhap ghi chu don hang"
                   value={orderNote}
                 />
                 {canCheckout ? (
                   <button
-                    className="flex h-12 items-center justify-center gap-2 rounded-xl border border-blue-500 bg-blue-50 px-4 text-base font-extrabold text-blue-600 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-12 items-center justify-center gap-2 rounded-xl border border-moss-500 bg-moss-50 px-4 text-base font-extrabold text-moss-600 transition hover:bg-moss-100 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={cart.length === 0 && !selectedCustomerId && !orderNote.trim()}
                     onClick={handleSaveBill}
                     type="button"
@@ -1344,7 +1344,7 @@ export function PosPage() {
                 <div className="flex gap-2">
                   <div className="relative min-w-0 flex-1">
                     <input
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-14 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                      className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-14 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-moss-300 focus:ring-4 focus:ring-moss-100"
                       onChange={(event) => {
                         updateActiveBill((bill) => ({
                           ...bill,
@@ -1375,7 +1375,7 @@ export function PosPage() {
                   {canCreateQuickCustomer ? (
                     <button
                       aria-label="Them khach hang"
-                      className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-green-600 text-white shadow-[0_10px_22px_rgba(22,163,74,0.22)] transition hover:bg-green-700"
+                      className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-moss-600 text-white shadow-[0_10px_22px_rgba(22,163,74,0.22)] transition hover:bg-moss-700"
                       onClick={() => setCustomerModalOpen(true)}
                       type="button"
                     >
@@ -1418,10 +1418,10 @@ export function PosPage() {
 
                   <div className="flex items-center justify-between gap-4">
                     {canApplyDiscount ? (
-                      <label className="flex min-w-0 items-center gap-1 text-sm font-extrabold text-blue-600">
+                      <label className="flex min-w-0 items-center gap-1 text-sm font-extrabold text-moss-600">
                         <span>Giam gia:</span>
                         <input
-                          className="h-9 w-28 rounded-lg border border-slate-100 bg-white px-2 text-right text-sm font-extrabold text-blue-600 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                          className="h-9 w-28 rounded-lg border border-slate-100 bg-white px-2 text-right text-sm font-extrabold text-moss-600 outline-none focus:border-moss-300 focus:ring-4 focus:ring-moss-100"
                           min="0"
                           onChange={(event) => updateActiveBillField("discount", event.target.value)}
                           ref={discountRef}
@@ -1431,7 +1431,7 @@ export function PosPage() {
                         <ShortcutTag>F6</ShortcutTag>
                       </label>
                     ) : (
-                      <span className="text-sm font-extrabold text-blue-600">Giam gia</span>
+                      <span className="text-sm font-extrabold text-moss-600">Giam gia</span>
                     )}
                     <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
                       {formatCurrency(safeDiscount)}
@@ -1457,10 +1457,10 @@ export function PosPage() {
                     </span>
                   </div>
 
-                  <div className="rounded-xl border border-green-100 bg-green-50 px-4 py-3 md:col-span-2 xl:col-span-1">
+                  <div className="rounded-xl border border-moss-100 bg-moss-50 px-4 py-3 md:col-span-2 xl:col-span-1">
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-lg font-extrabold text-green-800">Can thu</span>
-                      <span className="min-w-[10ch] text-right text-2xl font-extrabold tabular-nums text-green-800">
+                      <span className="text-lg font-extrabold text-moss-800">Can thu</span>
+                      <span className="min-w-[10ch] text-right text-2xl font-extrabold tabular-nums text-moss-800">
                         {formatCurrency(total)}
                       </span>
                     </div>
@@ -1472,7 +1472,7 @@ export function PosPage() {
                 <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
                   <input
                     checked={autoPrint}
-                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                    className="h-4 w-4 rounded border-slate-300 text-moss-600 focus:ring-moss-500"
                     onChange={(event) => setAutoPrint(event.target.checked)}
                     type="checkbox"
                   />
@@ -1481,7 +1481,7 @@ export function PosPage() {
 
                 {canCheckout ? (
                   <button
-                    className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-green-600 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(22,163,74,0.24)] transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-moss-600 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(22,163,74,0.24)] transition hover:bg-moss-700 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={cart.length === 0 || submittingSale}
                     onClick={openPaymentModal}
                     type="button"
@@ -1538,7 +1538,7 @@ export function PosPage() {
               Huy
             </Button>
             <Button
-              className="bg-green-600 hover:bg-green-700"
+              className="bg-moss-600 hover:bg-moss-700"
               disabled={
                 submittingSale ||
                 (selectedPaymentMethod === "transfer" &&
@@ -1582,7 +1582,7 @@ export function PosPage() {
                 <button
                   className={`flex h-20 items-center gap-4 rounded-2xl border px-5 text-left transition ${
                     active
-                      ? "border-green-500 bg-green-50 text-green-800 ring-4 ring-green-100"
+                      ? "border-moss-500 bg-moss-50 text-moss-800 ring-4 ring-moss-100"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                   key={method}
@@ -1619,7 +1619,7 @@ export function PosPage() {
             <div className="space-y-4">
               <div className="relative">
                 <input
-                  className="h-[66px] w-full rounded-xl border border-slate-200 bg-white px-5 pr-16 text-xl font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                  className="h-[66px] w-full rounded-xl border border-slate-200 bg-white px-5 pr-16 text-xl font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-moss-300 focus:ring-4 focus:ring-moss-100"
                   min="0"
                   onChange={(event) => updateActiveBillField("cashReceived", event.target.value)}
                   placeholder="Nhap so tien khach dua"
@@ -1676,7 +1676,7 @@ export function PosPage() {
                 onClick={() => setPaymentQrModalOpen(true)}
                 type="button"
               >
-                <span className="flex h-14 w-14 flex-none items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+                <span className="flex h-14 w-14 flex-none items-center justify-center rounded-2xl bg-moss-50 text-moss-700">
                   <QrCode className="h-7 w-7" />
                 </span>
                 <span className="min-w-0">
@@ -1692,7 +1692,7 @@ export function PosPage() {
               <button
                 className={`flex min-h-28 items-center gap-4 rounded-2xl border p-5 text-left transition ${
                   paymentProofFile
-                    ? "border-green-300 bg-green-50 hover:bg-green-100"
+                    ? "border-moss-300 bg-moss-50 hover:bg-moss-100"
                     : "border-amber-200 bg-amber-50 hover:bg-amber-100"
                 }`}
                 onClick={() => setPaymentProofModalOpen(true)}
@@ -1700,7 +1700,7 @@ export function PosPage() {
               >
                 <span
                   className={`flex h-14 w-14 flex-none items-center justify-center rounded-2xl ${
-                    paymentProofFile ? "bg-green-100 text-green-700" : "bg-white text-amber-700"
+                    paymentProofFile ? "bg-moss-100 text-moss-700" : "bg-white text-amber-700"
                   }`}
                 >
                   <ImagePlus className="h-7 w-7" />
@@ -1763,7 +1763,7 @@ export function PosPage() {
               Huy
             </Button>
             <Button
-              className="bg-green-600 hover:bg-green-700"
+              className="bg-moss-600 hover:bg-moss-700"
               disabled={!paymentProofFile && !paymentProofNote.trim()}
               onClick={() => setPaymentProofModalOpen(false)}
               type="button"
@@ -1807,7 +1807,7 @@ export function PosPage() {
                 />
               </label>
               {paymentProofFile ? (
-                <p className="rounded-2xl bg-green-50 px-4 py-3 text-sm font-extrabold text-green-700">
+                <p className="rounded-2xl bg-moss-50 px-4 py-3 text-sm font-extrabold text-moss-700">
                   Da chon anh: {paymentProofFile.name}
                 </p>
               ) : (
@@ -1882,7 +1882,7 @@ export function PosPage() {
                         {batch.quantity - selectedQuantity}
                       </p>
                     </div>
-                    <span className="rounded-xl bg-green-600 px-4 py-3 text-center text-sm font-extrabold text-white">
+                    <span className="rounded-xl bg-moss-600 px-4 py-3 text-center text-sm font-extrabold text-white">
                       Chon lo
                     </span>
                   </button>

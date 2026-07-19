@@ -433,7 +433,7 @@ function QuantityModal({
           </span>
           <input
             autoFocus
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-lg font-extrabold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-lg font-extrabold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
             min="0"
             onChange={(event) => onChange(event.target.value)}
             placeholder="Nhap so luong dem duoc"
@@ -714,7 +714,7 @@ export function InventoryPage() {
           </div>
         ) : null}
         {success ? (
-          <div className="m-3 rounded-xl bg-green-50 px-4 py-3 text-sm font-semibold text-green-700 sm:m-4">
+          <div className="m-3 rounded-xl bg-moss-50 px-4 py-3 text-sm font-semibold text-moss-700 sm:m-4">
             {success}
           </div>
         ) : null}
@@ -752,8 +752,8 @@ export function InventoryPage() {
                       <button
                         className={`grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border bg-white p-2 text-left shadow-sm transition ${
                           counted
-                            ? "border-green-200 hover:border-green-300 hover:bg-green-50"
-                            : "border-slate-200 hover:border-blue-200 hover:bg-blue-50"
+                            ? "border-moss-200 hover:border-moss-300 hover:bg-moss-50"
+                            : "border-slate-200 hover:border-moss-200 hover:bg-moss-50"
                         } disabled:cursor-not-allowed disabled:opacity-70`}
                         disabled={!canCountInventory}
                         key={product.id}
@@ -805,7 +805,7 @@ export function InventoryPage() {
                                   ? "text-red-600"
                                   : diff > 0
                                     ? "text-amber-600"
-                                    : "text-green-700"
+                                    : "text-moss-700"
                               }`}
                             >
                               Lech {diff}
@@ -877,9 +877,9 @@ export function InventoryPage() {
                             <p className="text-[11px] font-bold uppercase text-slate-400">Kho</p>
                             <p className="mt-1 font-extrabold text-slate-950">{row.product.stock}</p>
                           </div>
-                          <div className="rounded-lg bg-green-50 p-1.5">
-                            <p className="text-[11px] font-bold uppercase text-green-700">Dem</p>
-                            <p className="mt-1 font-extrabold text-green-800">{row.counted}</p>
+                          <div className="rounded-lg bg-moss-50 p-1.5">
+                            <p className="text-[11px] font-bold uppercase text-moss-700">Dem</p>
+                            <p className="mt-1 font-extrabold text-moss-800">{row.counted}</p>
                           </div>
                           <div className="rounded-lg bg-amber-50 p-1.5">
                             <p className="text-[11px] font-bold uppercase text-amber-700">Lech</p>
@@ -951,7 +951,7 @@ export function InventoryPage() {
           <div className="space-y-3">
             {history.map((item) => (
               <button
-                className="grid w-full gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-blue-200 hover:bg-blue-50 sm:grid-cols-[minmax(0,1fr)_180px_130px] sm:items-center"
+                className="grid w-full gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-moss-200 hover:bg-moss-50 sm:grid-cols-[minmax(0,1fr)_180px_130px] sm:items-center"
                 key={item.id}
                 onClick={() => {
                   setHistoryOpen(false);

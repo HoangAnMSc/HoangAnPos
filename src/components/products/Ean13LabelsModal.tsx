@@ -172,7 +172,7 @@ export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalPr
       title="EAN-13 san pham"
     >
       <div className="space-y-5">
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
+        <div className="rounded-2xl border border-moss-100 bg-moss-50 px-4 py-3 text-sm font-semibold text-moss-800">
           In tem EAN-13 cho tat ca san pham. San pham co EAN-13 da luu se dung ma do;
           san pham chua co ma hop le se duoc tao ma EAN-13 Viet Nam prefix 893 de dan va quet lai.
         </div>

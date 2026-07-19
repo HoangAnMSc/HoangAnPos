@@ -227,7 +227,7 @@ export function OrdersPage() {
                         {formatCurrency(item.unit_price)}
                       </p>
                       {item.import_date || item.expiry_date ? (
-                        <p className="mt-1 text-xs font-bold text-blue-600">
+                        <p className="mt-1 text-xs font-bold text-moss-600">
                           Nhap {formatProductDate(item.import_date)} - HSD{" "}
                           {formatProductDate(item.expiry_date)}
                         </p>

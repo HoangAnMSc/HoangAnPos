@@ -14,7 +14,7 @@ export function Select({ children, className, id, label, ...props }: SelectProps
       ) : null}
       <select
         className={clsx(
-          "w-full rounded-2xl border border-coal/10 bg-white px-4 py-3 text-sm font-semibold text-coal outline-none transition focus:border-clay focus:ring-4 focus:ring-clay/15",
+          "w-full rounded-xl border border-moss-200 bg-white px-4 py-3 text-sm font-semibold text-coal outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100",
           className
         )}
         id={inputId}

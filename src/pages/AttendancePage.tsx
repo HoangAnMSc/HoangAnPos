@@ -542,13 +542,13 @@ export function AttendancePage() {
         ) : null}
 
         {success ? (
-          <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700">
+          <div className="rounded-2xl border border-moss-200 bg-moss-50 px-5 py-4 text-sm font-bold text-moss-700">
             {success}
           </div>
         ) : null}
 
         {activeTab === "clock" ? (
-          <section className="mx-auto max-w-md rounded-[2rem] bg-[#f6f6f6] p-4 shadow-soft ring-1 ring-coal/5 sm:p-5">
+          <section className="mx-auto max-w-md rounded-2xl bg-white p-4 shadow-soft ring-1 ring-moss-100 sm:p-5">
             {openLoading ? (
               <Spinner label="Dang tai ca lam..." />
             ) : (
@@ -556,10 +556,10 @@ export function AttendancePage() {
                 <div className="flex justify-center pt-4">
                   <button
                     aria-label={isTodayCompleted ? "Da tan lam" : isClockedIn ? "Tan lam" : "Cham cong"}
-                    className={`flex h-44 w-44 flex-col items-center justify-center rounded-full text-white shadow-[0_0_0_12px_rgba(16,185,129,0.16),0_22px_45px_rgba(15,23,42,0.22)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 ${
+                    className={`flex h-44 w-44 flex-col items-center justify-center rounded-full text-white shadow-[0_0_0_12px_rgba(111,129,85,0.18),0_22px_45px_rgba(16,32,24,0.20)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 ${
                       isClockedIn
-                        ? "bg-gradient-to-b from-orange-500 to-red-700"
-                        : "bg-gradient-to-b from-emerald-500 to-emerald-900"
+                        ? "bg-gradient-to-b from-moss-500 to-moss-900"
+                        : "bg-gradient-to-b from-moss-400 to-moss-800"
                     }`}
                     disabled={!canClock || submitting || isTodayCompleted}
                     onClick={handleClockButton}
@@ -621,7 +621,7 @@ export function AttendancePage() {
 
                 {openRecord ? (
                   <div className="mt-4 flex items-center gap-3 rounded-2xl bg-white p-3 text-sm font-bold text-coal/65 shadow-sm">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-moss-50 text-moss-700">
                       <MapPin className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -630,7 +630,7 @@ export function AttendancePage() {
                       </p>
                       {clockInLocation ? (
                         <a
-                          className="mt-1 inline-flex items-center gap-1 text-xs font-extrabold text-emerald-700"
+                          className="mt-1 inline-flex items-center gap-1 text-xs font-extrabold text-moss-700"
                           href={getLocationUrl(clockInLocation)}
                           rel="noreferrer"
                           target="_blank"
@@ -659,7 +659,7 @@ export function AttendancePage() {
               <label className="relative">
                 <span className="sr-only">Chon thang</span>
                 <input
-                  className="w-36 rounded-full border border-coal/20 bg-white px-3 py-2 text-xs font-extrabold text-coal outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                  className="w-36 rounded-full border border-coal/20 bg-white px-3 py-2 text-xs font-extrabold text-coal outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
                   onChange={(event) => setMonthKey(event.target.value || getVietnamMonthKey())}
                   type="month"
                   value={monthKey}
@@ -703,7 +703,7 @@ export function AttendancePage() {
                         <span className="block truncate">{formatShortDate(record.work_date)}</span>
                         {location ? (
                           <a
-                            className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700"
+                            className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-extrabold text-moss-700"
                             href={getLocationUrl(location)}
                             rel="noreferrer"
                             target="_blank"
@@ -784,7 +784,7 @@ export function AttendancePage() {
           <label className="block">
             <span className="mb-2 block text-sm font-extrabold text-coal">Gio cham cong</span>
             <input
-              className="w-full rounded-2xl border border-coal/10 bg-white px-4 py-3 text-sm font-bold text-coal outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+              className="w-full rounded-2xl border border-coal/10 bg-white px-4 py-3 text-sm font-bold text-coal outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
               onChange={(event) =>
                 setEditForm((current) => ({ ...current, clockIn: event.target.value }))
               }
@@ -795,7 +795,7 @@ export function AttendancePage() {
           <label className="block">
             <span className="mb-2 block text-sm font-extrabold text-coal">Gio tan lam</span>
             <input
-              className="w-full rounded-2xl border border-coal/10 bg-white px-4 py-3 text-sm font-bold text-coal outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+              className="w-full rounded-2xl border border-coal/10 bg-white px-4 py-3 text-sm font-bold text-coal outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
               onChange={(event) =>
                 setEditForm((current) => ({ ...current, clockOut: event.target.value }))
               }

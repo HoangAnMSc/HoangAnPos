@@ -84,7 +84,7 @@ const emptyForm: ProductFormState = {
 };
 
 const fieldClassName =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:px-5 sm:py-4 sm:text-base";
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-moss-400 focus:ring-4 focus:ring-moss-100 sm:px-5 sm:py-4 sm:text-base";
 const labelClassName = "mb-2 block text-sm font-extrabold text-slate-950";
 
 function normalizeText(value: string) {
@@ -229,11 +229,11 @@ function ProductEan13GateModal({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <button
-              className="flex min-h-36 flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-blue-300 hover:bg-blue-50"
+              className="flex min-h-36 flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-moss-300 hover:bg-moss-50"
               onClick={() => setScannerOpen(true)}
               type="button"
             >
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-moss-100 text-moss-700">
                 <Barcode className="h-5 w-5" />
               </span>
               <span>
@@ -247,11 +247,11 @@ function ProductEan13GateModal({
             </button>
 
             <button
-              className="flex min-h-36 flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-green-300 hover:bg-green-50"
+              className="flex min-h-36 flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-moss-300 hover:bg-moss-50"
               onClick={createAutoEan13}
               type="button"
             >
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 text-green-700">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-moss-100 text-moss-700">
                 <PackagePlus className="h-5 w-5" />
               </span>
               <span>
@@ -355,7 +355,7 @@ function MediaPickerModal({
             Cancel
           </button>
           <button
-            className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-2xl bg-moss-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-moss-600/20 transition hover:bg-moss-700 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!canSave}
             onClick={handleSave}
             type="button"
@@ -423,7 +423,7 @@ function MediaPickerModal({
                 return (
                   <button
                     className={`relative aspect-square overflow-hidden rounded-xl border-2 bg-slate-100 transition ${
-                      selected ? "border-blue-500" : "border-transparent hover:border-slate-300"
+                      selected ? "border-moss-500" : "border-transparent hover:border-slate-300"
                     }`}
                     key={imageUrl}
                     onClick={() => setSelectedUrl(imageUrl)}
@@ -433,7 +433,7 @@ function MediaPickerModal({
                     <span
                       className={`absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px] ${
                         selected
-                          ? "border-blue-500 bg-blue-500 text-white"
+                          ? "border-moss-500 bg-moss-500 text-white"
                           : "border-slate-300 bg-white text-transparent"
                       }`}
                     >
@@ -451,7 +451,7 @@ function MediaPickerModal({
             </div>
           )
         ) : (
-          <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center transition hover:border-green-500 hover:bg-green-50">
+          <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center transition hover:border-moss-500 hover:bg-moss-50">
             {draftPreview ? (
               <img
                 alt="Upload preview"
@@ -459,7 +459,7 @@ function MediaPickerModal({
                 src={draftPreview}
               />
             ) : (
-              <span className="mb-4 rounded-2xl bg-white p-4 text-green-600 shadow-sm">
+              <span className="mb-4 rounded-2xl bg-white p-4 text-moss-600 shadow-sm">
                 <Upload className="h-7 w-7" />
               </span>
             )}
@@ -701,13 +701,13 @@ function ProductForm({
               <button
                 className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
                   form.is_active
-                    ? "border-green-500 bg-green-50 text-green-700"
+                    ? "border-moss-500 bg-moss-50 text-moss-700"
                     : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
                 }`}
                 onClick={() => updateField("is_active", true)}
                 type="button"
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-green-700 shadow-sm">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-moss-700 shadow-sm">
                   <Eye className="h-5 w-5" />
                 </span>
                 Hien thi
@@ -845,7 +845,7 @@ function ProductForm({
                 value={form.ean13}
               />
               {ean13Locked ? (
-                <span className="inline-flex h-[46px] shrink-0 items-center justify-center rounded-2xl bg-green-50 px-4 text-sm font-extrabold text-green-700 sm:h-[58px]">
+                <span className="inline-flex h-[46px] shrink-0 items-center justify-center rounded-2xl bg-moss-50 px-4 text-sm font-extrabold text-moss-700 sm:h-[58px]">
                   Da chon
                 </span>
               ) : (
@@ -902,7 +902,7 @@ function ProductForm({
                 Cancel
               </button>
               <button
-                className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 sm:min-w-32"
+                className="rounded-2xl bg-moss-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-moss-600/20 transition hover:bg-moss-700 sm:min-w-32"
                 disabled={categorySubmitting}
                 onClick={() => void saveCategoryDraft()}
                 type="button"
@@ -1017,7 +1017,7 @@ function ProductEditorModal({
             </button>
             {canSubmit ? (
               <button
-                className="rounded-2xl bg-green-600 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
+                className="rounded-2xl bg-moss-600 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-moss-600/20 transition hover:bg-moss-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
                 disabled={submitting}
                 form={formId}
                 type="submit"
