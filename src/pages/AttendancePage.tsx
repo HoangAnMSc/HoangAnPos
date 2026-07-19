@@ -721,7 +721,7 @@ export function AttendancePage() {
                           {canUpdateHistory ? (
                             <button
                               aria-label="Sua ca cham cong"
-                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-coal/5 text-coal transition hover:bg-coal hover:text-white"
+                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-coal/5 text-white transition hover:bg-coal hover:text-white"
                               onClick={() => openEditModal(record)}
                               type="button"
                             >

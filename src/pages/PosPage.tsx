@@ -908,7 +908,7 @@ export function PosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-moss-50">
+    <div className="min-h-screen bg-white">
       <header className="sticky top-0 z-40 rounded-b-2xl border-b border-moss-100 bg-white/95 px-3 py-2 pl-16 shadow-[0_10px_28px_rgba(16,32,24,0.10)] backdrop-blur lg:pl-4 xl:px-4">
         <div className="flex flex-col gap-2 2xl:flex-row 2xl:items-center">
           <div className="flex min-w-0 flex-1 gap-2">
@@ -997,7 +997,7 @@ export function PosPage() {
                               </p>
                             </div>
                             {canCheckout ? (
-                              <span className="rounded-xl bg-moss-600 px-4 py-3 text-sm font-extrabold text-white shadow-sm">
+                              <span className="rounded-xl bg-coal px-4 py-3 text-sm font-extrabold text-white shadow-sm">
                                 Them
                               </span>
                             ) : null}
@@ -1016,7 +1016,7 @@ export function PosPage() {
               <button
                 className={`flex h-11 min-w-20 items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-3 text-sm font-extrabold transition ${
                   activeBill.id === bill.id
-                    ? "border-moss-300 bg-moss-100 text-moss-900"
+                    ? "border-moss-300 bg-coal text-white"
                     : "border-moss-100 bg-white text-slate-500"
                 }`}
                 key={bill.id}
@@ -1025,7 +1025,7 @@ export function PosPage() {
               >
                 Don {bill.id}
                 {bill.savedAt ? (
-                  <span className="h-2 w-2 rounded-full bg-moss-500" />
+                  <span className="h-2 w-2 rounded-full bg-coal" />
                 ) : null}
                 {canCheckout ? (
                   <span
@@ -1044,7 +1044,7 @@ export function PosPage() {
             ))}
             {canCheckout ? (
               <button
-                className="flex h-11 min-w-11 items-center justify-center rounded-xl border border-moss-100 bg-white text-moss-700 transition hover:bg-moss-50"
+                className="flex h-11 min-w-11 items-center justify-center rounded-xl border border-coal bg-coal text-white transition hover:bg-coal/90"
                 onClick={addBill}
                 type="button"
               >
@@ -1375,7 +1375,7 @@ export function PosPage() {
                   {canCreateQuickCustomer ? (
                     <button
                       aria-label="Them khach hang"
-                      className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-moss-600 text-white shadow-[0_10px_22px_rgba(22,163,74,0.22)] transition hover:bg-moss-700"
+                      className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-coal text-white shadow-[0_10px_22px_rgba(22,163,74,0.22)] transition hover:bg-coal/90"
                       onClick={() => setCustomerModalOpen(true)}
                       type="button"
                     >
@@ -1481,7 +1481,7 @@ export function PosPage() {
 
                 {canCheckout ? (
                   <button
-                    className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-moss-600 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(22,163,74,0.24)] transition hover:bg-moss-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-coal text-base font-extrabold text-white shadow-[0_12px_26px_rgba(22,163,74,0.24)] transition hover:bg-coal/90 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={cart.length === 0 || submittingSale}
                     onClick={openPaymentModal}
                     type="button"
@@ -1538,7 +1538,7 @@ export function PosPage() {
               Huy
             </Button>
             <Button
-              className="bg-moss-600 hover:bg-moss-700"
+              className="bg-coal hover:bg-coal/90"
               disabled={
                 submittingSale ||
                 (selectedPaymentMethod === "transfer" &&
@@ -1763,7 +1763,7 @@ export function PosPage() {
               Huy
             </Button>
             <Button
-              className="bg-moss-600 hover:bg-moss-700"
+              className="bg-coal hover:bg-coal/90"
               disabled={!paymentProofFile && !paymentProofNote.trim()}
               onClick={() => setPaymentProofModalOpen(false)}
               type="button"
@@ -1882,7 +1882,7 @@ export function PosPage() {
                         {batch.quantity - selectedQuantity}
                       </p>
                     </div>
-                    <span className="rounded-xl bg-moss-600 px-4 py-3 text-center text-sm font-extrabold text-white">
+                    <span className="rounded-xl bg-coal px-4 py-3 text-center text-sm font-extrabold text-white">
                       Chon lo
                     </span>
                   </button>

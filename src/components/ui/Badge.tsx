@@ -8,7 +8,7 @@ const tones = {
   green: "bg-moss/12 text-moss",
   amber: "bg-clay/12 text-clay",
   red: "bg-red-100 text-red-700",
-  neutral: "bg-coal/8 text-coal/70",
+  neutral: "bg-coal/8 text-white/70",
 };
 
 export function Badge({ className, tone = "neutral", ...props }: BadgeProps) {

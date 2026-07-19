@@ -38,22 +38,20 @@ export function AdminLayout() {
 
   return (
     <div className="min-h-screen bg-white text-coal">
-      <div className="fixed inset-0 -z-10 bg-grain" />
-
       <aside
-        className={`fixed inset-y-0 left-0 z-[90] flex h-dvh w-72 flex-col overflow-hidden border-r border-moss-900/20 bg-moss-900 p-5 text-white shadow-2xl transition-transform lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-[90] flex h-dvh w-72 flex-col overflow-hidden border-r border-slate-200 bg-white p-5 text-coal shadow-[12px_0_35px_rgba(15,23,42,0.06)] transition-transform lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="mb-6 flex shrink-0 items-center justify-between">
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-[0.35em] text-moss-200">
+            <p className="text-xs font-extrabold uppercase tracking-[0.35em] text-moss-700">
               BABYBOO
             </p>
             <h1 className="font-display text-3xl font-bold">POS</h1>
           </div>
           <button
-            className="rounded-xl p-2 text-white/70 hover:bg-white/10 lg:hidden"
+            className="rounded-xl p-2 text-coal/60 hover:bg-slate-100 lg:hidden"
             onClick={() => setSidebarOpen(false)}
             type="button"
           >
@@ -67,8 +65,8 @@ export function AdminLayout() {
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-extrabold transition ${
                   isActive
-                    ? "bg-white text-moss-900 shadow-lift"
-                    : "text-white/72 hover:bg-white/10 hover:text-white"
+                    ? "bg-coal text-white shadow-lift"
+                    : "text-coal/68 hover:bg-slate-100 hover:text-coal"
                 }`
               }
               key={item.path}
@@ -81,10 +79,10 @@ export function AdminLayout() {
           ))}
         </nav>
 
-        <div className="mt-4 shrink-0 rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
-          <p className="text-xs font-bold uppercase tracking-wide text-white/45">Đăng nhập</p>
+        <div className="mt-4 shrink-0 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-coal/45">Đăng nhập</p>
           <p className="mt-1 truncate font-bold">{displayName}</p>
-          <Button className="mt-4 w-full bg-white text-coal" onClick={signOut} variant="secondary">
+          <Button className="mt-4 w-full" onClick={signOut} variant="secondary">
             <LogOut className="h-4 w-4" />
             Đăng xuất
           </Button>
@@ -105,22 +103,22 @@ export function AdminLayout() {
           <>
             <button
               aria-label="Mở menu"
-              className="fixed left-3 top-2 z-50 flex h-12 w-12 items-center justify-center rounded-xl bg-white text-moss-800 shadow-soft ring-1 ring-moss-100 lg:hidden"
+              className="fixed left-3 top-2 z-50 flex h-12 w-12 items-center justify-center rounded-xl bg-white text-coal shadow-soft ring-1 ring-slate-200 lg:hidden"
               onClick={() => setSidebarOpen(true)}
               type="button"
             >
               <Menu className="h-5 w-5" />
             </button>
-            <main className="min-h-screen text-coal">
+            <main className="min-h-screen bg-white text-coal">
               <Outlet />
             </main>
           </>
         ) : (
           <>
-            <header className="sticky top-0 z-20 border-b border-moss-100 bg-white/80 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
+            <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
               <div className="flex items-center gap-4">
                 <button
-                  className="rounded-xl bg-white p-3 text-moss-800 shadow-soft ring-1 ring-moss-100 lg:hidden"
+                  className="rounded-xl bg-white p-3 text-coal shadow-soft ring-1 ring-slate-200 lg:hidden"
                   onClick={() => setSidebarOpen(true)}
                   type="button"
                 >
@@ -129,14 +127,14 @@ export function AdminLayout() {
                 <div className="min-w-0 flex-1">
                   <h2 className="font-display text-2xl font-bold sm:text-3xl">{page.title}</h2>
                 </div>
-                <div className="hidden min-w-72 items-center gap-3 rounded-xl bg-white px-4 py-3 text-coal/55 shadow-soft ring-1 ring-moss-100 xl:flex">
+                <div className="hidden min-w-72 items-center gap-3 rounded-xl bg-white px-4 py-3 text-coal/55 shadow-soft ring-1 ring-slate-200 xl:flex">
                   <Search className="h-4 w-4" />
                   <span className="text-sm font-semibold">Dữ liệu đồng bộ qua Supabase</span>
                 </div>
               </div>
             </header>
 
-            <main className="pt-6 sm:pt-4">
+            <main className="bg-white pt-6 sm:pt-4">
               <Outlet />
             </main>
           </>

@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 :root {
-  color: #102018;
+  color: #25201c;
   background: #fff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -22,9 +22,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  background:
-    radial-gradient(circle at 12% 8%, rgba(111, 129, 85, 0.14), transparent 28%),
-    linear-gradient(180deg, #ffffff 0%, #f6f9f4 100%);
+  background: #ffffff;
 }
 
 button,
@@ -36,9 +34,6 @@ select {
 
 @layer utilities {
   .bg-grain {
-    background-image:
-      radial-gradient(circle at 20% 20%, rgba(111, 129, 85, 0.16), transparent 28%),
-      radial-gradient(circle at 80% 10%, rgba(203, 217, 185, 0.22), transparent 32%),
-      linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(246, 249, 244, 0.92));
+    background: #ffffff;
   }
 }

@@ -355,7 +355,7 @@ function MediaPickerModal({
             Cancel
           </button>
           <button
-            className="rounded-2xl bg-moss-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-moss-600/20 transition hover:bg-moss-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-2xl bg-coal px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-coal/15 transition hover:bg-coal/90 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!canSave}
             onClick={handleSave}
             type="button"
@@ -374,7 +374,7 @@ function MediaPickerModal({
           <button
             className={`rounded-xl border px-4 py-2 text-sm font-extrabold transition ${
               activeTab === "library"
-                ? "border-slate-950 bg-slate-950 text-white"
+                ? "border-coal bg-coal text-white"
                 : "border-slate-200 bg-white text-slate-950"
             }`}
             onClick={() => setActiveTab("library")}
@@ -386,7 +386,7 @@ function MediaPickerModal({
             <button
               className={`rounded-xl border px-4 py-2 text-sm font-extrabold transition ${
                 activeTab === "upload"
-                  ? "border-slate-950 bg-slate-950 text-white"
+                  ? "border-coal bg-coal text-white"
                   : "border-slate-200 bg-white text-slate-950"
               }`}
               onClick={() => setActiveTab("upload")}
@@ -433,7 +433,7 @@ function MediaPickerModal({
                     <span
                       className={`absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border text-[10px] ${
                         selected
-                          ? "border-moss-500 bg-moss-500 text-white"
+                          ? "border-moss-500 bg-coal text-white"
                           : "border-slate-300 bg-white text-transparent"
                       }`}
                     >
@@ -902,7 +902,7 @@ function ProductForm({
                 Cancel
               </button>
               <button
-                className="rounded-2xl bg-moss-600 px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-moss-600/20 transition hover:bg-moss-700 sm:min-w-32"
+                className="rounded-2xl bg-coal px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-coal/15 transition hover:bg-coal/90 sm:min-w-32"
                 disabled={categorySubmitting}
                 onClick={() => void saveCategoryDraft()}
                 type="button"
@@ -1017,7 +1017,7 @@ function ProductEditorModal({
             </button>
             {canSubmit ? (
               <button
-                className="rounded-2xl bg-moss-600 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-moss-600/20 transition hover:bg-moss-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
+                className="rounded-2xl bg-coal px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-coal/15 transition hover:bg-coal/90 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
                 disabled={submitting}
                 form={formId}
                 type="submit"
