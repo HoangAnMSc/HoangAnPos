@@ -48,7 +48,7 @@ export function AdminLayout() {
         <div className="mb-6 flex shrink-0 items-center justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.35em] text-clay">
-              Hoang An
+              BABYBOO
             </p>
             <h1 className="font-display text-3xl font-bold">POS</h1>
           </div>
@@ -82,7 +82,7 @@ export function AdminLayout() {
         </nav>
 
         <div className="mt-4 shrink-0 rounded-[1.75rem] bg-white/10 p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-white/45">Dang nhap</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-white/45">Đăng nhập</p>
           <p className="mt-1 truncate font-bold">{displayName}</p>
           <Button className="mt-4 w-full bg-white text-coal" onClick={signOut} variant="secondary">
             <LogOut className="h-4 w-4" />
