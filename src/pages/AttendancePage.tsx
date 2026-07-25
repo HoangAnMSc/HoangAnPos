@@ -3,7 +3,10 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  Download,
   Edit3,
+  FileImage,
+  FileSpreadsheet,
   Fingerprint,
   History,
   LocateFixed,
@@ -12,25 +15,36 @@ import {
   RotateCcw,
   Save,
   Trash2,
+  UsersRound,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Modal } from "../components/ui/Modal";
+import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import {
+  downloadAttendanceExcel,
+  downloadAttendanceImages,
+} from "../lib/attendanceExport";
+import { getErrorMessage } from "../lib/errors";
 import {
   clockInAttendance,
   clockOutAttendance,
   deleteAttendanceRecord,
+  fetchAttendanceEmployees,
   fetchAttendanceRecords,
+  fetchAttendanceRecordsForExport,
   fetchOpenAttendanceRecord,
+  type AttendanceEmployee,
   type AttendanceLocationInput,
   updateAttendanceRecord,
 } from "../services/attendance";
 import type { AttendanceRecord } from "../types";
 
 type AttendanceTab = "clock" | "history";
+type AttendanceExportFormat = "excel" | "image";
 
 type AttendanceEditForm = {
   clockIn: string;
@@ -62,7 +76,7 @@ const timeFormatter = new Intl.DateTimeFormat("vi-VN", {
   timeZone: vietnamTimeZone,
 });
 
-const weekdayLabels = ["Chu nhat", "Thu 2", "Thu 3", "Thu 4", "Thu 5", "Thu 6", "Thu 7"];
+const weekdayLabels = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 
 function getVietnamMonthKey(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -82,7 +96,7 @@ function formatClockTime(date: Date) {
 
 function formatMonthLabel(monthKey: string) {
   const [year, month] = monthKey.split("-");
-  return `This month - ${Number(month)}/${year}`;
+  return `Tháng ${Number(month)}/${year}`;
 }
 
 function getWorkDate(value: string) {
@@ -170,7 +184,7 @@ function formatLocation(location?: AttendanceLocationInput | null) {
   }
 
   if (location.accuracy === null) {
-    return "Da luu GPS";
+    return "Đã lưu GPS";
   }
 
   return `+/- ${Math.round(location.accuracy)}m`;
@@ -192,25 +206,21 @@ function getLocationUrl(location: AttendanceLocationInput) {
   return `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
 }
 
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
-
 function getGeolocationErrorMessage(error: GeolocationPositionError) {
   if (error.code === error.PERMISSION_DENIED) {
-    return "Trinh duyet dang chan dinh vi. Hay cho phep Location de cham cong.";
+    return "Trình duyệt đang chặn định vị. Hãy cho phép truy cập vị trí để chấm công.";
   }
 
   if (error.code === error.TIMEOUT) {
-    return "Lay dinh vi qua lau. Hay thu lai o noi co tin hieu tot hon.";
+    return "Lấy vị trí quá lâu. Hãy thử lại ở nơi có tín hiệu tốt hơn.";
   }
 
-  return "Khong lay duoc dinh vi hien tai.";
+  return "Không lấy được vị trí hiện tại.";
 }
 
 async function getCurrentAttendanceLocation(): Promise<AttendanceLocationInput> {
   if (!navigator.geolocation) {
-    throw new Error("Trinh duyet khong ho tro dinh vi.");
+    throw new Error("Trình duyệt không hỗ trợ định vị.");
   }
 
   return new Promise((resolve, reject) => {
@@ -243,6 +253,16 @@ export function AttendancePage() {
   const [editForm, setEditForm] = useState<AttendanceEditForm>({ clockIn: "", clockOut: "" });
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [error, setError] = useState("");
+  const [exportEmployees, setExportEmployees] = useState<AttendanceEmployee[]>([]);
+  const [exportError, setExportError] = useState("");
+  const [exportFormat, setExportFormat] = useState<AttendanceExportFormat>("excel");
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportMonthKey, setExportMonthKey] = useState(() => getVietnamMonthKey());
+  const [exporting, setExporting] = useState(false);
+  const [selectedExportEmployeeIds, setSelectedExportEmployeeIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRecords, setHistoryRecords] = useState<AttendanceRecord[]>([]);
   const [monthKey, setMonthKey] = useState(() => getVietnamMonthKey());
@@ -255,7 +275,8 @@ export function AttendancePage() {
   const canViewHistory = canAccess("attendance.history.view");
   const canUpdateHistory = canAccess("attendance.history.update");
   const canDeleteHistory = canAccess("attendance.history.delete");
-  const displayName = profile?.full_name || user?.email || "Nhan vien";
+  const canExportAttendance = canAccess("attendance.export");
+  const displayName = profile?.full_name || user?.email || "Nhân viên";
   const isClockedIn = Boolean(openRecord && !openRecord.clock_out_at);
   const isTodayCompleted = Boolean(openRecord?.clock_out_at);
   const clockInLocation = getClockInLocation(openRecord);
@@ -263,6 +284,9 @@ export function AttendancePage() {
   const historyGridColumns = canManageHistory
     ? "grid-cols-[1.25fr_0.85fr_0.85fr_0.85fr_5rem]"
     : "grid-cols-[1.35fr_0.9fr_0.9fr_0.95fr]";
+  const allExportEmployeesSelected =
+    exportEmployees.length > 0 &&
+    exportEmployees.every((employee) => selectedExportEmployeeIds.has(employee.id));
 
   const loadOpenRecord = useCallback(async () => {
     if (!user?.id || !canClock) {
@@ -276,7 +300,7 @@ export function AttendancePage() {
     try {
       setOpenRecord(await fetchOpenAttendanceRecord(user.id));
     } catch (requestError) {
-      setError(getErrorMessage(requestError, "Khong tai duoc trang thai cham cong."));
+      setError(getErrorMessage(requestError, "Không tải được trạng thái chấm công."));
     } finally {
       setOpenLoading(false);
     }
@@ -293,7 +317,7 @@ export function AttendancePage() {
     try {
       setHistoryRecords(await fetchAttendanceRecords(user.id, monthKey));
     } catch (requestError) {
-      setError(getErrorMessage(requestError, "Khong tai duoc lich su cham cong."));
+      setError(getErrorMessage(requestError, "Không tải được lịch sử chấm công."));
     } finally {
       setHistoryLoading(false);
     }
@@ -342,7 +366,7 @@ export function AttendancePage() {
     }
 
     if (isTodayCompleted) {
-      setError("Hom nay da cham cong va tan lam. Khong the cham cong lan 2.");
+      setError("Hôm nay đã chấm công và tan làm. Không thể chấm công lần hai.");
       return;
     }
 
@@ -354,13 +378,13 @@ export function AttendancePage() {
       const location = await getCurrentAttendanceLocation();
       const record = await clockInAttendance({ location });
       setOpenRecord(record);
-      setSuccess(`Da cham cong luc ${formatDateTime(record.clock_in_at)}.`);
+      setSuccess(`Đã chấm công lúc ${formatDateTime(record.clock_in_at)}.`);
 
       if (canViewHistory) {
         await loadHistory();
       }
     } catch (requestError) {
-      setError(getErrorMessage(requestError, "Cham cong that bai."));
+      setError(getErrorMessage(requestError, "Chấm công thất bại."));
     } finally {
       setSubmitting(false);
     }
@@ -403,13 +427,13 @@ export function AttendancePage() {
       const closedRecord = await clockOutAttendance(openRecord.id, location);
       setOpenRecord(null);
       setConfirmClockOutOpen(false);
-      setSuccess(`Da tan lam luc ${formatDateTime(closedRecord.clock_out_at)}.`);
+      setSuccess(`Đã tan làm lúc ${formatDateTime(closedRecord.clock_out_at)}.`);
 
       if (canViewHistory) {
         await loadHistory();
       }
     } catch (requestError) {
-      setError(getErrorMessage(requestError, "Tan lam that bai."));
+      setError(getErrorMessage(requestError, "Tan làm thất bại."));
     } finally {
       setSubmitting(false);
     }
@@ -436,7 +460,7 @@ export function AttendancePage() {
     setEditError("");
 
     if (!editForm.clockIn) {
-      setEditError("Nhap gio cham cong.");
+      setEditError("Nhập giờ chấm công.");
       return;
     }
 
@@ -444,7 +468,7 @@ export function AttendancePage() {
     const clockOutAt = editForm.clockOut ? vietnamDateTimeLocalToIso(editForm.clockOut) : null;
 
     if (clockOutAt && new Date(clockOutAt).getTime() < new Date(clockInAt).getTime()) {
-      setEditError("Gio tan lam phai sau gio cham cong.");
+      setEditError("Giờ tan làm phải sau giờ chấm công.");
       return;
     }
 
@@ -458,10 +482,10 @@ export function AttendancePage() {
         clock_out_at: clockOutAt,
       });
       setEditingRecord(null);
-      setSuccess("Da cap nhat lich su cham cong.");
+      setSuccess("Đã cập nhật lịch sử chấm công.");
       await Promise.all([loadOpenRecord(), loadHistory()]);
     } catch (requestError) {
-      setEditError(getErrorMessage(requestError, "Sua lich su cham cong that bai."));
+      setEditError(getErrorMessage(requestError, "Sửa lịch sử chấm công thất bại."));
     } finally {
       setSubmitting(false);
     }
@@ -472,7 +496,7 @@ export function AttendancePage() {
       return;
     }
 
-    const confirmed = window.confirm(`Xoa ca cham cong ${formatShortDate(record.work_date)}?`);
+    const confirmed = window.confirm(`Xóa ca chấm công ${formatShortDate(record.work_date)}?`);
 
     if (!confirmed) {
       return;
@@ -484,18 +508,102 @@ export function AttendancePage() {
 
     try {
       await deleteAttendanceRecord(record.id);
-      setSuccess("Da xoa lich su cham cong.");
+      setSuccess("Đã xóa lịch sử chấm công.");
       await Promise.all([loadOpenRecord(), loadHistory()]);
     } catch (requestError) {
-      setError(getErrorMessage(requestError, "Xoa lich su cham cong that bai."));
+      setError(getErrorMessage(requestError, "Xóa lịch sử chấm công thất bại."));
     } finally {
       setDeletingId("");
     }
   }
 
+  async function openExportModal() {
+    if (!canExportAttendance) {
+      return;
+    }
+
+    setExportModalOpen(true);
+    setExportError("");
+
+    if (exportEmployees.length > 0) {
+      return;
+    }
+
+    setExportLoading(true);
+    try {
+      const employees = await fetchAttendanceEmployees();
+      setExportEmployees(employees);
+      setSelectedExportEmployeeIds(new Set(employees.map((employee) => employee.id)));
+    } catch (requestError) {
+      setExportError(getErrorMessage(requestError, "Không tải được danh sách nhân viên."));
+    } finally {
+      setExportLoading(false);
+    }
+  }
+
+  function toggleAllExportEmployees() {
+    setSelectedExportEmployeeIds(
+      allExportEmployeesSelected
+        ? new Set()
+        : new Set(exportEmployees.map((employee) => employee.id))
+    );
+  }
+
+  function toggleExportEmployee(employeeId: string) {
+    setSelectedExportEmployeeIds((current) => {
+      const next = new Set(current);
+      if (next.has(employeeId)) {
+        next.delete(employeeId);
+      } else {
+        next.add(employeeId);
+      }
+      return next;
+    });
+  }
+
+  async function handleExportAttendance() {
+    if (!canExportAttendance || selectedExportEmployeeIds.size === 0) {
+      setExportError("Chọn ít nhất một nhân viên để xuất dữ liệu.");
+      return;
+    }
+
+    setExporting(true);
+    setExportError("");
+
+    try {
+      const selectedIds = [...selectedExportEmployeeIds];
+      const selectedEmployees = exportEmployees
+        .filter((employee) => selectedExportEmployeeIds.has(employee.id))
+        .map((employee) => ({ id: employee.id, name: employee.name }));
+      const records = await fetchAttendanceRecordsForExport(exportMonthKey, selectedIds);
+      const exportInput = {
+        employees: selectedEmployees,
+        exportedAt: new Date(),
+        monthKey: exportMonthKey,
+        records,
+      };
+
+      if (exportFormat === "excel") {
+        downloadAttendanceExcel(exportInput);
+      } else {
+        await downloadAttendanceImages(exportInput);
+      }
+
+      setExportModalOpen(false);
+      setSuccess(
+        `Đã xuất chấm công tháng ${exportMonthKey.split("-").reverse().join("/")} của ${
+          selectedEmployees.length
+        } nhân viên.`
+      );
+    } catch (requestError) {
+      setExportError(getErrorMessage(requestError, "Không xuất được dữ liệu chấm công."));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
-    <div className="px-4 pb-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-5">
+    <PageContainer maxWidth="5xl">
         <ConfigNotice />
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -514,7 +622,7 @@ export function AttendancePage() {
               type="button"
             >
               <Clock className="h-4 w-4" />
-              Cham cong
+              Chấm công
             </button>
             <button
               aria-selected={activeTab === "history"}
@@ -527,11 +635,19 @@ export function AttendancePage() {
               type="button"
             >
               <History className="h-4 w-4" />
-              Lich su
+              Lịch sử
             </button>
           </div>
-          <div className="truncate rounded-2xl bg-white px-4 py-3 text-sm font-bold text-coal/60 shadow-soft ring-1 ring-coal/5">
-            {displayName}
+          <div className="flex min-w-0 items-center gap-2">
+            {canExportAttendance ? (
+              <Button onClick={() => void openExportModal()} variant="secondary">
+                <Download className="h-4 w-4" />
+                Xuất chấm công
+              </Button>
+            ) : null}
+            <div className="min-w-0 truncate rounded-2xl bg-white px-4 py-3 text-sm font-bold text-coal/60 shadow-soft ring-1 ring-coal/5">
+              {displayName}
+            </div>
           </div>
         </div>
 
@@ -550,12 +666,12 @@ export function AttendancePage() {
         {activeTab === "clock" ? (
           <section className="mx-auto max-w-md rounded-2xl bg-white p-4 shadow-soft ring-1 ring-moss-100 sm:p-5">
             {openLoading ? (
-              <Spinner label="Dang tai ca lam..." />
+              <Spinner label="Đang tải ca làm..." />
             ) : (
               <>
                 <div className="flex justify-center pt-4">
                   <button
-                    aria-label={isTodayCompleted ? "Da tan lam" : isClockedIn ? "Tan lam" : "Cham cong"}
+                    aria-label={isTodayCompleted ? "Đã tan làm" : isClockedIn ? "Tan làm" : "Chấm công"}
                     className={`flex h-44 w-44 flex-col items-center justify-center rounded-full text-white shadow-[0_0_0_12px_rgba(111,129,85,0.18),0_22px_45px_rgba(16,32,24,0.20)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 ${
                       isClockedIn
                         ? "bg-gradient-to-b from-moss-500 to-moss-900"
@@ -573,7 +689,7 @@ export function AttendancePage() {
                       <Fingerprint className="h-10 w-10" />
                     )}
                     <span className="mt-3 text-lg font-extrabold">
-                      {isTodayCompleted ? "Da tan lam" : isClockedIn ? "Tan lam" : "Clock In"}
+                      {isTodayCompleted ? "Đã tan làm" : isClockedIn ? "Tan làm" : "Vào ca"}
                     </span>
                   </button>
                 </div>
@@ -585,34 +701,34 @@ export function AttendancePage() {
                   </p>
                   <p className="mt-2 text-xs font-semibold text-coal/45">
                     {isClockedIn
-                      ? "Nhan tan lam de ket thuc ca."
+                      ? "Nhấn tan làm để kết thúc ca."
                       : isTodayCompleted
-                        ? "Hom nay da hoan thanh ca."
-                      : "Can bat dinh vi de cham cong."}
+                        ? "Hôm nay đã hoàn thành ca."
+                      : "Cần bật định vị để chấm công."}
                   </p>
                 </div>
 
                 <div className="mt-6 grid grid-cols-4 gap-1 rounded-2xl bg-white p-3 shadow-sm">
                   <div className="min-w-0 px-1">
-                    <p className="truncate text-xs font-semibold text-coal/45">Clock In</p>
+                    <p className="truncate text-xs font-semibold text-coal/45">Vào ca</p>
                     <p className="mt-2 truncate text-sm font-extrabold text-coal">
                       {formatTime(openRecord?.clock_in_at)}
                     </p>
                   </div>
                   <div className="min-w-0 px-1">
-                    <p className="truncate text-xs font-semibold text-coal/45">Clock Out</p>
+                    <p className="truncate text-xs font-semibold text-coal/45">Tan làm</p>
                     <p className="mt-2 truncate text-sm font-extrabold text-coal">
                       {formatTime(openRecord?.clock_out_at)}
                     </p>
                   </div>
                   <div className="min-w-0 px-1">
-                    <p className="truncate text-xs font-semibold text-coal/45">Work Hours</p>
+                    <p className="truncate text-xs font-semibold text-coal/45">Thời gian</p>
                     <p className="mt-2 truncate text-sm font-extrabold text-coal">
                       {openRecord ? formatRecordDuration(openRecord, now) : "--"}
                     </p>
                   </div>
                   <div className="min-w-0 px-1">
-                    <p className="truncate text-xs font-semibold text-coal/45">Vi tri</p>
+                    <p className="truncate text-xs font-semibold text-coal/45">Vị trí</p>
                     <p className="mt-2 truncate text-sm font-extrabold text-coal">
                       {formatLocation(clockInLocation)}
                     </p>
@@ -626,7 +742,7 @@ export function AttendancePage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-extrabold text-coal">
-                        {isClockedIn ? "Da luu dinh vi vao ca" : "Ca da hoan thanh"}
+                        {isClockedIn ? "Đã lưu vị trí vào ca" : "Ca đã hoàn thành"}
                       </p>
                       {clockInLocation ? (
                         <a
@@ -636,7 +752,7 @@ export function AttendancePage() {
                           target="_blank"
                         >
                           <MapPin className="h-3.5 w-3.5" />
-                          Mo vi tri
+                          Mở vị trí
                         </a>
                       ) : null}
                     </div>
@@ -651,13 +767,13 @@ export function AttendancePage() {
           <section className="mx-auto max-w-4xl rounded-[2rem] bg-white p-4 shadow-soft ring-1 ring-coal/5 sm:p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-xl font-extrabold text-coal">Attendance Log</h3>
+                <h3 className="text-xl font-extrabold text-coal">Lịch sử chấm công</h3>
                 <p className="mt-1 text-xs font-bold text-coal/45">
                   {historySummary.totalShifts} ca - {historySummary.totalDuration}
                 </p>
               </div>
               <label className="relative">
-                <span className="sr-only">Chon thang</span>
+                <span className="sr-only">Chọn tháng</span>
                 <input
                   className="w-36 rounded-full border border-coal/20 bg-white px-3 py-2 text-xs font-extrabold text-coal outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
                   onChange={(event) => setMonthKey(event.target.value || getVietnamMonthKey())}
@@ -671,13 +787,13 @@ export function AttendancePage() {
             </div>
 
             {historyLoading ? (
-              <Spinner label="Dang tai lich su..." />
+              <Spinner label="Đang tải lịch sử..." />
             ) : historyRecords.length === 0 ? (
               <div className="mt-5">
                 <EmptyState
-                  description="Thang nay chua co ca cham cong nao."
+                  description="Tháng này chưa có ca chấm công nào."
                   icon={CalendarDays}
-                  title="Chua co du lieu"
+                  title="Chưa có dữ liệu"
                 />
               </div>
             ) : (
@@ -685,11 +801,11 @@ export function AttendancePage() {
                 <div
                   className={`grid ${historyGridColumns} bg-zinc-500 px-3 py-3 text-xs font-extrabold text-white sm:px-5`}
                 >
-                  <span>Date</span>
-                  <span>Clock In</span>
-                  <span>Clock Out</span>
-                  <span>Work Hours</span>
-                  {canManageHistory ? <span className="text-right">Sua/Xoa</span> : null}
+                  <span>Ngày</span>
+                  <span>Vào ca</span>
+                  <span>Tan làm</span>
+                  <span>Thời gian</span>
+                  {canManageHistory ? <span className="text-right">Sửa/Xóa</span> : null}
                 </div>
                 {historyRecords.map((record) => {
                   const location = getClockInLocation(record);
@@ -720,7 +836,7 @@ export function AttendancePage() {
                         <span className="flex justify-end gap-1">
                           {canUpdateHistory ? (
                             <button
-                              aria-label="Sua ca cham cong"
+                              aria-label="Sửa ca chấm công"
                               className="flex h-8 w-8 items-center justify-center rounded-xl bg-coal/5 text-white transition hover:bg-coal hover:text-white"
                               onClick={() => openEditModal(record)}
                               type="button"
@@ -730,7 +846,7 @@ export function AttendancePage() {
                           ) : null}
                           {canDeleteHistory ? (
                             <button
-                              aria-label="Xoa ca cham cong"
+                              aria-label="Xóa ca chấm công"
                               className="flex h-8 w-8 items-center justify-center rounded-xl bg-red-50 text-red-700 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                               disabled={deletingId === record.id}
                               onClick={() => void handleDeleteRecord(record)}
@@ -752,7 +868,146 @@ export function AttendancePage() {
             )}
           </section>
         ) : null}
-      </div>
+      <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button
+              disabled={exporting}
+              onClick={() => setExportModalOpen(false)}
+              variant="secondary"
+            >
+              Hủy
+            </Button>
+            <Button
+              disabled={selectedExportEmployeeIds.size === 0 || exportLoading}
+              isLoading={exporting}
+              onClick={() => void handleExportAttendance()}
+            >
+              <Download className="h-4 w-4" />
+              Xuất dữ liệu
+            </Button>
+          </div>
+        }
+        onClose={() => {
+          if (!exporting) {
+            setExportModalOpen(false);
+          }
+        }}
+        open={exportModalOpen}
+        size="lg"
+        title="Xuất dữ liệu chấm công"
+      >
+        <div className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-extrabold text-coal">Tháng cần xuất</span>
+              <input
+                className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-coal outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
+                onChange={(event) =>
+                  setExportMonthKey(event.target.value || getVietnamMonthKey())
+                }
+                type="month"
+                value={exportMonthKey}
+              />
+            </label>
+            <div>
+              <p className="mb-2 text-sm font-extrabold text-coal">Định dạng file</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  className={`flex h-12 items-center justify-center gap-2 rounded-xl border text-sm font-extrabold transition ${
+                    exportFormat === "excel"
+                      ? "border-moss-600 bg-moss-50 text-moss-800 ring-2 ring-moss-100"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                  onClick={() => setExportFormat("excel")}
+                  type="button"
+                >
+                  <FileSpreadsheet className="h-5 w-5" />
+                  Excel (.xls)
+                </button>
+                <button
+                  className={`flex h-12 items-center justify-center gap-2 rounded-xl border text-sm font-extrabold transition ${
+                    exportFormat === "image"
+                      ? "border-moss-600 bg-moss-50 text-moss-800 ring-2 ring-moss-100"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                  onClick={() => setExportFormat("image")}
+                  type="button"
+                >
+                  <FileImage className="h-5 w-5" />
+                  Ảnh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <section className="overflow-hidden rounded-2xl border border-slate-200">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <div>
+                <h3 className="flex items-center gap-2 font-extrabold text-slate-950">
+                  <UsersRound className="h-4 w-4" />
+                  Chọn nhân viên
+                </h3>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  {selectedExportEmployeeIds.size}/{exportEmployees.length} người được chọn
+                </p>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-extrabold text-slate-700">
+                <input
+                  checked={allExportEmployeesSelected}
+                  className="h-4 w-4 rounded border-slate-300 accent-moss-700"
+                  disabled={exportLoading || exportEmployees.length === 0}
+                  onChange={toggleAllExportEmployees}
+                  type="checkbox"
+                />
+                Tất cả
+              </label>
+            </div>
+
+            {exportLoading ? (
+              <Spinner label="Đang tải nhân viên..." />
+            ) : exportEmployees.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm font-semibold text-slate-500">
+                Không có nhân viên để xuất.
+              </p>
+            ) : (
+              <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto overscroll-contain">
+                {exportEmployees.map((employee) => (
+                  <label
+                    className="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-slate-50"
+                    key={employee.id}
+                  >
+                    <input
+                      checked={selectedExportEmployeeIds.has(employee.id)}
+                      className="h-4 w-4 flex-none rounded border-slate-300 accent-moss-700"
+                      onChange={() => toggleExportEmployee(employee.id)}
+                      type="checkbox"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">
+                      {employee.name}
+                    </span>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
+                        employee.isActive
+                          ? "bg-moss-100 text-moss-700"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {employee.isActive ? "Đang hoạt động" : "Đã khóa"}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {exportError ? (
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+              {exportError}
+            </div>
+          ) : null}
+        </div>
+      </Modal>
 
       <Modal
         footer={
@@ -763,11 +1018,11 @@ export function AttendancePage() {
               type="button"
               variant="secondary"
             >
-              Huy
+              Hủy
             </Button>
             <Button isLoading={submitting} onClick={() => void handleSaveEdit()} type="button">
               <Save className="h-4 w-4" />
-              Luu
+              Lưu
             </Button>
           </div>
         }
@@ -778,11 +1033,11 @@ export function AttendancePage() {
         }}
         open={Boolean(editingRecord)}
         size="sm"
-        title="Sua lich su cham cong"
+        title="Sửa lịch sử chấm công"
       >
         <div className="space-y-4">
           <label className="block">
-            <span className="mb-2 block text-sm font-extrabold text-coal">Gio cham cong</span>
+            <span className="mb-2 block text-sm font-extrabold text-coal">Giờ chấm công</span>
             <input
               className="w-full rounded-2xl border border-coal/10 bg-white px-4 py-3 text-sm font-bold text-coal outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
               onChange={(event) =>
@@ -793,7 +1048,7 @@ export function AttendancePage() {
             />
           </label>
           <label className="block">
-            <span className="mb-2 block text-sm font-extrabold text-coal">Gio tan lam</span>
+            <span className="mb-2 block text-sm font-extrabold text-coal">Giờ tan làm</span>
             <input
               className="w-full rounded-2xl border border-coal/10 bg-white px-4 py-3 text-sm font-bold text-coal outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
               onChange={(event) =>
@@ -820,11 +1075,11 @@ export function AttendancePage() {
               type="button"
               variant="secondary"
             >
-              Huy
+              Hủy
             </Button>
             <Button isLoading={submitting} onClick={() => void handleConfirmClockOut()} type="button">
               <CheckCircle2 className="h-4 w-4" />
-              Xac nhan tan lam
+              Xác nhận tan làm
             </Button>
           </div>
         }
@@ -835,25 +1090,25 @@ export function AttendancePage() {
         }}
         open={confirmClockOutOpen}
         size="sm"
-        title="Xac nhan tan lam"
+        title="Xác nhận tan làm"
       >
         <div className="space-y-4">
           <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-            Ban co chac muon ket thuc ca lam hien tai?
+            Bạn có chắc muốn kết thúc ca làm hiện tại?
           </div>
           <dl className="grid gap-3 text-sm">
             <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <dt className="font-bold text-coal/45">Cham cong</dt>
+              <dt className="font-bold text-coal/45">Chấm công</dt>
               <dd className="mt-1 font-extrabold text-coal">
                 {formatDateTime(openRecord?.clock_in_at)}
               </dd>
             </div>
             <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <dt className="font-bold text-coal/45">Thoi gian hien tai</dt>
+              <dt className="font-bold text-coal/45">Thời gian hiện tại</dt>
               <dd className="mt-1 font-extrabold text-coal">{formatDateTime(now.toISOString())}</dd>
             </div>
             <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <dt className="font-bold text-coal/45">Tong gio tam tinh</dt>
+              <dt className="font-bold text-coal/45">Tổng giờ tạm tính</dt>
               <dd className="mt-1 font-extrabold text-coal">
                 {openRecord ? formatRecordDuration(openRecord, now) : "--"}
               </dd>
@@ -861,6 +1116,6 @@ export function AttendancePage() {
           </dl>
         </div>
       </Modal>
-    </div>
+    </PageContainer>
   );
 }

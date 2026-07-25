@@ -4,16 +4,14 @@ import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
+import { PageContainer, StateNotice } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import { uploadPaymentQr } from "../lib/cloudinary";
+import { getErrorMessage } from "../lib/errors";
+import { normalizeNullableText } from "../lib/text";
 import { fetchPaymentSettings, savePaymentSettings } from "../services/paymentSettings";
-
-function normalizeText(value: string) {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
 
 export function PaymentSettingsPage() {
   const { canAccess } = useAuth();
@@ -37,8 +35,8 @@ export function PaymentSettingsPage() {
     } catch (requestError) {
       setErrorNotice({
         message:
-          requestError instanceof Error ? requestError.message : "Khong tai duoc cau hinh.",
-        title: "Khong tai duoc cau hinh",
+          getErrorMessage(requestError, "Không tải được cấu hình."),
+        title: "Không tải được cấu hình",
       });
     } finally {
       setLoading(false);
@@ -79,9 +77,9 @@ export function PaymentSettingsPage() {
     setSuccess("");
 
     try {
-      const nextQrUrl = qrFile ? await uploadPaymentQr(qrFile) : normalizeText(qrUrl);
+      const nextQrUrl = qrFile ? await uploadPaymentQr(qrFile) : normalizeNullableText(qrUrl);
       const settings = await savePaymentSettings({
-        transfer_note: normalizeText(note),
+        transfer_note: normalizeNullableText(note),
         transfer_qr_url: nextQrUrl,
       });
 
@@ -89,12 +87,12 @@ export function PaymentSettingsPage() {
       setQrUrl(settings.transfer_qr_url ?? "");
       setQrPreview(settings.transfer_qr_url ?? "");
       setNote(settings.transfer_note ?? "");
-      setSuccess("Da luu cau hinh thanh toan.");
+      setSuccess("Đã lưu cấu hình thanh toán.");
     } catch (requestError) {
       setErrorNotice({
         message:
-          requestError instanceof Error ? requestError.message : "Luu cau hinh that bai.",
-        title: "Luu cau hinh that bai",
+          getErrorMessage(requestError, "Lưu cấu hình thất bại."),
+        title: "Lưu cấu hình thất bại",
       });
     } finally {
       setSaving(false);
@@ -102,19 +100,16 @@ export function PaymentSettingsPage() {
   }
 
   return (
-    <div className="px-4 pb-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
+    <PageContainer maxWidth="5xl">
         <ConfigNotice />
 
         {success ? (
-          <div className="rounded-2xl border border-moss-200 bg-moss-50 px-5 py-4 text-sm font-bold text-moss-700 shadow-sm">
-            {success}
-          </div>
+          <StateNotice message={success} tone="success" />
         ) : null}
 
         {loading ? (
           <div className="rounded-3xl bg-white p-8 shadow-soft">
-            <Spinner label="Dang tai cau hinh thanh toan..." />
+            <Spinner label="Đang tải cấu hình thanh toán..." />
           </div>
         ) : (
           <form
@@ -129,21 +124,21 @@ export function PaymentSettingsPage() {
               >
                 {qrPreview ? (
                   <img
-                    alt="Ma nhan tien"
+                    alt="Mã nhận tiền"
                     className="aspect-square w-full rounded-xl bg-white object-contain"
                     src={qrPreview}
                   />
                 ) : (
                   <div className="flex aspect-square w-full flex-col items-center justify-center rounded-xl bg-white text-slate-400">
                     <QrCode className="h-20 w-20" />
-                    <span className="mt-3 px-4 text-sm font-bold">Chua co ma nhan tien</span>
+                    <span className="mt-3 px-4 text-sm font-bold">Chưa có mã nhận tiền</span>
                   </div>
                 )}
                 {canUpdateSettings ? (
                   <>
                     <span className="mt-4 inline-flex items-center gap-2 rounded-xl bg-coal px-4 py-2 text-sm font-extrabold text-white">
                       <ImagePlus className="h-4 w-4" />
-                      Chon anh QR
+                      Chọn ảnh QR
                     </span>
                     <input
                       accept="image/*"
@@ -158,7 +153,7 @@ export function PaymentSettingsPage() {
 
             <div className="space-y-5">
               <Input
-                label="Link anh QR"
+                label="Link ảnh QR"
                 onChange={(event) => {
                   setQrUrl(event.target.value);
                   if (!qrFile) {
@@ -170,9 +165,9 @@ export function PaymentSettingsPage() {
                 value={qrUrl}
               />
               <Textarea
-                label="Thong tin hien kem ma"
+                label="Thông tin hiển thị kèm mã"
                 onChange={(event) => setNote(event.target.value)}
-                placeholder="Vi du: STK, ten chu tai khoan, noi dung chuyen khoan..."
+                placeholder="Ví dụ: số tài khoản, tên chủ tài khoản, nội dung chuyển khoản..."
                 readOnly={!canUpdateSettings}
                 value={note}
               />
@@ -180,15 +175,14 @@ export function PaymentSettingsPage() {
                 <div className="flex justify-end">
                   <Button className="min-w-36" isLoading={saving} type="submit">
                     <Save className="h-4 w-4" />
-                    Luu cau hinh
+                    Lưu cấu hình
                   </Button>
                 </div>
               ) : null}
             </div>
           </form>
         )}
-      </div>
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
-    </div>
+    </PageContainer>
   );
 }

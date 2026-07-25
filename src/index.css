@@ -6,22 +6,22 @@
 
 :root {
   color: #25201c;
-  background: #fff;
+  background: #f7f8f5;
   --font-be: "Be Vietnam Pro", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
 }
 
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 body,
 html {
-  
+  margin: 0;
   min-height: 100vh;
   font-family: var(--font-be);
-  background: #ffffff;
+  background: #f7f8f5;
 }
 
 button,
@@ -29,4 +29,36 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid #697a4d;
+  outline-offset: 2px;
+}
+
+::selection {
+  background: #d3dfbf;
+  color: #25201c;
+}
+
+@layer utilities {
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }

@@ -4,8 +4,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ["Space Grotesk", "ui-sans-serif", "system-ui"],
-        body: ["Plus Jakarta Sans", "ui-sans-serif", "system-ui"],
+        display: ["Be Vietnam Pro", "ui-sans-serif", "system-ui"],
+        body: ["Be Vietnam Pro", "ui-sans-serif", "system-ui"],
       },
       colors: {
         ink: "#15110f",
@@ -27,8 +27,8 @@ export default {
         coal: "#25201c",
       },
       boxShadow: {
-        soft: "0 20px 60px rgba(37, 32, 28, 0.10)",
-        lift: "0 12px 30px rgba(37, 32, 28, 0.14)",
+        soft: "0 12px 32px rgba(37, 32, 28, 0.08)",
+        lift: "0 14px 30px rgba(37, 32, 28, 0.14)",
       },
     },
   },

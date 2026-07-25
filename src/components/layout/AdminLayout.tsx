@@ -1,28 +1,15 @@
-import { LogOut, Menu, PanelLeftClose, Search } from "lucide-react";
+import { LogOut, Menu, PanelLeftClose, UserRound } from "lucide-react";
 import { useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { appPermissions } from "../../lib/permissions";
 import { Button } from "../ui/Button";
 
-const pageTitles: Record<string, { title: string }> = {
-  "/attendance": { title: "Chấm công" },
-  "/cloudinary-images": { title: "Media" },
-  "/customers": { title: "Khách hàng" },
-  "/inventory": { title: "Quản lý tồn kho" },
-  "/orders": { title: "Danh sách hóa đơn" },
-  "/payment-settings": { title: "Cấu hình" },
-  "/pos": { title: "POS" },
-  "/products": { title: "Sản phẩm" },
-  "/roles": { title: "Quản lý role" },
-  "/users": { title: "Quản lý nhân viên" },
-};
-
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { canAccess, profile, signOut, user } = useAuth();
+  const { canAccess, profile, role, signOut, user } = useAuth();
   const location = useLocation();
-  const page = pageTitles[location.pathname] ?? pageTitles["/pos"];
+  const page = appPermissions.find((item) => item.path === location.pathname) ?? appPermissions[0];
   const displayName = profile?.full_name || user?.email || "Admin";
   const isPosRoute = location.pathname === "/pos";
   const visibleNavigation = appPermissions.filter((item) => canAccess(item.key));
@@ -37,7 +24,7 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-coal">
+    <div className="min-h-screen bg-[#f7f8f5] text-coal">
       <aside
         className={`fixed inset-y-0 left-0 z-[90] flex h-dvh w-72 flex-col overflow-hidden border-r border-slate-200 bg-white p-5 text-coal shadow-[12px_0_35px_rgba(15,23,42,0.06)] transition-transform lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -46,7 +33,7 @@ export function AdminLayout() {
         <div className="mb-6 flex shrink-0 items-center justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.01em] text-moss-700">
-              Sữa tả - Yến Sào
+              Sữa tươi · Yến sào
             </p>
             <h1 className="font-display text-3xl font-bold">BABYBOO</h1>
           </div>
@@ -79,10 +66,21 @@ export function AdminLayout() {
           ))}
         </nav>
 
-        <Button className="mt-4 shrink-0 w-full hover:text-coal" onClick={signOut} variant="secondary">
-            <LogOut className="h-4 w-4" />
-            Đăng xuất
+        <div className="mt-4 shrink-0 border-t border-slate-200 pt-4">
+          <div className="mb-3 flex items-center gap-3 px-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-moss-100 text-moss-700">
+              <UserRound className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-coal">{displayName}</p>
+              <p className="truncate text-xs text-coal/50">{role?.name ?? "Quản trị"}</p>
+            </div>
+          </div>
+          <Button className="w-full" onClick={signOut} variant="secondary">
+              <LogOut className="h-4 w-4" />
+              Đăng xuất
           </Button>
+        </div>
       </aside>
 
       {sidebarOpen ? (
@@ -99,19 +97,19 @@ export function AdminLayout() {
           <>
             <button
               aria-label="Mở menu"
-              className="fixed left-3 top-2 z-50 flex h-12 w-12 items-center justify-center rounded-xl bg-white text-coal shadow-soft ring-1 ring-slate-200 lg:hidden"
+              className="fixed left-2 top-1.5 z-50 flex h-10 w-10 items-center justify-center rounded-lg bg-white text-coal shadow-soft ring-1 ring-slate-200 lg:hidden"
               onClick={() => setSidebarOpen(true)}
               type="button"
             >
               <Menu className="h-5 w-5" />
             </button>
-            <main className="min-h-screen bg-white text-coal">
+            <main className="min-h-screen bg-[#f7f8f5] text-coal">
               <Outlet />
             </main>
           </>
         ) : (
           <>
-            <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
+            <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
               <div className="flex items-center gap-4">
                 <button
                   className="rounded-xl bg-white p-3 text-coal shadow-soft ring-1 ring-slate-200 lg:hidden"
@@ -121,12 +119,15 @@ export function AdminLayout() {
                   <Menu className="h-6 w-6" />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <h2 className="font-display text-2xl font-bold sm:text-3xl">{page.title}</h2>
+                  <h2 className="font-display text-xl font-bold sm:text-2xl">{page.label}</h2>
+                  <p className="mt-0.5 hidden truncate text-sm text-coal/55 sm:block">
+                    {page.description}
+                  </p>
                 </div>
               </div>
             </header>
 
-            <main className="bg-white pt-6 sm:pt-4">
+            <main className="pt-5 sm:pt-6">
               <Outlet />
             </main>
           </>

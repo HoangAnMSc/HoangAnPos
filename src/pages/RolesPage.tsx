@@ -6,8 +6,10 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { getErrorMessage } from "../lib/errors";
 import {
   allRolePermissionKeys,
   getPermissionGroupKeys,
@@ -46,10 +48,6 @@ function roleToForm(role?: AppRole | null): RoleFormState {
     name: role.name,
     permissions: role.code === "admin" ? [...allRolePermissionKeys] : normalizeRolePermissions(role.permissions),
   };
-}
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
 }
 
 const permissionLabels = permissionGroups.flatMap((group) => [
@@ -137,12 +135,12 @@ function RoleEditorModal({
     setError("");
 
     if (!form.name.trim() || !form.code.trim()) {
-      setError("Nhap ten role va ma role.");
+      setError("Nhập tên và mã vai trò.");
       return;
     }
 
     if (form.permissions.length === 0) {
-      setError("Chon it nhat mot quyen.");
+      setError("Chọn ít nhất một quyền.");
       return;
     }
 
@@ -152,7 +150,7 @@ function RoleEditorModal({
         permissions: permissionLocked ? [...allRolePermissionKeys] : normalizeRolePermissions(form.permissions),
       });
     } catch (requestError) {
-      setError(getErrorMessage(requestError, "Luu role that bai."));
+      setError(getErrorMessage(requestError, "Lưu vai trò thất bại."));
     }
   }
 
@@ -164,22 +162,22 @@ function RoleEditorModal({
             {role && canToggleActive && role.code !== "admin" ? (
               <Button onClick={() => void onToggle(role)} type="button" variant="secondary">
                 <Power className="h-4 w-4" />
-                {role.is_active ? "Vo hieu hoa" : "Kich hoat"}
+                {role.is_active ? "Vô hiệu hóa" : "Kích hoạt"}
               </Button>
             ) : null}
             {role && canDeleteRole ? (
               <Button onClick={() => void onDelete(role)} type="button" variant="danger">
                 <Trash2 className="h-4 w-4" />
-                Xoa
+                Xóa
               </Button>
             ) : null}
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button onClick={onClose} type="button" variant="secondary">
-              Huy
+              Hủy
             </Button>
             <Button form={formId} isLoading={submitting} type="submit">
-              Luu role
+              Lưu vai trò
             </Button>
           </div>
         </div>
@@ -187,26 +185,26 @@ function RoleEditorModal({
       onClose={onClose}
       open={open}
       size="xl"
-      title={role ? "Sua role" : "Tao role"}
+      title={role ? "Sửa vai trò" : "Tạo vai trò"}
     >
       <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
             disabled={systemRole}
-            label="Ten role"
+            label="Tên vai trò"
             onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
             value={form.name}
           />
           <Input
             disabled={systemRole}
-            label="Ma role"
+            label="Mã vai trò"
             onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}
             value={form.code}
           />
         </div>
 
         <label className="block">
-          <span className="mb-2 block text-sm font-extrabold text-slate-950">Mo ta</span>
+          <span className="mb-2 block text-sm font-extrabold text-slate-950">Mô tả</span>
           <textarea
             className="min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
             onChange={(event) =>
@@ -219,9 +217,9 @@ function RoleEditorModal({
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-extrabold text-slate-950">Quyen theo tung trang</h3>
+              <h3 className="text-sm font-extrabold text-slate-950">Quyền theo từng trang</h3>
               <p className="mt-1 text-xs font-semibold text-slate-500">
-                Chon ten trang de hien tren sidebar, chon tung thao tac de hien nut chuc nang.
+                Chọn tên trang để hiển thị trên thanh điều hướng, sau đó chọn từng thao tác được phép.
               </p>
             </div>
             <Button
@@ -238,7 +236,7 @@ function RoleEditorModal({
               type="button"
               variant="secondary"
             >
-              {form.permissions.length === allRolePermissionKeys.length ? "Bo chon" : "Chon tat ca"}
+              {form.permissions.length === allRolePermissionKeys.length ? "Bỏ chọn" : "Chọn tất cả"}
             </Button>
           </div>
 
@@ -276,7 +274,7 @@ function RoleEditorModal({
                         type="button"
                         variant="secondary"
                       >
-                        {allSelected ? "Bo" : "Tat ca"}
+                        {allSelected ? "Bo" : "Tất cả"}
                       </Button>
                     ) : null}
                   </div>
@@ -321,7 +319,7 @@ function RoleEditorModal({
             }
             type="checkbox"
           />
-          Role dang hoat dong
+          Role đang hoạt động
         </label>
 
         {error ? (
@@ -356,8 +354,8 @@ export function RolesPage() {
       setRoles(await fetchRoles());
     } catch (requestError) {
       setErrorNotice({
-        message: getErrorMessage(requestError, "Khong tai duoc role."),
-        title: "Khong tai duoc role",
+        message: getErrorMessage(requestError, "Không tải được vai trò."),
+        title: "Không tải được vai trò",
       });
     } finally {
       setLoading(false);
@@ -421,8 +419,8 @@ export function RolesPage() {
       await loadRoles();
     } catch (requestError) {
       setErrorNotice({
-        message: getErrorMessage(requestError, "Doi trang thai role that bai."),
-        title: "Doi trang thai that bai",
+        message: getErrorMessage(requestError, "Đổi trạng thái vai trò thất bại."),
+        title: "Đổi trạng thái thất bại",
       });
     }
   }
@@ -432,7 +430,7 @@ export function RolesPage() {
       return;
     }
 
-    if (!window.confirm(`Xoa role "${role.name}"?`)) {
+    if (!window.confirm(`Xóa vai trò "${role.name}"?`)) {
       return;
     }
 
@@ -444,8 +442,8 @@ export function RolesPage() {
       await loadRoles();
     } catch (requestError) {
       setErrorNotice({
-        message: getErrorMessage(requestError, "Xoa role that bai."),
-        title: "Xoa role that bai",
+        message: getErrorMessage(requestError, "Xóa vai trò thất bại."),
+        title: "Xóa vai trò thất bại",
       });
     }
   }
@@ -458,25 +456,24 @@ export function RolesPage() {
   );
 
   return (
-    <div className="px-3 pb-8 sm:px-4 lg:px-6">
-      <div className="mx-auto max-w-7xl space-y-4">
+    <PageContainer>
         <section className="rounded-xl bg-white p-4 shadow-soft ring-1 ring-coal/5">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
-                Phan quyen
+                Phân quyền
               </p>
-              <h2 className="mt-1 font-display text-xl font-bold text-coal">Quan ly role</h2>
+              <h2 className="mt-1 font-display text-xl font-bold text-coal">Quản lý vai trò</h2>
               <div className="mt-2 flex flex-wrap gap-2">
-                <Badge tone="neutral">{roles.length} role</Badge>
-                <Badge tone="neutral">{filteredRoles.length} dang hien thi</Badge>
-                <Badge tone="green">{roles.filter((role) => role.is_active).length} hoat dong</Badge>
+                <Badge tone="neutral">{roles.length} vai trò</Badge>
+                <Badge tone="neutral">{filteredRoles.length} đang hiển thị</Badge>
+                <Badge tone="green">{roles.filter((role) => role.is_active).length} hoạt động</Badge>
               </div>
             </div>
             {canCreateRole ? (
               <Button className="h-10 rounded-xl px-3" onClick={openCreateModal}>
                 <Plus className="h-4 w-4" />
-                Tao role
+                Tạo vai trò
               </Button>
             ) : null}
           </div>
@@ -486,7 +483,7 @@ export function RolesPage() {
             <Input
               className="h-10 rounded-xl py-2 pl-11"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tim role, ma role, mo ta..."
+              placeholder="Tìm tên, mã vai trò hoặc mô tả..."
               value={query}
             />
           </div>
@@ -494,17 +491,17 @@ export function RolesPage() {
 
         {loading ? (
           <div className="rounded-xl bg-white p-6 shadow-soft">
-            <Spinner label="Dang tai role..." />
+            <Spinner label="Đang tải vai trò..." />
           </div>
         ) : filteredRoles.length === 0 ? (
-          <EmptyState description="Tao role dau tien de phan quyen sidebar." icon={ShieldCheck} title="Chua co role" />
+          <EmptyState description="Tạo vai trò đầu tiên để phân quyền truy cập." icon={ShieldCheck} title="Chưa có vai trò" />
         ) : (
           <div className="overflow-hidden rounded-xl bg-white shadow-soft ring-1 ring-coal/5">
             <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_auto] gap-3 border-b border-coal/5 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
-              <span>Role</span>
-              <span>Mo ta</span>
-              <span>Quyen</span>
-              <span className="text-right">Thao tac</span>
+              <span>Vai trò</span>
+              <span>Mô tả</span>
+              <span>Quyền</span>
+              <span className="text-right">Thao tác</span>
             </div>
             <div className="divide-y divide-coal/5">
               {filteredRoles.map((role) => {
@@ -523,16 +520,16 @@ export function RolesPage() {
                       <div className="mt-1 flex flex-wrap items-center gap-1.5 lg:mt-2 lg:gap-2">
                         <Badge tone="neutral">{role.code}</Badge>
                         <Badge tone={role.is_active ? "green" : "red"}>
-                          {role.is_active ? "Hoat dong" : "Vo hieu hoa"}
+                          {role.is_active ? "Hoạt động" : "Vô hiệu hóa"}
                         </Badge>
                       </div>
                       <p className="mt-1 text-xs font-semibold text-coal/45 lg:hidden">
-                        {role.permissions.length} quyen duoc gan
+                        {role.permissions.length} quyền được gán
                       </p>
                     </div>
 
                     <p className="hidden line-clamp-2 text-sm font-semibold leading-5 text-coal/55 lg:block">
-                      {role.description || "Chua co mo ta."}
+                      {role.description || "Chưa có mô tả."}
                     </p>
 
                     <div className="hidden min-w-0 lg:block">
@@ -543,11 +540,11 @@ export function RolesPage() {
                           </Badge>
                         ))}
                         {hiddenPermissionCount > 0 ? (
-                          <Badge tone="amber">+{hiddenPermissionCount} quyen</Badge>
+                          <Badge tone="amber">+{hiddenPermissionCount} quyền</Badge>
                         ) : null}
                       </div>
                       <p className="mt-1 text-xs font-semibold text-coal/40">
-                        {role.permissions.length} quyen duoc gan
+                        {role.permissions.length} quyền được gán
                       </p>
                     </div>
 
@@ -560,18 +557,16 @@ export function RolesPage() {
             </div>
           </div>
         )}
-      </div>
-
       <Modal
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button onClick={() => setViewingRole(null)} type="button" variant="secondary">
-              Dong
+              Đóng
             </Button>
             {viewingRole && canEditRole ? (
               <Button onClick={() => openEditModal(viewingRole)} type="button">
                 <Edit3 className="h-4 w-4" />
-                Sua
+                Sửa
               </Button>
             ) : null}
           </div>
@@ -579,7 +574,7 @@ export function RolesPage() {
         onClose={() => setViewingRole(null)}
         open={Boolean(viewingRole)}
         size="lg"
-        title="Xem role"
+        title="Thông tin vai trò"
       >
         {viewingRole ? (
           <div className="space-y-4">
@@ -587,17 +582,17 @@ export function RolesPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone="neutral">{viewingRole.code}</Badge>
                 <Badge tone={viewingRole.is_active ? "green" : "red"}>
-                  {viewingRole.is_active ? "Hoat dong" : "Vo hieu hoa"}
+                  {viewingRole.is_active ? "Hoạt động" : "Vô hiệu hóa"}
                 </Badge>
               </div>
               <h3 className="mt-3 text-xl font-extrabold text-slate-950">{viewingRole.name}</h3>
               <p className="mt-2 text-sm font-semibold text-slate-600">
-                {viewingRole.description || "Chua co mo ta."}
+                {viewingRole.description || "Chưa có mô tả."}
               </p>
             </div>
             <div>
               <p className="mb-2 text-sm font-extrabold text-slate-950">
-                {viewingRole.permissions.length} quyen
+                {viewingRole.permissions.length} quyền
               </p>
               <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-100 p-3">
                 <div className="flex flex-wrap gap-2">
@@ -625,6 +620,6 @@ export function RolesPage() {
         submitting={submitting}
       />
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
-    </div>
+    </PageContainer>
   );
 }

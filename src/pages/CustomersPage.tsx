@@ -12,14 +12,16 @@ import {
 } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
-import { Card } from "../components/ui/Card";
-import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
+import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
+import { getErrorMessage } from "../lib/errors";
+import { normalizeNullableText } from "../lib/text";
 import {
   createCustomer,
   deleteCustomer,
@@ -44,11 +46,6 @@ const emptyForm: CustomerFormState = {
   note: "",
   phone: "",
 };
-
-function normalizeText(value: string) {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
 
 function customerToForm(customer?: Customer | null): CustomerFormState {
   if (!customer) {
@@ -93,35 +90,35 @@ function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
 
     const name = form.name.trim();
     if (!name) {
-      setError("Ten khach hang la bat buoc.");
+      setError("Tên khách hàng là bắt buộc.");
       return;
     }
 
     try {
       await onSubmit({
-        address: normalizeText(form.address),
-        email: normalizeText(form.email),
+        address: normalizeNullableText(form.address),
+        email: normalizeNullableText(form.email),
         name,
-        note: normalizeText(form.note),
-        phone: normalizeText(form.phone),
+        note: normalizeNullableText(form.note),
+        phone: normalizeNullableText(form.phone),
       });
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Luu khach hang that bai.");
+      setError(getErrorMessage(requestError, "Lưu khách hàng thất bại."));
     }
   }
 
   return (
     <form className="space-y-4" id={formId} onSubmit={handleSubmit}>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Input
-          label="Ten khach hang"
+          label="Tên khách hàng"
           onChange={(event) => updateField("name", event.target.value)}
-          placeholder="Nguyen Hoang An"
+          placeholder="Nguyễn Hoàng An"
           required
           value={form.name}
         />
         <Input
-          label="So dien thoai"
+          label="Số điện thoại"
           onChange={(event) => updateField("phone", event.target.value)}
           placeholder="090..."
           value={form.phone}
@@ -134,16 +131,16 @@ function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
           value={form.email}
         />
         <Input
-          label="Dia chi"
+          label="Địa chỉ"
           onChange={(event) => updateField("address", event.target.value)}
-          placeholder="Quan/Huyen, Tinh/Thanh"
+          placeholder="Quận/Huyện, Tỉnh/Thành"
           value={form.address}
         />
       </div>
       <Textarea
-        label="Ghi chu"
+        label="Ghi chú"
         onChange={(event) => updateField("note", event.target.value)}
-        placeholder="So thich, lich su cham soc, luu y giao hang..."
+        placeholder="Sở thích, lịch sử chăm sóc, lưu ý giao hàng..."
         value={form.note}
       />
 
@@ -160,7 +157,7 @@ export function CustomersPage() {
   const { canAccess } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
-  const [error, setError] = useState("");
+  const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -172,14 +169,14 @@ export function CustomersPage() {
 
   async function loadCustomers() {
     setLoading(true);
-    setError("");
 
     try {
       setCustomers(await fetchCustomers());
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Khong tai duoc danh sach khach hang."
-      );
+      setErrorNotice({
+        message: getErrorMessage(requestError, "Không tải được danh sách khách hàng."),
+        title: "Không tải được khách hàng",
+      });
     } finally {
       setLoading(false);
     }
@@ -215,7 +212,6 @@ export function CustomersPage() {
     }
 
     setSubmitting(true);
-    setError("");
 
     try {
       if (editingCustomer) {
@@ -229,10 +225,7 @@ export function CustomersPage() {
       setViewingCustomer(null);
       await loadCustomers();
     } catch (requestError) {
-      const message =
-        requestError instanceof Error ? requestError.message : "Luu khach hang that bai.";
-      setError(message);
-      throw new Error(message);
+      throw new Error(getErrorMessage(requestError, "Lưu khách hàng thất bại."));
     } finally {
       setSubmitting(false);
     }
@@ -243,12 +236,10 @@ export function CustomersPage() {
       return;
     }
 
-    const confirmed = window.confirm(`Xoa khach hang "${customer.name}"?`);
+    const confirmed = window.confirm(`Xóa khách hàng "${customer.name}"?`);
     if (!confirmed) {
       return;
     }
-
-    setError("");
 
     try {
       await deleteCustomer(customer.id);
@@ -257,7 +248,10 @@ export function CustomersPage() {
       setEditingCustomer(null);
       setViewingCustomer(null);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Xoa khach hang that bai.");
+      setErrorNotice({
+        message: getErrorMessage(requestError, "Xóa khách hàng thất bại."),
+        title: "Xóa khách hàng thất bại",
+      });
     }
   }
 
@@ -273,161 +267,185 @@ export function CustomersPage() {
   const completeContactCount = customers.filter((customer) => customer.phone || customer.email).length;
 
   return (
-    <div className="space-y-4">
-      <ConfigNotice />
-
-      <Card className="overflow-hidden rounded-xl p-0">
-        <div className="border-b border-coal/10 p-3 sm:p-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
-                Ho so khach hang
-              </p>
-              <h2 className="mt-1 font-display text-xl font-bold text-coal">Khach hang</h2>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge tone="neutral">{customers.length} khach</Badge>
-                <Badge tone="neutral">{filteredCustomers.length} dang hien thi</Badge>
-                <Badge tone="green">{completeContactCount} co lien he</Badge>
-              </div>
+    <PageContainer>
+      <section className="rounded-xl bg-white p-4 shadow-soft ring-1 ring-coal/5">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
+              Khách hàng
+            </p>
+            <h2 className="mt-1 font-display text-xl font-bold text-coal">
+              Quản lý khách hàng
+            </h2>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Badge tone="neutral">{customers.length} khách hàng</Badge>
+              <Badge tone="neutral">{filteredCustomers.length} đang hiển thị</Badge>
+              <Badge tone="green">{completeContactCount} có liên hệ</Badge>
             </div>
-            {canCreateCustomer ? (
-              <Button className="h-10 w-full rounded-xl px-3 sm:w-auto" onClick={openCreateModal}>
-                <UserPlus className="h-4 w-4" />
-                Them khach hang
-              </Button>
-            ) : null}
           </div>
-
-          <div className="relative mt-3 w-full xl:max-w-xl">
-            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
-            <Input
-              className="h-10 rounded-xl py-2 pl-11"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tim theo ten, SDT, email, dia chi..."
-              value={query}
-            />
-          </div>
+          {canCreateCustomer ? (
+            <Button className="h-10 rounded-xl px-3" onClick={openCreateModal}>
+              <UserPlus className="h-4 w-4" />
+              Thêm khách hàng
+            </Button>
+          ) : null}
         </div>
 
-        {error && !modalOpen ? (
-          <div className="m-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 sm:m-4">
-            {error}
-          </div>
-        ) : null}
+        <div className="relative mt-3 w-full xl:max-w-xl">
+          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
+          <Input
+            className="h-10 rounded-xl py-2 pl-11"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Tìm tên, số điện thoại, email hoặc địa chỉ..."
+            value={query}
+          />
+        </div>
+      </section>
 
-        {loading ? (
-          <div className="p-6">
-            <Spinner />
+      {loading ? (
+        <div className="rounded-xl bg-white p-6 shadow-soft">
+          <Spinner label="Đang tải khách hàng..." />
+        </div>
+      ) : filteredCustomers.length === 0 ? (
+        <EmptyState
+          description={
+            query.trim()
+              ? "Không có khách hàng phù hợp với nội dung tìm kiếm."
+              : "Thêm khách hàng đầu tiên để gắn vào hóa đơn và chăm sóc về sau."
+          }
+          icon={UsersRound}
+          title={query.trim() ? "Không tìm thấy khách hàng" : "Chưa có khách hàng"}
+        />
+      ) : (
+        <div className="overflow-hidden rounded-xl bg-white shadow-soft ring-1 ring-coal/5">
+          <div className="hidden grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.3fr)_auto] gap-3 border-b border-coal/5 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
+            <span>Khách hàng</span>
+            <span>Liên hệ</span>
+            <span>Thông tin thêm</span>
+            <span className="text-right">Thao tác</span>
           </div>
-        ) : filteredCustomers.length === 0 ? (
-          <div className="p-5">
-            <EmptyState
-              description="Luu thong tin khach de gan vao hoa don POS va cham soc ve sau."
-              icon={UsersRound}
-              title="Chua co khach hang phu hop"
-            />
+          <div className="divide-y divide-coal/5">
+            {filteredCustomers.map((customer) => (
+              <button
+                className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3 text-left transition hover:bg-cream/30 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.3fr)_auto] lg:gap-3"
+                key={customer.id}
+                onClick={() => setViewingCustomer(customer)}
+                type="button"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-moss/12 text-sm font-extrabold text-moss">
+                    {getCustomerInitial(customer.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-base font-extrabold text-coal">
+                      {customer.name}
+                    </h3>
+                    <p className="mt-1 truncate text-xs font-semibold text-coal/45 lg:hidden">
+                      {customer.phone || customer.email || "Chưa có liên hệ"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="hidden gap-1.5 text-sm lg:grid">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Phone className="h-4 w-4 shrink-0 text-clay" />
+                    <span className="truncate font-semibold text-coal">
+                      {customer.phone || "Chưa có số điện thoại"}
+                    </span>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2 text-coal/60">
+                    <Mail className="h-4 w-4 shrink-0 text-clay" />
+                    <span className="truncate">{customer.email || "Chưa có email"}</span>
+                  </div>
+                </div>
+
+                <div className="hidden gap-1.5 text-sm text-coal/65 lg:grid">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <MapPin className="h-4 w-4 shrink-0 text-clay" />
+                    <span className="truncate">{customer.address || "Chưa có địa chỉ"}</span>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <StickyNote className="h-4 w-4 shrink-0 text-clay" />
+                    <span className="truncate">{customer.note || "Chưa có ghi chú"}</span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Badge tone="neutral">Xem</Badge>
+                </div>
+              </button>
+            ))}
           </div>
-        ) : (
-          <div className="overflow-hidden">
-            <div className="hidden grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.3fr)_auto] gap-3 border-b border-coal/10 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
-              <span>Khach hang</span>
-              <span>Lien he</span>
-              <span>Thong tin them</span>
-              <span className="text-right">Thao tac</span>
-            </div>
-            <div className="divide-y divide-coal/10 bg-white/70">
-              {filteredCustomers.map((customer) => (
-                <button
-                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-3 text-left transition hover:bg-cream/35 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.3fr)_auto] lg:gap-3 lg:px-4"
-                  key={customer.id}
-                  onClick={() => setViewingCustomer(customer)}
-                  type="button"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-moss/12 text-sm font-extrabold text-moss">
-                      {getCustomerInitial(customer.name)}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-display text-base font-bold">{customer.name}</p>
-                      <p className="mt-1 truncate text-xs font-semibold text-coal/45 lg:hidden">
-                        {customer.phone || customer.email || "Chua co lien he"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="hidden gap-1.5 text-sm lg:grid">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Phone className="h-4 w-4 shrink-0 text-clay" />
-                      <span className="truncate font-semibold text-coal">
-                        {customer.phone || "Chua co SDT"}
-                      </span>
-                    </div>
-                    <div className="flex min-w-0 items-center gap-2 text-coal/60">
-                      <Mail className="h-4 w-4 shrink-0 text-clay" />
-                      <span className="truncate">{customer.email || "Chua co email"}</span>
-                    </div>
-                  </div>
-
-                  <div className="hidden gap-1.5 text-sm text-coal/65 lg:grid">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <MapPin className="h-4 w-4 shrink-0 text-clay" />
-                      <span className="truncate">{customer.address || "Chua co dia chi"}</span>
-                    </div>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <StickyNote className="h-4 w-4 shrink-0 text-clay" />
-                      <span className="truncate">{customer.note || "Chua co ghi chu"}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end">
-                    <Badge tone="neutral">Xem</Badge>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </Card>
+        </div>
+      )}
 
       <Modal
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button onClick={() => setViewingCustomer(null)} type="button" variant="secondary">
-              Dong
+              Đóng
             </Button>
             {viewingCustomer && canEditCustomer ? (
               <Button onClick={() => openEditModal(viewingCustomer)} type="button">
                 <Edit3 className="h-4 w-4" />
-                Sua
+                Sửa
               </Button>
             ) : null}
           </div>
         }
         onClose={() => setViewingCustomer(null)}
         open={Boolean(viewingCustomer)}
-        size="md"
-        title="Xem khach hang"
+        size="lg"
+        title="Thông tin khách hàng"
       >
         {viewingCustomer ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-moss/12 text-base font-extrabold text-moss">
+          <div className="space-y-4">
+            <div className="flex items-center gap-4 rounded-xl bg-slate-50 p-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-moss/12 text-lg font-extrabold text-moss">
                 {getCustomerInitial(viewingCustomer.name)}
               </div>
               <div className="min-w-0">
-                <h3 className="truncate text-lg font-extrabold text-slate-950">
+                <h3 className="truncate text-xl font-extrabold text-slate-950">
                   {viewingCustomer.name}
                 </h3>
-                <p className="mt-1 text-xs font-semibold text-slate-500">
-                  Tao {new Intl.DateTimeFormat("vi-VN").format(new Date(viewingCustomer.created_at))}
+                <p className="mt-1 text-sm font-semibold text-slate-500">
+                  Tạo ngày {new Intl.DateTimeFormat("vi-VN").format(new Date(viewingCustomer.created_at))}
                 </p>
               </div>
             </div>
-            <div className="grid gap-2 text-sm font-semibold text-slate-700">
-              <p><span className="text-slate-400">SDT:</span> {viewingCustomer.phone || "Chua co"}</p>
-              <p><span className="text-slate-400">Email:</span> {viewingCustomer.email || "Chua co"}</p>
-              <p><span className="text-slate-400">Dia chi:</span> {viewingCustomer.address || "Chua co"}</p>
-              <p className="whitespace-pre-line"><span className="text-slate-400">Ghi chu:</span> {viewingCustomer.note || "Chua co"}</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-100 p-3">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+                  Số điện thoại
+                </p>
+                <p className="mt-1 text-sm font-bold text-slate-700">
+                  {viewingCustomer.phone || "Chưa có"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-100 p-3">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+                  Email
+                </p>
+                <p className="mt-1 break-words text-sm font-bold text-slate-700">
+                  {viewingCustomer.email || "Chưa có"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-100 p-3 sm:col-span-2">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+                  Địa chỉ
+                </p>
+                <p className="mt-1 text-sm font-bold text-slate-700">
+                  {viewingCustomer.address || "Chưa có"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-100 p-3 sm:col-span-2">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+                  Ghi chú
+                </p>
+                <p className="mt-1 whitespace-pre-line text-sm font-bold text-slate-700">
+                  {viewingCustomer.note || "Chưa có"}
+                </p>
+              </div>
             </div>
           </div>
         ) : null}
@@ -444,16 +462,16 @@ export function CustomersPage() {
                   variant="danger"
                 >
                   <Trash2 className="h-4 w-4" />
-                  Xoa
+                  Xóa
                 </Button>
               ) : null}
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
               <Button onClick={() => setModalOpen(false)} type="button" variant="secondary">
-                Huy
+                Hủy
               </Button>
               <Button form={customerFormId} isLoading={submitting} type="submit">
-                {editingCustomer ? "Cap nhat" : "Them khach hang"}
+                {editingCustomer ? "Cập nhật" : "Thêm khách hàng"}
               </Button>
             </div>
           </div>
@@ -461,7 +479,7 @@ export function CustomersPage() {
         onClose={() => setModalOpen(false)}
         open={modalOpen}
         size="lg"
-        title={editingCustomer ? "Sua khach hang" : "Them khach hang"}
+        title={editingCustomer ? "Sửa khách hàng" : "Thêm khách hàng"}
       >
         <CustomerForm
           customer={editingCustomer}
@@ -469,6 +487,7 @@ export function CustomersPage() {
           onSubmit={handleSave}
         />
       </Modal>
-    </div>
+      <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
+    </PageContainer>
   );
 }

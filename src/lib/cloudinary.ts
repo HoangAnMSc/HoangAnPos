@@ -100,7 +100,7 @@ export async function deleteCloudinaryProductImage(
   const publicId = getCloudinaryPublicId(imageUrl);
 
   if (!publicId) {
-    throw new Error("Khong nhan dien duoc public_id cua anh Cloudinary.");
+    throw new Error("Không nhận diện được public_id của ảnh Cloudinary.");
   }
 
   if (options?.deleteToken && isDeleteTokenUsable(options.deleteTokenExpiresAt)) {
@@ -128,7 +128,7 @@ function isDeleteTokenUsable(expiresAt?: string | null) {
 
 async function deleteCloudinaryImageByToken(deleteToken: string) {
   if (!cloudName) {
-    throw new Error("Chua cau hinh CLOUDINARY_CLOUD_NAME.");
+    throw new Error("Chưa cấu hình CLOUDINARY_CLOUD_NAME.");
   }
 
   const formData = new FormData();
@@ -141,7 +141,7 @@ async function deleteCloudinaryImageByToken(deleteToken: string) {
   const data = (await response.json()) as CloudinaryDeleteResponse;
 
   if (!response.ok || data.result !== "ok") {
-    throw new Error(data.message || "Delete token Cloudinary khong con hieu luc.");
+    throw new Error(data.message || "Delete token của Cloudinary không còn hiệu lực.");
   }
 
   return { ok: true, result: data.result };
@@ -156,13 +156,13 @@ async function deleteCloudinaryImageViaAppApi(publicId: string) {
   const contentType = response.headers.get("content-type") ?? "";
 
   if (!contentType.includes("application/json")) {
-    throw new Error("API xoa anh tren app chua kha dung.");
+    throw new Error("API xóa ảnh của ứng dụng chưa khả dụng.");
   }
 
   const data = (await response.json()) as CloudinaryDeleteResponse;
 
   if (!response.ok || !data.ok) {
-    throw new Error(data.message || "Xoa anh Cloudinary that bai.");
+    throw new Error(data.message || "Xóa ảnh Cloudinary thất bại.");
   }
 
   return data;
@@ -175,7 +175,7 @@ export async function fetchCloudinaryImageResources() {
   const contentType = response.headers.get("content-type") ?? "";
 
   if (!contentType.includes("application/json")) {
-    throw new Error("API danh sach anh Cloudinary chua kha dung.");
+    throw new Error("API lấy danh sách ảnh Cloudinary chưa khả dụng.");
   }
 
   const data = (await response.json()) as {
@@ -185,7 +185,7 @@ export async function fetchCloudinaryImageResources() {
   };
 
   if (!response.ok || !data.ok) {
-    throw new Error(data.message || "Khong tai duoc anh tu Cloudinary.");
+    throw new Error(data.message || "Không tải được ảnh từ Cloudinary.");
   }
 
   return data.resources ?? [];
@@ -202,11 +202,11 @@ async function deleteCloudinaryImageViaSupabase(publicId: string) {
   );
 
   if (error) {
-    throw new Error(error.message || "Xoa anh Cloudinary that bai.");
+    throw new Error(error.message || "Xóa ảnh Cloudinary thất bại.");
   }
 
   if (!data?.ok) {
-    throw new Error(data?.message || "Cloudinary khong xac nhan da xoa anh.");
+    throw new Error(data?.message || "Cloudinary không xác nhận đã xóa ảnh.");
   }
 
   return data;
@@ -215,7 +215,7 @@ async function deleteCloudinaryImageViaSupabase(publicId: string) {
 async function uploadImage(file: File, folder: string): Promise<CloudinaryImageUpload> {
   if (!cloudName || !uploadPreset) {
     throw new Error(
-      "Chua cau hinh Cloudinary. Hay dien CLOUDINARY_CLOUD_NAME va CLOUDINARY_UPLOAD_PRESET trong file .env."
+      "Chưa cấu hình Cloudinary. Hãy điền CLOUDINARY_CLOUD_NAME và CLOUDINARY_UPLOAD_PRESET trong file .env."
     );
   }
 
@@ -231,13 +231,13 @@ async function uploadImage(file: File, folder: string): Promise<CloudinaryImageU
   });
 
   if (!response.ok) {
-    throw new Error("Tai anh len Cloudinary that bai. Vui long kiem tra upload preset.");
+    throw new Error("Tải ảnh lên Cloudinary thất bại. Vui lòng kiểm tra upload preset.");
   }
 
   const data = (await response.json()) as CloudinaryUploadResponse;
 
   if (!data.secure_url) {
-    throw new Error("Cloudinary khong tra ve duong dan anh hop le.");
+    throw new Error("Cloudinary không trả về đường dẫn ảnh hợp lệ.");
   }
 
   return {

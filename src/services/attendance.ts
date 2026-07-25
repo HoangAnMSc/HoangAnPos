@@ -16,6 +16,12 @@ export type AttendanceUpdateInput = {
   clock_out_at: string | null;
 };
 
+export type AttendanceEmployee = {
+  id: string;
+  isActive: boolean;
+  name: string;
+};
+
 type SupabaseErrorLike = {
   code?: string;
   details?: string;
@@ -27,15 +33,15 @@ function createAttendanceError(error: SupabaseErrorLike) {
 
   if (
     error.code === "PGRST202" ||
-    message.includes("Could not find the function") ||
+    message.includes("Could not find thể function") ||
     message.includes("clock_in_attendance")
   ) {
     return new Error(
-      "Supabase chua co function cham cong moi. Hay chay lai supabase/schema.sql tren Supabase SQL Editor."
+      "Supabase chưa có hàm chấm công mới. Hãy chạy lại supabase/schema.sql trong Supabase SQL Editor."
     );
   }
 
-  return error instanceof Error ? error : new Error(error.message || "Yeu cau cham cong that bai.");
+  return error instanceof Error ? error : new Error(error.message || "Yeu cau chấm công thất bại.");
 }
 
 function getMonthRange(monthKey: string) {
@@ -111,6 +117,48 @@ export async function fetchAttendanceRecords(userId: string, monthKey: string) {
     .gte("work_date", range.start)
     .lt("work_date", range.end)
     .order("clock_in_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function fetchAttendanceEmployees(): Promise<AttendanceEmployee[]> {
+  requireSupabaseConfig();
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id,full_name,is_active")
+    .order("full_name", { ascending: true, nullsFirst: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((profile) => ({
+    id: profile.id,
+    isActive: profile.is_active,
+    name: profile.full_name?.trim() || `Nhân viên ${profile.id.slice(0, 8)}`,
+  }));
+}
+
+export async function fetchAttendanceRecordsForExport(monthKey: string, userIds: string[]) {
+  requireSupabaseConfig();
+
+  if (userIds.length === 0) {
+    return [];
+  }
+
+  const range = getMonthRange(monthKey);
+  const { data, error } = await supabase
+    .from("attendance_records")
+    .select("*")
+    .in("user_id", userIds)
+    .gte("work_date", range.start)
+    .lt("work_date", range.end)
+    .order("clock_in_at", { ascending: true });
 
   if (error) {
     throw error;

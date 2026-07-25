@@ -1,373 +1,41 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Barcode,
-  Boxes,
-  Download,
-  Edit3,
-  FileImage,
-  History,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { Barcode, Boxes, CheckCircle2, ClipboardCheck, Edit3, Trash2 } from "lucide-react";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
-import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
-import { Input } from "../components/ui/Input";
+import { ErrorNoticeModal } from "../components/ui/ErrorNoticeModal";
 import { Modal } from "../components/ui/Modal";
+import { PageContainer, PageToolbar, SearchInput, StateNotice } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useErrorNotice } from "../hooks/useErrorNotice";
+import {
+  hasInventoryCount,
+  type InventoryCountMap,
+  parseInventoryCount,
+} from "../lib/inventoryAudits";
 import {
   findProductByEan13,
-  formatProductDate,
   getProductEan13Value,
   isValidEan13,
   normalizeEan13Input,
 } from "../lib/productDisplay";
-import { fetchProducts } from "../services/products";
-import type { Product } from "../types";
-
-type CountMap = Record<string, string>;
-
-type InventoryRow = {
-  ean13: string;
-  counted: number;
-  diff: number;
-  product: Product;
-  status: "ok" | "short" | "over";
-};
-
-type InventoryStats = {
-  auditedCount: number;
-  countedTotal: number;
-  okCount: number;
-  overCount: number;
-  shortCount: number;
-  systemTotal: number;
-};
-
-type ReportHistoryItem = {
-  createdAt: string;
-  id: string;
-  image: string;
-  rows: Array<{
-    ean13: string;
-    counted: number;
-    diff: number;
-    name: string;
-    status: InventoryRow["status"];
-    stock: number;
-  }>;
-  staffName?: string;
-  stats: InventoryStats;
-};
-
-const reportHistoryStorageKey = "hoang-an-pos:inventory-report-history:v1";
-const maxReportHistoryItems = 12;
-
-function hasInventoryCount(value?: string) {
-  return value !== undefined && value.trim() !== "";
-}
-
-function parseInventoryCount(value?: string) {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
-}
-
-function getInventoryStatus(diff: number): InventoryRow["status"] {
-  if (diff < 0) {
-    return "short";
-  }
-
-  if (diff > 0) {
-    return "over";
-  }
-
-  return "ok";
-}
-
-function getStatusLabel(row: InventoryRow) {
-  if (row.status === "short") {
-    return `Thieu ${Math.abs(row.diff)}`;
-  }
-
-  if (row.status === "over") {
-    return `Thua ${row.diff}`;
-  }
-
-  return "Du";
-}
-
-function getStatusTone(status: InventoryRow["status"]): "green" | "amber" | "red" {
-  if (status === "short") {
-    return "red";
-  }
-
-  if (status === "over") {
-    return "amber";
-  }
-
-  return "green";
-}
-
-function createInventoryRows(products: Product[], counts: CountMap) {
-  return products
-    .filter((product) => hasInventoryCount(counts[product.id]))
-    .map((product): InventoryRow => {
-      const counted = parseInventoryCount(counts[product.id]);
-      const diff = counted - product.stock;
-
-      return {
-        ean13: getProductEan13Value(product),
-        counted,
-        diff,
-        product,
-        status: getInventoryStatus(diff),
-      };
-    });
-}
-
-function getInventoryStats(rows: InventoryRow[]): InventoryStats {
-  return rows.reduce(
-    (stats, row) => ({
-      auditedCount: stats.auditedCount + 1,
-      countedTotal: stats.countedTotal + row.counted,
-      okCount: stats.okCount + (row.status === "ok" ? 1 : 0),
-      overCount: stats.overCount + (row.status === "over" ? 1 : 0),
-      shortCount: stats.shortCount + (row.status === "short" ? 1 : 0),
-      systemTotal: stats.systemTotal + row.product.stock,
-    }),
-    {
-      auditedCount: 0,
-      countedTotal: 0,
-      okCount: 0,
-      overCount: 0,
-      shortCount: 0,
-      systemTotal: 0,
-    }
-  );
-}
-
-function drawWrappedText(
-  context: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  lineHeight: number,
-  maxLines = 2
-) {
-  const words = text.split(/\s+/);
-  let line = "";
-  let currentY = y;
-  let lineCount = 0;
-
-  words.forEach((word) => {
-    const nextLine = line ? `${line} ${word}` : word;
-
-    if (context.measureText(nextLine).width > maxWidth && line) {
-      context.fillText(line, x, currentY);
-      line = word;
-      currentY += lineHeight;
-      lineCount += 1;
-      return;
-    }
-
-    line = nextLine;
-  });
-
-  if (line && lineCount < maxLines) {
-    context.fillText(line, x, currentY);
-  }
-}
-
-function drawSummaryBox(
-  context: CanvasRenderingContext2D,
-  label: string,
-  value: string,
-  x: number,
-  y: number,
-  width: number,
-  tone: string
-) {
-  context.fillStyle = tone;
-  context.beginPath();
-  context.roundRect(x, y, width, 86, 18);
-  context.fill();
-  context.fillStyle = "#64748b";
-  context.font = "700 18px Arial";
-  context.fillText(label, x + 20, y + 32);
-  context.fillStyle = "#0f172a";
-  context.font = "800 34px Arial";
-  context.fillText(value, x + 20, y + 66);
-}
-
-function createInventoryReportImage(rows: InventoryRow[], stats: InventoryStats) {
-  const scale = 2;
-  const width = 1200;
-  const rowHeight = 76;
-  const height = 340 + rows.length * rowHeight;
-  const canvas = document.createElement("canvas");
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return "";
-  }
-
-  context.scale(scale, scale);
-  context.fillStyle = "#f8fafc";
-  context.fillRect(0, 0, width, height);
-
-  context.fillStyle = "#0f172a";
-  context.fillRect(0, 0, width, 126);
-  context.fillStyle = "#ffffff";
-  context.font = "800 44px Arial";
-  context.fillText("Bao cao ton kho", 44, 58);
-  context.font = "600 20px Arial";
-  context.fillText(
-    new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(
-      new Date()
-    ),
-    44,
-    94
-  );
-
-  const totalDiff = stats.countedTotal - stats.systemTotal;
-  drawSummaryBox(context, "Da kiem", String(stats.auditedCount), 44, 154, 206, "#e0f2fe");
-  drawSummaryBox(context, "He thong", String(stats.systemTotal), 272, 154, 206, "#f1f5f9");
-  drawSummaryBox(context, "Thuc te", String(stats.countedTotal), 500, 154, 206, "#dcfce7");
-  drawSummaryBox(
-    context,
-    "Chenh lech",
-    String(totalDiff),
-    728,
-    154,
-    206,
-    totalDiff < 0 ? "#fee2e2" : "#fef3c7"
-  );
-  drawSummaryBox(context, "Thieu", String(stats.shortCount), 956, 154, 200, "#fee2e2");
-
-  let y = 286;
-  context.fillStyle = "#e2e8f0";
-  context.fillRect(44, y, width - 88, 42);
-  context.fillStyle = "#334155";
-  context.font = "800 16px Arial";
-  context.fillText("San pham", 64, y + 27);
-  context.fillText("EAN-13", 520, y + 27);
-  context.fillText("Kho", 760, y + 27);
-  context.fillText("Dem", 850, y + 27);
-  context.fillText("Lech", 940, y + 27);
-  context.fillText("Trang thai", 1030, y + 27);
-  y += 42;
-
-  rows.forEach((row, index) => {
-    context.fillStyle = index % 2 === 0 ? "#ffffff" : "#f8fafc";
-    context.fillRect(44, y, width - 88, rowHeight);
-    context.fillStyle = "#0f172a";
-    context.font = "800 18px Arial";
-    drawWrappedText(context, row.product.name, 64, y + 28, 410, 21, 2);
-    context.fillStyle = "#64748b";
-    context.font = "600 14px Arial";
-    context.fillText(`HSD: ${formatProductDate(row.product.expiry_date)}`, 64, y + 64);
-    context.fillStyle = "#334155";
-    context.font = "700 16px Arial";
-    context.fillText(row.ean13, 520, y + 45);
-    context.fillText(String(row.product.stock), 760, y + 45);
-    context.fillText(String(row.counted), 850, y + 45);
-    context.fillStyle = row.diff < 0 ? "#dc2626" : row.diff > 0 ? "#d97706" : "#15803d";
-    context.fillText(String(row.diff), 940, y + 45);
-    context.fillText(getStatusLabel(row), 1030, y + 45);
-    y += rowHeight;
-  });
-
-  return canvas.toDataURL("image/png");
-}
-
-function loadReportHistory() {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  try {
-    const rawValue = window.localStorage.getItem(reportHistoryStorageKey);
-    if (!rawValue) {
-      return [];
-    }
-
-    const parsed = JSON.parse(rawValue);
-    return Array.isArray(parsed) ? (parsed as ReportHistoryItem[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveReportHistory(history: ReportHistoryItem[]) {
-  window.localStorage.setItem(reportHistoryStorageKey, JSON.stringify(history));
-}
-
-function createReportHistoryItem(
-  image: string,
-  rows: InventoryRow[],
-  staffName: string,
-  stats: InventoryStats
-) {
-  const createdAt = new Date().toISOString();
-
-  return {
-    createdAt,
-    id: `${createdAt}-${Math.random().toString(36).slice(2)}`,
-    image,
-    rows: rows.map((row) => ({
-      ean13: row.ean13,
-      counted: row.counted,
-      diff: row.diff,
-      name: row.product.name,
-      status: row.status,
-      stock: row.product.stock,
-    })),
-    staffName,
-    stats,
-  };
-}
-
-function getReportStatusLabel(stats: InventoryStats) {
-  const parts = [];
-
-  if (stats.shortCount > 0) {
-    parts.push(`Thieu ${stats.shortCount}`);
-  }
-
-  if (stats.overCount > 0) {
-    parts.push(`Thua ${stats.overCount}`);
-  }
-
-  return parts.length > 0 ? parts.join(" / ") : "Du";
-}
-
-function getReportStatusTone(stats: InventoryStats): "green" | "amber" | "red" {
-  if (stats.shortCount > 0) {
-    return "red";
-  }
-
-  if (stats.overCount > 0) {
-    return "amber";
-  }
-
-  return "green";
-}
+import {
+  fetchInventoryCountProducts,
+  type InventoryCountProduct,
+} from "../services/products";
+import { submitInventoryAudit } from "../services/inventoryAudits";
 
 type QuantityModalProps = {
   countValue: string;
   error: string;
-  product: Product | null;
   onChange: (value: string) => void;
   onClose: () => void;
   onSubmit: () => void;
+  product: InventoryCountProduct | null;
 };
 
 function QuantityModal({
@@ -378,10 +46,6 @@ function QuantityModal({
   onSubmit,
   product,
 }: QuantityModalProps) {
-  if (!product) {
-    return null;
-  }
-
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onSubmit();
@@ -392,61 +56,42 @@ function QuantityModal({
       footer={
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
           <Button onClick={onClose} variant="secondary">
-            Huy
+            Hủy
           </Button>
           <Button form="inventory-quantity-form" type="submit">
-            Luu san pham
+            Lưu số lượng
           </Button>
         </div>
       }
       onClose={onClose}
       open={Boolean(product)}
-      size="md"
-      title="Nhap so luong thuc te"
+      size="sm"
+      title="Nhập số lượng thực tế"
     >
       <form className="space-y-4" id="inventory-quantity-form" onSubmit={handleSubmit}>
-        <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
-          <div className="h-16 w-16 flex-none overflow-hidden rounded-xl bg-white">
-            {product.image_url ? (
-              <img
-                alt={product.name}
-                className="h-full w-full object-contain p-1"
-                src={product.image_url}
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-slate-400">
-                <Boxes className="h-6 w-6" />
-              </div>
-            )}
-          </div>
-          <div className="min-w-0">
-            <h3 className="truncate font-extrabold text-slate-950">{product.name}</h3>
-            <p className="mt-1 text-xs font-bold text-slate-500">
-              EAN-13 {getProductEan13Value(product)} / Ton he thong {product.stock}
-            </p>
-          </div>
+        <div className="rounded-xl bg-slate-50 px-4 py-3">
+          <p className="font-extrabold text-slate-950">{product?.name}</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            EAN-13 {product ? getProductEan13Value(product) : ""}
+          </p>
         </div>
-
         <label className="block">
           <span className="mb-2 block text-sm font-extrabold text-slate-950">
-            So luong thuc te
+            Số lượng đếm được
           </span>
           <input
             autoFocus
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-lg font-extrabold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
+            className="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 text-2xl font-extrabold tabular-nums text-slate-950 outline-none transition focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
+            inputMode="numeric"
             min="0"
             onChange={(event) => onChange(event.target.value)}
-            placeholder="Nhap so luong dem duoc"
+            placeholder="0"
+            step="1"
             type="number"
             value={countValue}
           />
         </label>
-
-        {error ? (
-          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-            {error}
-          </div>
-        ) : null}
+        {error ? <StateNotice message={error} tone="error" /> : null}
       </form>
     </Modal>
   );
@@ -454,40 +99,33 @@ function QuantityModal({
 
 export function InventoryPage() {
   const { canAccess, profile, user } = useAuth();
+  const [counts, setCounts] = useState<InventoryCountMap>({});
+  const [countingProduct, setCountingProduct] = useState<InventoryCountProduct | null>(null);
   const [ean13ScannerOpen, setEan13ScannerOpen] = useState(false);
-  const [counts, setCounts] = useState<CountMap>({});
-  const [countingProduct, setCountingProduct] = useState<Product | null>(null);
   const [error, setError] = useState("");
-  const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
-  const [history, setHistory] = useState<ReportHistoryItem[]>(() => loadReportHistory());
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<InventoryCountProduct[]>([]);
   const [query, setQuery] = useState("");
   const [quantityDraft, setQuantityDraft] = useState("");
   const [quantityError, setQuantityError] = useState("");
-  const [viewingReport, setViewingReport] = useState<ReportHistoryItem | null>(null);
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState("");
-  const staffName = profile?.full_name || user?.email || "Nhan vien";
+  const { clearErrorNotice, errorNotice, showErrorNotice } = useErrorNotice(setError);
   const canCountInventory = canAccess("inventory.count");
-  const canCreateReport = canAccess("inventory.report.create");
-  const canDeleteHistory = canAccess("inventory.history.delete");
-
-  const showErrorNotice = useCallback((message: string, title = "Thong bao loi") => {
-    setError(message);
-    setErrorNotice({ message, title });
-  }, []);
+  const canSubmitInventory = canAccess("inventory.submit");
+  const staffName = profile?.full_name || user?.email || "Nhân viên";
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      setProducts(await fetchProducts());
+      setProducts(await fetchInventoryCountProducts());
     } catch (requestError) {
       showErrorNotice(
-        requestError instanceof Error ? requestError.message : "Khong tai duoc du lieu ton kho.",
-        "Khong tai duoc ton kho"
+        requestError instanceof Error ? requestError.message : "Không tải được danh sách sản phẩm.",
+        "Không tải được dữ liệu kiểm kê"
       );
     } finally {
       setLoading(false);
@@ -498,19 +136,21 @@ export function InventoryPage() {
     void loadProducts();
   }, [loadProducts]);
 
-  const rows = useMemo(() => createInventoryRows(products, counts), [counts, products]);
-  const stats = useMemo(() => getInventoryStats(rows), [rows]);
-  const normalizedQuery = query.trim().toLowerCase();
+  const countedProducts = useMemo(
+    () => products.filter((product) => hasInventoryCount(counts[product.id])),
+    [counts, products]
+  );
+  const normalizedQuery = query.trim().toLocaleLowerCase("vi");
   const visibleProducts = useMemo(() => {
-    const matchedProducts = normalizedQuery
+    const matched = normalizedQuery
       ? products.filter((product) =>
           [product.name, product.sku, product.category, getProductEan13Value(product)]
             .filter(Boolean)
-            .some((value) => value!.toLowerCase().includes(normalizedQuery))
+            .some((value) => value!.toLocaleLowerCase("vi").includes(normalizedQuery))
         )
       : products;
 
-    return [...matchedProducts].sort((first, second) => {
+    return [...matched].sort((first, second) => {
       const firstCounted = hasInventoryCount(counts[first.id]);
       const secondCounted = hasInventoryCount(counts[second.id]);
 
@@ -518,15 +158,11 @@ export function InventoryPage() {
         return firstCounted ? 1 : -1;
       }
 
-      if (first.is_active !== second.is_active) {
-        return first.is_active ? -1 : 1;
-      }
-
       return first.name.localeCompare(second.name, "vi");
     });
   }, [counts, normalizedQuery, products]);
 
-  function openQuantityModal(product: Product) {
+  function openQuantityModal(product: InventoryCountProduct) {
     if (!canCountInventory) {
       return;
     }
@@ -534,7 +170,6 @@ export function InventoryPage() {
     setCountingProduct(product);
     setQuantityDraft(counts[product.id] ?? "");
     setQuantityError("");
-    setError("");
     setSuccess("");
   }
 
@@ -550,482 +185,266 @@ export function InventoryPage() {
     }
 
     const parsed = Number(quantityDraft);
-    if (!quantityDraft.trim() || Number.isNaN(parsed) || parsed < 0) {
-      setQuantityError("Nhap so luong khong am.");
+    if (!quantityDraft.trim() || !Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+      setQuantityError("Số lượng phải là số nguyên từ 0 trở lên.");
       return;
     }
 
-    const nextQuantity = String(Math.floor(parsed));
-    setCounts((current) => ({ ...current, [countingProduct.id]: nextQuantity }));
-    setSuccess(`Da nhap ${countingProduct.name}. Hay quet san pham tiep theo.`);
+    setCounts((current) => ({ ...current, [countingProduct.id]: String(parsed) }));
+    setSuccess(`Đã ghi nhận ${countingProduct.name}.`);
     setQuery("");
     closeQuantityModal();
   }
 
   function removeCount(productId: string) {
-    if (!canCountInventory) {
-      return;
-    }
-
     setCounts((current) => {
-      const nextCounts = { ...current };
-      delete nextCounts[productId];
-      return nextCounts;
+      const next = { ...current };
+      delete next[productId];
+      return next;
     });
-  }
-
-  function clearCounts() {
-    if (!canCountInventory) {
-      return;
-    }
-
-    setCounts({});
     setSuccess("");
-    setError("");
   }
 
   function handleEan13Detected(value: string) {
-    if (!canCountInventory) {
-      return;
-    }
-
     const ean13Code = normalizeEan13Input(value);
-    const product = findProductByEan13(products, ean13Code);
 
     if (!isValidEan13(ean13Code)) {
-      showErrorNotice("Ma quet khong phai EAN-13 hop le.", "EAN-13 khong hop le");
-      setQuery(ean13Code);
+      showErrorNotice("Mã quét không phải EAN-13 hợp lệ.", "EAN-13 không hợp lệ");
       return;
     }
 
+    const product = findProductByEan13(products, ean13Code);
     if (!product) {
       showErrorNotice(
-        `Chua co san pham trong database voi EAN-13 ${ean13Code}.`,
-        "Khong co san pham"
+        `Không tìm thấy sản phẩm có mã EAN-13 ${ean13Code}.`,
+        "Không có sản phẩm"
       );
-      setQuery(ean13Code);
       return;
     }
 
     openQuantityModal(product);
   }
 
-  function handleCreateReportImage() {
-    if (!canCreateReport) {
+  async function handleSubmitInventory() {
+    if (!canSubmitInventory || countedProducts.length === 0) {
       return;
     }
 
-    if (rows.length === 0) {
-      showErrorNotice(
-        "Nhap so luong thuc te cho it nhat mot san pham truoc khi tao bao cao.",
-        "Chua co du lieu bao cao"
-      );
-      return;
-    }
-
-    const nextReportImage = createInventoryReportImage(rows, stats);
-    if (!nextReportImage) {
-      showErrorNotice("Khong tao duoc anh bao cao.", "Tao bao cao that bai");
-      return;
-    }
-
-    const nextHistoryItem = createReportHistoryItem(nextReportImage, rows, staffName, stats);
-    const nextHistory = [nextHistoryItem, ...history].slice(0, maxReportHistoryItems);
-
+    setSubmitting(true);
     try {
-      saveReportHistory(nextHistory);
-      setHistory(nextHistory);
-      setHistoryOpen(true);
-      setError("");
-      setSuccess("Da tao va luu bao cao ton kho.");
-    } catch {
-      showErrorNotice(
-        "Da tao anh bao cao, nhung khong luu duoc lich su tren trinh duyet nay.",
-        "Khong luu duoc lich su"
+      await submitInventoryAudit(
+        staffName,
+        countedProducts.map((product) => ({
+          counted: parseInventoryCount(counts[product.id]),
+          ean13: getProductEan13Value(product),
+          productId: product.id,
+          productName: product.name,
+        }))
       );
+      setCounts({});
+      setSubmitConfirmOpen(false);
+      setSuccess("Đã hoàn tất phiên kiểm kê và gửi kết quả sang trang Kho.");
+    } catch (requestError) {
+      showErrorNotice(
+        requestError instanceof Error
+          ? requestError.message
+          : "Không gửi được phiên kiểm kê. Vui lòng thử lại.",
+        "Không lưu được kiểm kê"
+      );
+    } finally {
+      setSubmitting(false);
     }
-  }
-
-  function clearHistory() {
-    if (!canDeleteHistory) {
-      return;
-    }
-
-    window.localStorage.removeItem(reportHistoryStorageKey);
-    setHistory([]);
-    setViewingReport(null);
   }
 
   return (
-    <div className="space-y-4">
+    <PageContainer maxWidth="none">
       <ConfigNotice />
-
-      <Card className="overflow-hidden rounded-xl p-0">
-        <div className="border-b border-coal/10 p-3 sm:p-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
-                Kiem ke
-              </p>
-              <h2 className="mt-1 font-display text-xl font-bold text-coal">Ton kho</h2>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge tone="neutral">{products.length} mat hang</Badge>
-                <Badge tone="green">{rows.length} da nhap</Badge>
-                {stats.shortCount > 0 ? <Badge tone="red">{stats.shortCount} thieu</Badge> : null}
-                {stats.overCount > 0 ? <Badge tone="amber">{stats.overCount} thua</Badge> : null}
-              </div>
-            </div>
-            <div className="grid gap-2 sm:flex">
-              {canCountInventory ? (
-                <Button className="h-10 rounded-xl px-3" onClick={() => setEan13ScannerOpen(true)} variant="secondary">
-                  <Barcode className="h-4 w-4" />
-                  Quet EAN-13
-                </Button>
-              ) : null}
-              <Button className="h-10 rounded-xl px-3" onClick={() => setHistoryOpen(true)} variant="secondary">
-                <History className="h-4 w-4" />
-                Lich su
+      <PageToolbar
+        action={
+          <div className="grid gap-2 sm:flex">
+            {canCountInventory ? (
+              <Button onClick={() => setEan13ScannerOpen(true)} variant="secondary">
+                <Barcode className="h-4 w-4" />
+                Quét EAN-13
               </Button>
-              {canCreateReport ? (
-                <Button className="h-10 rounded-xl px-3" disabled={rows.length === 0} onClick={handleCreateReportImage}>
-                  <FileImage className="h-4 w-4" />
-                  Tao bao cao
-                </Button>
-              ) : null}
-            </div>
+            ) : null}
+            {canSubmitInventory ? (
+              <Button
+                disabled={countedProducts.length === 0}
+                onClick={() => setSubmitConfirmOpen(true)}
+              >
+                <ClipboardCheck className="h-4 w-4" />
+                Hoàn tất kiểm kê
+              </Button>
+            ) : null}
           </div>
-
-          {canCountInventory ? (
-            <div className="relative mt-3 w-full xl:max-w-xl">
-              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
-              <Input
-                className="h-10 rounded-xl py-2 pl-11"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Tim ten, SKU hoac EAN-13 de loc danh sach..."
-                value={query}
-              />
-            </div>
-          ) : null}
+        }
+        description="Nhân viên nhập số lượng đếm thực tế. Số tồn hệ thống và chênh lệch chỉ hiển thị tại trang Kho."
+        eyebrow="Ghi nhận thực tế"
+        title="Tồn kho"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <SearchInput
+            className="lg:max-w-xl"
+            onChange={setQuery}
+            placeholder="Tìm tên, nhóm hàng, SKU hoặc EAN-13..."
+            value={query}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Badge tone="neutral">{products.length} sản phẩm</Badge>
+            <Badge tone="green">{countedProducts.length} đã nhập</Badge>
+            <Badge tone="neutral">{products.length - countedProducts.length} chưa nhập</Badge>
+          </div>
         </div>
+      </PageToolbar>
 
-        {error ? (
-          <div className="m-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 sm:m-4">
-            {error}
+      {error ? <StateNotice message={error} tone="error" /> : null}
+      {success ? <StateNotice icon={CheckCircle2} message={success} tone="success" /> : null}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
+        <Card className="min-w-0 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-extrabold text-slate-950">Chọn sản phẩm</h3>
+              <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                Chọn một sản phẩm để nhập số lượng đếm được.
+              </p>
+            </div>
+            <Badge>{visibleProducts.length}</Badge>
           </div>
-        ) : null}
-        {success ? (
-          <div className="m-3 rounded-xl bg-moss-50 px-4 py-3 text-sm font-semibold text-moss-700 sm:m-4">
-            {success}
+
+          {loading ? (
+            <Spinner label="Đang tải sản phẩm..." />
+          ) : visibleProducts.length === 0 ? (
+            <EmptyState
+              description="Không có sản phẩm phù hợp với từ khóa."
+              icon={Boxes}
+              title="Không tìm thấy sản phẩm"
+            />
+          ) : (
+            <div className="max-h-[68vh] space-y-2 overflow-y-auto overscroll-contain pr-1">
+              {visibleProducts.map((product) => {
+                const counted = hasInventoryCount(counts[product.id]);
+
+                return (
+                  <button
+                    className={`grid w-full grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-2.5 text-left transition ${
+                      counted
+                        ? "border-moss-200 bg-moss-50/60 hover:bg-moss-50"
+                        : "border-slate-200 bg-white hover:border-moss-200 hover:bg-slate-50"
+                    } disabled:cursor-not-allowed disabled:opacity-60`}
+                    disabled={!canCountInventory}
+                    key={product.id}
+                    onClick={() => openQuantityModal(product)}
+                    type="button"
+                  >
+                    <div className="h-12 w-12 overflow-hidden rounded-lg bg-slate-100">
+                      {product.image_url ? (
+                        <img
+                          alt={product.name}
+                          className="h-full w-full object-contain p-1"
+                          src={product.image_url}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-slate-400">
+                          <Boxes className="h-5 w-5" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-extrabold text-slate-950">{product.name}</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+                        {product.category || "Chưa phân nhóm"} · {getProductEan13Value(product)}
+                      </p>
+                    </div>
+                    <Badge tone={counted ? "green" : "neutral"}>
+                      {counted ? `Đã nhập ${parseInventoryCount(counts[product.id])}` : "Chưa nhập"}
+                    </Badge>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        <Card className="min-w-0 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-extrabold text-slate-950">Số lượng đã nhập</h3>
+              <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                Kiểm tra lại dữ liệu trước khi hoàn tất phiên kiểm kê.
+              </p>
+            </div>
+            {canCountInventory && countedProducts.length > 0 ? (
+              <Button className="px-3" onClick={() => setCounts({})} variant="secondary">
+                Xóa tất cả
+              </Button>
+            ) : null}
           </div>
-        ) : null}
 
-        <div className="p-3 sm:p-4">
-          <div className="grid gap-3 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.35fr)]">
-            <section className="min-w-0">
-              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-base font-extrabold text-coal">Danh sach san pham</h3>
-                  <p className="mt-0.5 text-xs font-semibold text-coal/55">
-                    Bam vao san pham de nhap so luong thuc te.
-                  </p>
-                </div>
-                <Badge tone="neutral">{visibleProducts.length} hien thi</Badge>
-              </div>
-
-              {loading ? (
-                <Spinner label="Dang tai san pham..." />
-              ) : visibleProducts.length === 0 ? (
-                <EmptyState
-                  description="Khong co san pham phu hop voi tu khoa dang tim."
-                  icon={Search}
-                  title="Khong tim thay san pham"
-                />
-              ) : (
-                <div className="max-h-[72vh] space-y-1.5 overflow-y-auto pr-1">
-                  {visibleProducts.map((product) => {
-                    const countedValue = counts[product.id];
-                    const counted = hasInventoryCount(countedValue);
-                    const diff = counted ? parseInventoryCount(countedValue) - product.stock : null;
-                    const status = diff === null ? null : getInventoryStatus(diff);
-
-                    return (
-                      <button
-                        className={`grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border bg-white p-2 text-left shadow-sm transition ${
-                          counted
-                            ? "border-moss-200 hover:border-moss-300 hover:bg-moss-50"
-                            : "border-slate-200 hover:border-moss-200 hover:bg-moss-50"
-                        } disabled:cursor-not-allowed disabled:opacity-70`}
-                        disabled={!canCountInventory}
-                        key={product.id}
-                        onClick={() => openQuantityModal(product)}
-                        type="button"
-                      >
-                        <div className="h-11 w-11 overflow-hidden rounded-lg bg-slate-100">
-                          {product.image_url ? (
-                            <img
-                              alt={product.name}
-                              className="h-full w-full object-contain p-1"
-                              src={product.image_url}
-                            />
-                          ) : (
-                              <div className="flex h-full w-full items-center justify-center text-slate-400">
-                              <Boxes className="h-5 w-5" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="truncate text-sm font-extrabold text-slate-950">
-                            {product.name}
-                          </h4>
-                          <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                            {getProductEan13Value(product)} / HSD {formatProductDate(product.expiry_date)}
-                          </p>
-                          <div className="mt-1 flex flex-wrap gap-1.5">
-                            <Badge tone={product.is_active ? "green" : "red"}>
-                              {product.is_active ? "Dang ban" : "Dang an"}
-                            </Badge>
-                            {counted ? (
-                              <Badge tone={getStatusTone(status ?? "ok")}>
-                                Da nhap {parseInventoryCount(countedValue)}
-                              </Badge>
-                            ) : (
-                              <Badge tone="neutral">Chua nhap</Badge>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[11px] font-bold uppercase text-slate-400">Kho</p>
-                          <p className="mt-0.5 text-lg font-extrabold tabular-nums text-slate-950">
-                            {product.stock}
-                          </p>
-                          {diff !== null ? (
-                            <p
-                              className={`mt-1 text-xs font-extrabold ${
-                                diff < 0
-                                  ? "text-red-600"
-                                  : diff > 0
-                                    ? "text-amber-600"
-                                    : "text-moss-700"
-                              }`}
-                            >
-                              Lech {diff}
-                            </p>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            <section className="min-w-0">
-              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h3 className="text-base font-extrabold text-coal">San pham da nhap</h3>
-                {canCountInventory ? (
-                  <Button className="h-10 rounded-xl px-3" disabled={rows.length === 0} onClick={clearCounts} variant="secondary">
-                    Xoa danh sach
-                  </Button>
-                ) : null}
-              </div>
-
-              {loading ? (
-                <Spinner label="Dang tai ton kho..." />
-              ) : rows.length === 0 ? (
-                <EmptyState
-                  description="Bam Quet EAN-13 hoac chon san pham ben trai de nhap so luong thuc te."
-                  icon={Boxes}
-                  title="Chua nhap san pham nao"
-                />
-              ) : (
-                <div className="space-y-2">
-                  {rows.map((row) => (
-                    <article
-                      className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm"
-                      key={row.product.id}
-                    >
-                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_200px] sm:items-center">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <div className="h-12 w-12 flex-none overflow-hidden rounded-lg bg-slate-100">
-                            {row.product.image_url ? (
-                              <img
-                                alt={row.product.name}
-                                className="h-full w-full object-contain p-1"
-                                src={row.product.image_url}
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-slate-400">
-                                <Boxes className="h-5 w-5" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <h4 className="truncate text-sm font-extrabold text-slate-950">
-                              {row.product.name}
-                            </h4>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                              {row.ean13} / HSD {formatProductDate(row.product.expiry_date)}
-                            </p>
-                            <Badge className="mt-1 w-fit" tone={getStatusTone(row.status)}>
-                              {getStatusLabel(row)}
-                            </Badge>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                          <div className="rounded-lg bg-slate-50 p-1.5">
-                            <p className="text-[11px] font-bold uppercase text-slate-400">Kho</p>
-                            <p className="mt-1 font-extrabold text-slate-950">{row.product.stock}</p>
-                          </div>
-                          <div className="rounded-lg bg-moss-50 p-1.5">
-                            <p className="text-[11px] font-bold uppercase text-moss-700">Dem</p>
-                            <p className="mt-1 font-extrabold text-moss-800">{row.counted}</p>
-                          </div>
-                          <div className="rounded-lg bg-amber-50 p-1.5">
-                            <p className="text-[11px] font-bold uppercase text-amber-700">Lech</p>
-                            <p className="mt-1 font-extrabold text-amber-800">{row.diff}</p>
-                          </div>
-                        </div>
+          {loading ? (
+            <Spinner label="Đang tải dữ liệu..." />
+          ) : countedProducts.length === 0 ? (
+            <EmptyState
+              description="Quét EAN-13 hoặc chọn sản phẩm ở danh sách bên cạnh để bắt đầu."
+              icon={ClipboardCheck}
+              title="Chưa nhập số lượng"
+            />
+          ) : (
+            <div className="space-y-2">
+              {countedProducts.map((product) => (
+                <article
+                  className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center"
+                  key={product.id}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-extrabold text-slate-950">{product.name}</p>
+                    <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+                      EAN-13 {getProductEan13Value(product)}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 sm:justify-end">
+                    <div className="rounded-xl bg-moss-50 px-4 py-2 text-center">
+                      <p className="text-[11px] font-bold uppercase text-moss-700">Đã đếm</p>
+                      <p className="text-xl font-extrabold tabular-nums text-moss-800">
+                        {parseInventoryCount(counts[product.id])}
+                      </p>
+                    </div>
+                    {canCountInventory ? (
+                      <div className="flex gap-1">
+                        <button
+                          aria-label={`Sửa số lượng ${product.name}`}
+                          className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                          onClick={() => openQuantityModal(product)}
+                          type="button"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </button>
+                        <button
+                          aria-label={`Xóa ${product.name} khỏi phiên kiểm kê`}
+                          className="flex h-10 w-10 items-center justify-center rounded-lg text-red-500 transition hover:bg-red-50 hover:text-red-700"
+                          onClick={() => removeCount(product.id)}
+                          type="button"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
-
-                      {canCountInventory ? (
-                        <div className="mt-2 flex flex-wrap gap-2 border-t border-slate-100 pt-2">
-                          <Button
-                            className="h-9 rounded-lg px-3"
-                            onClick={() => openQuantityModal(row.product)}
-                            variant="secondary"
-                          >
-                            <Edit3 className="h-4 w-4" />
-                            Sua
-                          </Button>
-                          <Button
-                            className="h-9 rounded-lg px-3"
-                            onClick={() => removeCount(row.product.id)}
-                            variant="danger"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Xoa
-                          </Button>
-                        </div>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        </div>
-      </Card>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
 
       <Ean13ScannerModal
-        description="Quet EAN-13 tren tem san pham. Sau khi quet, he thong se mo popup de nhap so luong thuc te."
+        description="Quét mã trên tem sản phẩm, sau đó nhập số lượng thực tế vừa đếm."
         onClose={() => setEan13ScannerOpen(false)}
         onDetected={handleEan13Detected}
         open={ean13ScannerOpen}
-        title="Quet EAN-13 ton kho"
+        title="Quét EAN-13 kiểm kê"
       />
-
-      <Modal
-        footer={
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-            <Button onClick={() => setHistoryOpen(false)} variant="secondary">
-              Dong
-            </Button>
-            {canDeleteHistory ? (
-              <Button disabled={history.length === 0} onClick={clearHistory} variant="danger">
-                Xoa lich su
-              </Button>
-            ) : null}
-          </div>
-        }
-        onClose={() => setHistoryOpen(false)}
-        open={historyOpen}
-        size="lg"
-        title="Lich su bao cao"
-      >
-        {history.length === 0 ? (
-          <div className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
-            Chua co bao cao nao duoc tao tren may nay.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {history.map((item) => (
-              <button
-                className="grid w-full gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-moss-200 hover:bg-moss-50 sm:grid-cols-[minmax(0,1fr)_180px_130px] sm:items-center"
-                key={item.id}
-                onClick={() => {
-                  setHistoryOpen(false);
-                  setViewingReport(item);
-                }}
-                type="button"
-              >
-                <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Nhan vien
-                  </p>
-                  <p className="mt-1 truncate font-extrabold text-slate-950">
-                    {item.staffName || "Chua co ten"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Ngay gio
-                  </p>
-                  <p className="mt-1 text-sm font-bold text-slate-700">
-                    {new Intl.DateTimeFormat("vi-VN", {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    }).format(new Date(item.createdAt))}
-                  </p>
-                </div>
-                <Badge className="w-fit" tone={getReportStatusTone(item.stats)}>
-                  {getReportStatusLabel(item.stats)}
-                </Badge>
-              </button>
-            ))}
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        footer={
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-            <Button onClick={() => setViewingReport(null)} variant="secondary">
-              Dong
-            </Button>
-            {viewingReport ? (
-              <a
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-coal px-4 py-2.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:shadow-lift"
-                download={`ton-kho-${viewingReport.createdAt.slice(0, 10)}.png`}
-                href={viewingReport.image}
-              >
-                <Download className="h-4 w-4" />
-                Tai anh
-              </a>
-            ) : null}
-          </div>
-        }
-        onClose={() => setViewingReport(null)}
-        open={Boolean(viewingReport)}
-        size="xl"
-        title="Anh bao cao ton kho"
-      >
-        {viewingReport ? (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone={getReportStatusTone(viewingReport.stats)}>
-                {getReportStatusLabel(viewingReport.stats)}
-              </Badge>
-              <Badge tone="neutral">{viewingReport.staffName || "Chua co ten"}</Badge>
-            </div>
-            <img
-              alt="Bao cao ton kho"
-              className="w-full rounded-2xl border border-slate-200"
-              src={viewingReport.image}
-            />
-          </div>
-        ) : null}
-      </Modal>
 
       <QuantityModal
         countValue={quantityDraft}
@@ -1038,7 +457,40 @@ export function InventoryPage() {
         onSubmit={saveQuantityDraft}
         product={countingProduct}
       />
-      <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
-    </div>
+
+      <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button onClick={() => setSubmitConfirmOpen(false)} variant="secondary">
+              Kiểm tra lại
+            </Button>
+            <Button isLoading={submitting} onClick={() => void handleSubmitInventory()}>
+              Xác nhận hoàn tất
+            </Button>
+          </div>
+        }
+        onClose={() => setSubmitConfirmOpen(false)}
+        open={submitConfirmOpen}
+        size="sm"
+        title="Hoàn tất phiên kiểm kê?"
+      >
+        <div className="space-y-3">
+          <p className="text-sm leading-6 text-slate-600">
+            Bạn đã nhập số lượng thực tế cho{" "}
+            <strong className="text-slate-950">{countedProducts.length} sản phẩm</strong>. Sau khi
+            xác nhận, dữ liệu sẽ được lưu tập trung và chuyển sang trang Kho để người có quyền đối
+            chiếu.
+          </p>
+          {countedProducts.length < products.length ? (
+            <StateNotice
+              message={`Còn ${products.length - countedProducts.length} sản phẩm chưa được nhập trong phiên này.`}
+              tone="warning"
+            />
+          ) : null}
+        </div>
+      </Modal>
+
+      <ErrorNoticeModal notice={errorNotice} onClose={clearErrorNotice} />
+    </PageContainer>
   );
 }

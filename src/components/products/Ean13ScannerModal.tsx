@@ -14,16 +14,16 @@ type Ean13ScannerModalProps = {
 };
 
 export function Ean13ScannerModal({
-  description = "Dua ma EAN-13 vao khung camera hoac nhap ma thu cong.",
+  description = "Đưa mã EAN-13 vào khung camera hoặc nhập mã thủ công.",
   onClose,
   onDetected,
   open,
-  title = "Quet EAN-13",
+  title = "Quét EAN-13",
 }: Ean13ScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
   const [manualCode, setManualCode] = useState("");
-  const [status, setStatus] = useState("Dang khoi dong camera...");
+  const [status, setStatus] = useState("Đang khởi động camera...");
   const [error, setError] = useState("");
 
   const stopScanner = useCallback(() => {
@@ -60,8 +60,8 @@ export function Ean13ScannerModal({
       }
 
       if (!isValidEan13(code)) {
-        setStatus("Dang quet EAN-13...");
-        setError("Ma EAN-13 phai co 13 chu so va dung so kiem tra.");
+        setStatus("Đang quét EAN-13...");
+        setError("Mã EAN-13 phải có đúng 13 chữ số và đúng số kiểm tra.");
         return;
       }
 
@@ -89,17 +89,17 @@ export function Ean13ScannerModal({
 
     async function startScanner() {
       setError("");
-      setStatus("Dang khoi dong camera...");
+      setStatus("Đang khởi động camera...");
 
       if (!navigator.mediaDevices?.getUserMedia) {
-        setStatus("Trinh duyet khong ho tro camera.");
-        setError("Hay nhap EAN-13 thu cong ben duoi.");
+        setStatus("Trình duyệt không hỗ trợ camera.");
+        setError("Hãy nhập EAN-13 thủ công bên dưới.");
         return;
       }
 
       if (!videoElement) {
-        setStatus("Khong tim thay khung camera.");
-        setError("Hay dong popup va mo lai.");
+        setStatus("Không tìm thấy khung camera.");
+        setError("Hãy đóng cửa sổ và mở lại.");
         return;
       }
 
@@ -137,15 +137,15 @@ export function Ean13ScannerModal({
                 scannerControls.stop();
                 submitCode(value);
               } else if (value) {
-                setError("Camera vua doc duoc ma khong phai EAN-13 hop le.");
-                setStatus("Dang quet EAN-13...");
+                setError("Camera vừa đọc được mã EAN-13 không hợp lệ.");
+                setStatus("Đang quét EAN-13...");
               }
 
               return;
             }
 
             if (scanError) {
-              setStatus("Dang quet EAN-13...");
+              setStatus("Đang quét EAN-13...");
             }
           }
         );
@@ -158,11 +158,11 @@ export function Ean13ScannerModal({
           return;
         }
 
-        setStatus("Dang quet EAN-13...");
+        setStatus("Đang quét EAN-13...");
       } catch {
-        setStatus("Khong mo duoc camera.");
+        setStatus("Không mở được camera.");
         setError(
-          "Kiem tra quyen camera, dung http://localhost/127.0.0.1 hoac nhap EAN-13 thu cong."
+          "Kiểm tra quyền camera, dùng http://localhost/127.0.0.1 hoặc nhập EAN-13 thủ công."
         );
       }
     }
@@ -186,11 +186,11 @@ export function Ean13ScannerModal({
       footer={
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
           <Button onClick={closeScanner} variant="secondary">
-            Dong
+            Đóng
           </Button>
           <Button form="manual-ean13-form" type="submit">
             <Keyboard className="h-4 w-4" />
-            Nhap ma
+            Nhập mã
           </Button>
         </div>
       }
@@ -224,7 +224,7 @@ export function Ean13ScannerModal({
         <form className="space-y-2" id="manual-ean13-form" onSubmit={handleManualSubmit}>
           <label className="block">
             <span className="mb-2 block text-sm font-extrabold text-slate-950">
-              EAN-13 thu cong
+              EAN-13 thủ công
             </span>
             <div className="relative">
               <Barcode className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -237,7 +237,7 @@ export function Ean13ScannerModal({
                   setManualCode(normalizeEan13Input(event.target.value));
                   setError("");
                 }}
-                placeholder="Quet bang may quet USB hoac nhap 13 so"
+                placeholder="Quét bằng máy quét USB hoặc nhập 13 chữ số"
                 value={manualCode}
               />
             </div>

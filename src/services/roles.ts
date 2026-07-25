@@ -98,7 +98,7 @@ export async function deleteRole(role: AppRole) {
   requireSupabaseConfig();
 
   if (role.code === "admin" || role.code === "staff") {
-    throw new Error("Khong the xoa role he thong.");
+    throw new Error("Không thể xóa vai trò hệ thống.");
   }
 
   const { error } = await supabase.from("app_roles").delete().eq("id", role.id);

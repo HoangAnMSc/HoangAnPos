@@ -1,5 +1,7 @@
 import type { Product } from "../types";
 
+type ProductEan13Source = Pick<Product, "id" | "sku">;
+
 export type ExpiryStatus = "expired" | "soon" | "valid";
 
 const dateFormatter = new Intl.DateTimeFormat("vi-VN", {
@@ -74,7 +76,7 @@ export function parseDateOnly(value?: string | null) {
 
 export function formatProductDate(value?: string | null) {
   const date = parseDateOnly(value);
-  return date ? dateFormatter.format(date) : "Chua co";
+  return date ? dateFormatter.format(date) : "Chưa có";
 }
 
 export function getExpiryStatus(value?: string | null): ExpiryStatus | null {
@@ -180,18 +182,18 @@ export function formatExpiryDays(value?: string | null) {
   const days = getDaysUntilExpiry(value);
 
   if (days === null) {
-    return "Chua co";
+    return "Chưa có";
   }
 
   if (days < 0) {
-    return "Het han";
+    return "Hết hạn";
   }
 
   if (days === 0) {
-    return "Hom nay";
+    return "Hôm nay";
   }
 
-  return `Con ${days} ngay`;
+  return `Con ${days} ngày`;
 }
 
 export function normalizeEan13Input(value?: string | null) {
@@ -244,7 +246,7 @@ export function createVietnamEan13FromSeed(seed: string) {
   return createEan13(`${vietnamEanPrefix}${createStableDigits(seed, 9)}`);
 }
 
-export function getProductEan13Value(product: Product) {
+export function getProductEan13Value(product: ProductEan13Source) {
   const storedEan13 = normalizeEan13Input(product.sku);
   if (isValidEan13(storedEan13)) {
     return storedEan13;
@@ -253,7 +255,7 @@ export function getProductEan13Value(product: Product) {
   return createInternalEan13FromId(product.id);
 }
 
-export function findProductByEan13(products: Product[], value: string) {
+export function findProductByEan13<T extends ProductEan13Source>(products: T[], value: string) {
   const ean13Value = normalizeEan13Input(value);
 
   if (!isValidEan13(ean13Value)) {

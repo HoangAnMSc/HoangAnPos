@@ -53,15 +53,17 @@ values
       'cloudinary-images',
       'cloudinary-images.upload',
       'cloudinary-images.delete',
+      'warehouse',
+      'warehouse.audit.delete',
       'inventory',
       'inventory.count',
-      'inventory.report.create',
-      'inventory.history.delete',
+      'inventory.submit',
       'attendance',
       'attendance.clock',
       'attendance.history.view',
       'attendance.history.update',
       'attendance.history.delete',
+      'attendance.export',
       'payment-settings',
       'payment-settings.update',
       'roles',
@@ -94,7 +96,7 @@ values
       'products',
       'inventory',
       'inventory.count',
-      'inventory.report.create',
+      'inventory.submit',
       'attendance',
       'attendance.clock',
       'attendance.history.view'
@@ -155,6 +157,30 @@ create table if not exists public.products (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create table if not exists public.inventory_audits (
+  id uuid primary key default gen_random_uuid(),
+  created_by uuid not null references auth.users(id) on delete restrict,
+  staff_name text not null check (char_length(staff_name) between 1 and 160),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.inventory_audit_lines (
+  id uuid primary key default gen_random_uuid(),
+  audit_id uuid not null references public.inventory_audits(id) on delete cascade,
+  product_id uuid references public.products(id) on delete set null,
+  product_name text not null,
+  ean13 text not null,
+  counted integer not null check (counted >= 0),
+  created_at timestamptz not null default now(),
+  unique (audit_id, product_id)
+);
+
+create index if not exists inventory_audits_created_at_idx
+on public.inventory_audits (created_at desc);
+
+create index if not exists inventory_audit_lines_audit_id_idx
+on public.inventory_audit_lines (audit_id);
 
 create table if not exists public.product_categories (
   id uuid primary key default gen_random_uuid(),
@@ -581,6 +607,76 @@ as $$
         )
       )
   );
+$$;
+
+create or replace function public.submit_inventory_audit(
+  staff_name_input text,
+  lines_input jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  audit_id_value uuid;
+  inserted_line_count integer;
+  requested_line_count integer;
+begin
+  if not public.has_permission('inventory.submit') then
+    raise exception 'Permission denied';
+  end if;
+
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if nullif(trim(staff_name_input), '') is null then
+    raise exception 'Staff name is required';
+  end if;
+
+  if jsonb_typeof(lines_input) <> 'array' or jsonb_array_length(lines_input) = 0 then
+    raise exception 'At least one inventory line is required';
+  end if;
+
+  requested_line_count := jsonb_array_length(lines_input);
+
+  insert into public.inventory_audits (created_by, staff_name)
+  values (auth.uid(), left(trim(staff_name_input), 160))
+  returning id into audit_id_value;
+
+  insert into public.inventory_audit_lines (
+    audit_id,
+    product_id,
+    product_name,
+    ean13,
+    counted
+  )
+  select
+    audit_id_value,
+    line.product_id,
+    left(trim(line.product_name), 300),
+    left(trim(line.ean13), 32),
+    line.counted
+  from jsonb_to_recordset(lines_input) as line(
+    product_id uuid,
+    product_name text,
+    ean13 text,
+    counted integer
+  )
+  where line.product_id is not null
+    and nullif(trim(line.product_name), '') is not null
+    and nullif(trim(line.ean13), '') is not null
+    and line.counted >= 0;
+
+  get diagnostics inserted_line_count = row_count;
+
+  if inserted_line_count <> requested_line_count then
+    raise exception 'Invalid inventory lines';
+  end if;
+
+  return audit_id_value;
+end;
 $$;
 
 create or replace function public.touch_last_seen()
@@ -1092,6 +1188,8 @@ $$;
 alter table public.profiles enable row level security;
 alter table public.app_roles enable row level security;
 alter table public.products enable row level security;
+alter table public.inventory_audits enable row level security;
+alter table public.inventory_audit_lines enable row level security;
 alter table public.cloudinary_images enable row level security;
 alter table public.product_categories enable row level security;
 alter table public.product_batches enable row level security;
@@ -1110,7 +1208,10 @@ drop policy if exists "Admins can read profiles" on public.profiles;
 drop policy if exists "Users page can read profiles" on public.profiles;
 create policy "Users page can read profiles"
 on public.profiles for select
-using (public.has_permission('users'));
+using (
+  public.has_permission('users')
+  or public.has_permission('attendance.export')
+);
 
 drop policy if exists "Admins can update profiles" on public.profiles;
 drop policy if exists "Users page can update profiles" on public.profiles;
@@ -1152,8 +1253,45 @@ on public.products for select
 using (
   public.has_permission('products')
   or public.has_permission('pos')
+  or public.has_permission('warehouse')
   or public.has_permission('inventory')
   or public.has_permission('cloudinary-images')
+);
+
+drop policy if exists "Warehouse users can read inventory audits" on public.inventory_audits;
+create policy "Warehouse users can read inventory audits"
+on public.inventory_audits for select
+using (public.has_permission('warehouse'));
+
+drop policy if exists "Inventory users can create audits" on public.inventory_audits;
+create policy "Inventory users can create audits"
+on public.inventory_audits for insert
+with check (
+  public.has_permission('inventory.submit')
+  and created_by = auth.uid()
+);
+
+drop policy if exists "Warehouse users can delete inventory audits" on public.inventory_audits;
+create policy "Warehouse users can delete inventory audits"
+on public.inventory_audits for delete
+using (public.has_permission('warehouse.audit.delete'));
+
+drop policy if exists "Warehouse users can read inventory audit lines" on public.inventory_audit_lines;
+create policy "Warehouse users can read inventory audit lines"
+on public.inventory_audit_lines for select
+using (public.has_permission('warehouse'));
+
+drop policy if exists "Inventory users can create audit lines" on public.inventory_audit_lines;
+create policy "Inventory users can create audit lines"
+on public.inventory_audit_lines for insert
+with check (
+  public.has_permission('inventory.submit')
+  and exists (
+    select 1
+    from public.inventory_audits audit
+    where audit.id = audit_id
+      and audit.created_by = auth.uid()
+  )
 );
 
 drop policy if exists "Product creators can insert products" on public.products;
@@ -1335,11 +1473,14 @@ drop policy if exists "Attendance users can read own records" on public.attendan
 create policy "Attendance users can read own records"
 on public.attendance_records for select
 using (
-  auth.uid() = user_id
-  and (
-    public.has_permission('attendance')
-    or public.has_permission('attendance.clock')
-    or public.has_permission('attendance.history.view')
+  public.has_permission('attendance.export')
+  or (
+    auth.uid() = user_id
+    and (
+      public.has_permission('attendance')
+      or public.has_permission('attendance.clock')
+      or public.has_permission('attendance.history.view')
+    )
   )
 );
 

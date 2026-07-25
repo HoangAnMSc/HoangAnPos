@@ -7,10 +7,10 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variants = {
-  primary: "bg-coal text-white hover:-translate-y-0.5 hover:shadow-lift",
-  secondary: "bg-white text-coal ring-1 ring-coal/10 hover:bg-cream",
+  primary: "bg-coal text-white hover:bg-ink hover:shadow-lift",
+  secondary: "bg-white text-coal ring-1 ring-coal/15 hover:bg-slate-50",
   ghost: "bg-transparent text-coal hover:bg-coal/5",
-  danger: "bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700",
+  danger: "bg-red-600 text-white hover:bg-red-700",
 };
 
 export function Button({
@@ -25,7 +25,7 @@ export function Button({
   return (
     <button
       className={clsx(
-        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60",
+        "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-60",
         variants[variant],
         className
       )}

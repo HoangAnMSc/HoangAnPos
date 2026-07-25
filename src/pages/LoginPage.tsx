@@ -56,7 +56,7 @@ export function LoginPage() {
       <Card className="relative w-full max-w-md border-moss-100 bg-white/95 p-7 sm:p-8">
         <div className="mb-7 flex flex-col items-center text-center">
           <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-moss-700">
-            Admin Login
+            Khu vực quản trị
           </p>
           <h2 className="mt-2 font-display text-3xl font-bold">Đăng nhập</h2>
         </div>

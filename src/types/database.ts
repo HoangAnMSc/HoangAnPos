@@ -137,6 +137,72 @@ export type Database = {
         };
         Relationships: [];
       };
+      inventory_audits: {
+        Row: {
+          id: string;
+          created_by: string;
+          staff_name: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          created_by: string;
+          staff_name: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          created_by?: string;
+          staff_name?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      inventory_audit_lines: {
+        Row: {
+          id: string;
+          audit_id: string;
+          product_id: string | null;
+          product_name: string;
+          ean13: string;
+          counted: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          audit_id: string;
+          product_id?: string | null;
+          product_name: string;
+          ean13: string;
+          counted: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          audit_id?: string;
+          product_id?: string | null;
+          product_name?: string;
+          ean13?: string;
+          counted?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "inventory_audit_lines_audit_id_fkey";
+            columns: ["audit_id"];
+            isOneToOne: false;
+            referencedRelation: "inventory_audits";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "inventory_audit_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       cloudinary_images: {
         Row: {
           id: string;
@@ -605,6 +671,13 @@ export type Database = {
           created_at: string;
           updated_at: string;
         };
+      };
+      submit_inventory_audit: {
+        Args: {
+          lines_input: Json;
+          staff_name_input: string;
+        };
+        Returns: string;
       };
       set_app_role_active: {
         Args: {

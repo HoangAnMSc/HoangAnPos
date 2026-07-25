@@ -1,15 +1,15 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, Image as ImageIcon, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Image as ImageIcon, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
-import { Modal } from "../components/ui/Modal";
+import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
-import { formatDateTime } from "../lib/format";
+import { getErrorMessage } from "../lib/errors";
 import {
   deleteCloudinaryProductImage,
   fetchCloudinaryImageResources,
@@ -38,10 +38,6 @@ type ImageLibraryItem = {
   url: string;
   width: number | null;
 };
-
-function getRequestErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 function createImageLibraryItems(
   products: Product[],
@@ -127,26 +123,6 @@ function createImageLibraryItems(
   );
 }
 
-function formatBytes(value: number | null) {
-  if (!value) {
-    return "Khong ro";
-  }
-
-  if (value < 1024 * 1024) {
-    return `${Math.round(value / 102.4) / 10} KB`;
-  }
-
-  return `${Math.round(value / 1024 / 102.4) / 10} MB`;
-}
-
-function formatDimensions(item: ImageLibraryItem) {
-  if (!item.width || !item.height) {
-    return "Khong ro";
-  }
-
-  return `${item.width} x ${item.height}px`;
-}
-
 export function CloudinaryImagesPage() {
   const { canAccess } = useAuth();
   const [deletingUrls, setDeletingUrls] = useState<string[]>([]);
@@ -154,7 +130,6 @@ export function CloudinaryImagesPage() {
   const [images, setImages] = useState<ImageLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [selectedImage, setSelectedImage] = useState<ImageLibraryItem | null>(null);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(() => new Set());
   const [uploading, setUploading] = useState(false);
   const canUploadImage = canAccess("cloudinary-images.upload");
@@ -178,22 +153,17 @@ export function CloudinaryImagesPage() {
       const availableUrls = new Set(nextImages.map((item) => item.url));
 
       setImages(nextImages);
-      setSelectedImage((current) =>
-        current && availableUrls.has(current.url)
-          ? nextImages.find((item) => item.url === current.url) ?? null
-          : null
-      );
       setSelectedUrls((current) => {
         const nextSelected = new Set([...current].filter((url) => availableUrls.has(url)));
         return nextSelected;
       });
     } catch (requestError) {
-      const message = getRequestErrorMessage(requestError, "Khong tai duoc danh sach anh.");
+      const message = getErrorMessage(requestError, "Không tải được danh sách ảnh.");
       setErrorNotice({
         detail:
-          "Trang nay can Cloudinary Admin API qua /api/cloudinary-images de hien thi toan bo Media Library.",
+          "Trang này cần Cloudinary Admin API qua /api/cloudinary-images để hiển thị toàn bộ thư viện ảnh.",
         message,
-        title: "Khong tai duoc anh Cloudinary",
+        title: "Không tải được ảnh Cloudinary",
       });
     } finally {
       setLoading(false);
@@ -282,8 +252,8 @@ export function CloudinaryImagesPage() {
       await loadImages();
     } catch (requestError) {
       setErrorNotice({
-        message: getRequestErrorMessage(requestError, "Tai anh len Cloudinary that bai."),
-        title: "Tai anh that bai",
+        message: getErrorMessage(requestError, "Tải ảnh lên Cloudinary thất bại."),
+        title: "Tải ảnh thất bại",
       });
     } finally {
       setUploading(false);
@@ -323,23 +293,19 @@ export function CloudinaryImagesPage() {
     } catch (requestError) {
       setErrorNotice({
         detail:
-          "Can cau hinh CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY va CLOUDINARY_API_SECRET cho Vercel API route /api/cloudinary-images hoac Supabase Edge Function delete-cloudinary-image.",
-        message: getRequestErrorMessage(requestError, "Xoa anh Cloudinary that bai."),
-        title: "Xoa anh that bai",
+          "Cần cấu hình CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY và CLOUDINARY_API_SECRET cho API route /api/cloudinary-images trên Vercel hoặc Edge Function delete-cloudinary-image của Supabase.",
+        message: getErrorMessage(requestError, "Xóa ảnh Cloudinary thất bại."),
+        title: "Xóa ảnh thất bại",
       });
     } finally {
       setDeletingUrls([]);
     }
   }
 
-  async function handleDeleteCloudinary(item: ImageLibraryItem) {
-    await deleteCloudinaryItems([item], "Xoa anh nay tren Cloudinary?");
-  }
-
   async function handleDeleteSelected() {
     await deleteCloudinaryItems(
       selectedItems,
-      `Xoa ${selectedItems.length} anh da chon tren Cloudinary?`
+      `Xóa ${selectedItems.length} ảnh đã chọn trên Cloudinary?`
     );
   }
 
@@ -348,18 +314,17 @@ export function CloudinaryImagesPage() {
   const cloudinaryCount = images.filter((item) => item.cloudinary).length;
 
   return (
-    <div className="px-4 pb-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-5">
+    <PageContainer>
         <ConfigNotice />
 
         <section className="rounded-3xl bg-white p-5 shadow-soft ring-1 ring-coal/5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <div className="flex flex-wrap gap-2">
-                <Badge tone="neutral">{images.length} anh</Badge>
+                <Badge tone="neutral">{images.length} ảnh</Badge>
                 <Badge tone="neutral">{cloudinaryCount} Cloudinary</Badge>
-                <Badge tone="green">{usedCount} dang dung</Badge>
-                {unusedCount > 0 ? <Badge tone="amber">{unusedCount} chua gan</Badge> : null}
+                <Badge tone="green">{usedCount} đang dùng</Badge>
+                {unusedCount > 0 ? <Badge tone="amber">{unusedCount} chưa gắn</Badge> : null}
               </div>
             </div>
 
@@ -372,7 +337,7 @@ export function CloudinaryImagesPage() {
                     onClick={toggleFilteredSelection}
                     variant="secondary"
                   >
-                    {allFilteredSelected ? "Bo chon" : "Chon tat ca"}
+                    {allFilteredSelected ? "Bỏ chọn" : "Chọn tất cả"}
                   </Button>
                   <Button
                     className="w-full sm:w-auto"
@@ -382,7 +347,7 @@ export function CloudinaryImagesPage() {
                     variant="danger"
                   >
                     <Trash2 className="h-4 w-4" />
-                    Xoa da chon ({selectedItems.length})
+                    Xóa đã chọn ({selectedItems.length})
                   </Button>
                 </>
               ) : null}
@@ -393,7 +358,7 @@ export function CloudinaryImagesPage() {
                 variant="secondary"
               >
                 <RefreshCw className="h-4 w-4" />
-                Tai lai
+                Tải lại
               </Button>
               {canUploadImage ? (
                 <label
@@ -402,7 +367,7 @@ export function CloudinaryImagesPage() {
                   }`}
                 >
                   <Upload className="h-4 w-4" />
-                  {uploading ? "Dang tai..." : "Tai anh"}
+                  {uploading ? "Đang tải..." : "Tải ảnh"}
                   <input accept="image/*" className="hidden" onChange={handleUpload} type="file" />
                 </label>
               ) : null}
@@ -414,7 +379,7 @@ export function CloudinaryImagesPage() {
             <Input
               className="pl-11"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tim theo ten san pham, public_id..."
+              placeholder="Tìm theo tên sản phẩm, public_id..."
               value={query}
             />
           </div>
@@ -422,24 +387,23 @@ export function CloudinaryImagesPage() {
 
         {loading ? (
           <div className="rounded-3xl bg-white p-8 shadow-soft">
-            <Spinner label="Dang tai anh..." />
+            <Spinner label="Đang tải ảnh..." />
           </div>
         ) : filteredImages.length === 0 ? (
           <EmptyState
-            description="Anh upload len Cloudinary se nam o day."
+            description="Ảnh tải lên Cloudinary sẽ hiển thị tại đây."
             icon={ImageIcon}
-            title="Chua co anh phu hop"
+            title="Chưa có ảnh phù hợp"
           />
         ) : (
           <div className="grid gap-4 xl:grid-cols-[repeat(auto-fit,minmax(200px,1fr))] grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
             {filteredImages.map((item) => {
               const busy = deletingUrls.includes(item.url);
               const selected = selectedUrls.has(item.url);
-              const productNames = item.products.map((product) => product.name).join(", ");
 
               return (
                 <article
-                  className={`relative overflow-hidden rounded-3xl border bg-white shadow-soft transition ${
+                  className={`relative overflow-hidden rounded-2xl border bg-white shadow-soft transition ${
                     selected ? "border-red-300 ring-4 ring-red-50" : "border-slate-100"
                   }`}
                   key={item.url}
@@ -447,7 +411,7 @@ export function CloudinaryImagesPage() {
                   {canDeleteImage ? (
                     <label className="absolute left-3 top-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl bg-white/95 shadow-sm ring-1 ring-slate-200">
                       <input
-                        aria-label={`Chon anh ${item.publicId ?? item.url}`}
+                        aria-label={`Chọn ảnh ${item.publicId ?? item.url}`}
                         checked={selected}
                         className="h-5 w-5 accent-red-600"
                         disabled={busy || deleting}
@@ -457,135 +421,16 @@ export function CloudinaryImagesPage() {
                     </label>
                   ) : null}
 
-                  <div className="aspect-[1.4] bg-slate-100">
+                  <div className="aspect-square bg-slate-100">
                     <img alt={item.publicId ?? "Cloudinary"} className="h-full w-full object-cover" src={item.url} />
-                  </div>
-
-                  <div className="space-y-4 p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={item.products.length > 0 ? "green" : "amber"}>
-                        {item.products.length > 0 ? `${item.products.length} san pham` : "Chua gan"}
-                      </Badge>
-                      {item.cloudinary ? <Badge tone="neutral">Cloudinary</Badge> : null}
-                      {item.format ? <Badge tone="neutral">{item.format}</Badge> : null}
-                    </div>
-
-                    <div>
-                      <p className="break-all text-sm font-extrabold text-coal">
-                        {item.publicId ?? item.url}
-                      </p>
-                      <p className="mt-1 truncate text-xs font-semibold text-coal/50">
-                        {productNames || "Khong gan san pham"}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-coal/45">
-                        {formatDimensions(item)} - {formatBytes(item.bytes)}
-                      </p>
-                    </div>
-
-                    <div className={`grid gap-2 ${canDeleteImage ? "grid-cols-2" : "grid-cols-1"}`}>
-                      <Button
-                        className="w-full"
-                        disabled={busy}
-                        onClick={() => setSelectedImage(item)}
-                        variant="secondary"
-                      >
-                        <Eye className="h-4 w-4" />
-                        Chi tiet
-                      </Button>
-                      {canDeleteImage ? (
-                        <Button
-                          className="w-full"
-                          disabled={busy}
-                          isLoading={busy}
-                          onClick={() => void handleDeleteCloudinary(item)}
-                          variant="danger"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Xoa
-                        </Button>
-                      ) : null}
-                    </div>
                   </div>
                 </article>
               );
             })}
           </div>
         )}
-      </div>
-
-      <Modal
-        footer={
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-            <Button onClick={() => setSelectedImage(null)} type="button" variant="secondary">
-              Dong
-            </Button>
-            {selectedImage && canDeleteImage ? (
-              <Button
-                disabled={deletingUrls.includes(selectedImage.url)}
-                isLoading={deletingUrls.includes(selectedImage.url)}
-                onClick={() => void handleDeleteCloudinary(selectedImage)}
-                type="button"
-                variant="danger"
-              >
-                <Trash2 className="h-4 w-4" />
-                Xoa
-              </Button>
-            ) : null}
-          </div>
-        }
-        onClose={() => setSelectedImage(null)}
-        open={Boolean(selectedImage)}
-        size="xl"
-        title="Chi tiet anh"
-      >
-        {selectedImage ? (
-          <div className="space-y-5">
-            <div className="overflow-hidden rounded-2xl bg-slate-100">
-              <img
-                alt={selectedImage.publicId ?? "Cloudinary"}
-                className="max-h-[58vh] w-full object-contain"
-                src={selectedImage.url}
-              />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                { label: "Public ID", value: selectedImage.publicId ?? "Khong ro" },
-                { label: "Dinh dang", value: selectedImage.format ?? "Khong ro" },
-                { label: "Kich thuoc", value: formatDimensions(selectedImage) },
-                { label: "Dung luong", value: formatBytes(selectedImage.bytes) },
-                {
-                  label: "Ngay tao",
-                  value: selectedImage.createdAt
-                    ? formatDateTime(selectedImage.createdAt)
-                    : "Khong ro",
-                },
-                {
-                  label: "Dang gan san pham",
-                  value:
-                    selectedImage.products.length > 0
-                      ? selectedImage.products.map((product) => product.name).join(", ")
-                      : "Khong gan san pham",
-                },
-              ].map((item) => (
-                <div className="rounded-2xl bg-slate-50 px-4 py-3" key={item.label}>
-                  <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
-                    {item.label}
-                  </p>
-                  <p className="mt-1 break-words font-bold text-coal">{item.value}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">URL</p>
-              <p className="mt-1 break-all text-sm font-bold text-coal">{selectedImage.url}</p>
-            </div>
-          </div>
-        ) : null}
-      </Modal>
 
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
-    </div>
+    </PageContainer>
   );
 }

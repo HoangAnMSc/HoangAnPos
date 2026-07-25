@@ -30,7 +30,7 @@ export async function createSale({
   requireSupabaseConfig();
 
   if (cart.length === 0) {
-    throw new Error("Gio hang dang trong.");
+    throw new Error("Giỏ hàng đang trống.");
   }
 
   const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
@@ -58,7 +58,7 @@ export async function createSale({
   }
 
   if (!order) {
-    throw new Error("Supabase khong tra ve hoa don sau khi thanh toan.");
+    throw new Error("Supabase không trả về hóa đơn sau khi thanh toán.");
   }
 
   return order;

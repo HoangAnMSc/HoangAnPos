@@ -2,7 +2,7 @@ import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { Product, ProductBatch } from "../types";
 
 const missingCategoryTableMessage =
-  "Database chua co bang product_categories. Hay chay lai supabase/schema.sql roi thu lai.";
+  "Cơ sở dữ liệu chưa có bảng product_categories. Hãy chạy lại supabase/schema.sql rồi thử lại.";
 
 export type ProductInput = {
   name: string;
@@ -24,6 +24,11 @@ export type ReceiveStockInput = {
   product_id: string;
   quantity: number;
 };
+
+export type InventoryCountProduct = Pick<
+  Product,
+  "category" | "expiry_date" | "id" | "image_url" | "is_active" | "name" | "sku"
+>;
 
 export type DeleteProductResult = {
   mode: "deleted" | "soft-deleted" | "hidden";
@@ -150,6 +155,33 @@ export async function fetchProducts() {
   return data ?? [];
 }
 
+export async function fetchInventoryCountProducts(): Promise<InventoryCountProduct[]> {
+  requireSupabaseConfig();
+
+  const fields = "id,name,sku,category,image_url,is_active,expiry_date";
+  const { data, error } = await supabase
+    .from("products")
+    .select(fields)
+    .is("deleted_at", null)
+    .order("name", { ascending: true });
+
+  if (error) {
+    if (isMissingDeletedAtColumn(error)) {
+      const fallback = await supabase.from("products").select(fields).order("name", {
+        ascending: true,
+      });
+
+      if (!fallback.error) {
+        return fallback.data ?? [];
+      }
+    }
+
+    throw error;
+  }
+
+  return data ?? [];
+}
+
 export async function fetchProductBatches(productId?: string) {
   requireSupabaseConfig();
 
@@ -197,7 +229,7 @@ export async function createProductCategory(name: string) {
 
   const nextName = name.trim();
   if (!nextName) {
-    throw new Error("Nhap ten category.");
+    throw new Error("Nhập tên nhóm hàng.");
   }
 
   const { data, error } = await supabase
@@ -234,7 +266,7 @@ export async function createProduct(input: ProductInput) {
   if (error) {
     if (isMissingDateColumn(error)) {
       throw new Error(
-        "Database products chua co cot ngay nhap/ngay het han. Hay chay SQL migration roi thu lai."
+        "Bảng products chưa có cột ngày nhập/ngày hết hạn. Hãy chạy SQL migration rồi thử lại."
       );
     }
 
@@ -279,7 +311,7 @@ export async function updateProduct(id: string, input: ProductInput) {
   if (error) {
     if (isMissingDateColumn(error)) {
       throw new Error(
-        "Database products chua co cot ngay nhap/ngay het han. Hay chay SQL migration roi thu lai."
+        "Bảng products chưa có cột ngày nhập/ngày hết hạn. Hãy chạy SQL migration rồi thử lại."
       );
     }
 

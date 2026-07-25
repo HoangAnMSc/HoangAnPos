@@ -6,8 +6,10 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { getErrorMessage } from "../lib/errors";
 import { formatDateTime } from "../lib/format";
 import {
   createManagedUser,
@@ -30,10 +32,6 @@ const emptyUserForm: UserFormState = {
   role_id: "",
 };
 
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
-
 function userToForm(user: ManagedUser | null, roles: AppRole[]): UserFormState {
   if (!user) {
     return {
@@ -53,36 +51,35 @@ function userToForm(user: ManagedUser | null, roles: AppRole[]): UserFormState {
 
 function getOnlineState(lastSeenAt: string | null) {
   if (!lastSeenAt) {
-    return { label: "Offline", online: false };
+    return { label: "Ngoại tuyến", online: false };
   }
 
   const diffMs = Date.now() - new Date(lastSeenAt).getTime();
   const totalMinutes = Math.max(0, Math.floor(diffMs / 60_000));
-
   const days = Math.floor(totalMinutes / (24 * 60));
   const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
   const minutes = totalMinutes % 60;
 
   if (totalMinutes <= 1) {
-    return { label: "Online", online: true };
+    return { label: "Trực tuyến", online: true };
   }
 
   if (totalMinutes < 60) {
     return {
-      label: `Offline ${minutes} minute${minutes !== 1 ? "s" : ""}`,
+      label: `Ngoại tuyến ${minutes} phút`,
       online: false,
     };
   }
 
   if (days === 0) {
     return {
-      label: `Offline ${hours} hour${hours !== 1 ? "s" : ""} ${minutes} minute${minutes !== 1 ? "s" : ""}`,
+      label: `Ngoại tuyến ${hours} giờ ${minutes} phút`,
       online: false,
     };
   }
 
   return {
-    label: `Offline ${days} day${days !== 1 ? "s" : ""} ${hours} hour${hours !== 1 ? "s" : ""} ${minutes} minute${minutes !== 1 ? "s" : ""}`,
+    label: `Ngoại tuyến ${days} ngày ${hours} giờ ${minutes} phút`,
     online: false,
   };
 }
@@ -126,12 +123,12 @@ function UserEditorModal({
     setError("");
 
     if (!form.email.trim() || !form.role_id) {
-      setError("Nhap email va chon role.");
+      setError("Nhập email và chọn vai trò.");
       return;
     }
 
     if (!user && !form.password) {
-      setError("Nhap mat khau cho user moi.");
+      setError("Nhập mật khẩu cho nhân viên mới.");
       return;
     }
 
@@ -143,7 +140,7 @@ function UserEditorModal({
         password: form.password || undefined,
       });
     } catch (requestError) {
-      setError(getErrorMessage(requestError, "Luu user that bai."));
+      setError(getErrorMessage(requestError, "Lưu nhân viên thất bại."));
     }
   }
 
@@ -155,22 +152,22 @@ function UserEditorModal({
             {user && canToggleUser ? (
               <Button onClick={() => void onToggle(user)} type="button" variant="secondary">
                 <Power className="h-4 w-4" />
-                {user.is_active ? "Vo hieu hoa" : "Kich hoat"}
+                {user.is_active ? "Vô hiệu hóa" : "Kích hoạt"}
               </Button>
             ) : null}
             {user && canDeleteUser ? (
               <Button onClick={() => void onDelete(user)} type="button" variant="danger">
                 <Trash2 className="h-4 w-4" />
-                Xoa
+                Xóa
               </Button>
             ) : null}
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button onClick={onClose} type="button" variant="secondary">
-              Huy
+              Hủy
             </Button>
             <Button form={formId} isLoading={submitting} type="submit">
-              Luu user
+              Lưu nhân viên
             </Button>
           </div>
         </div>
@@ -178,7 +175,7 @@ function UserEditorModal({
       onClose={onClose}
       open={open}
       size="lg"
-      title={user ? "Sua user" : "Tao nguoi quan tri"}
+      title={user ? "Sửa nhân viên" : "Tạo nhân viên"}
     >
       <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -189,7 +186,7 @@ function UserEditorModal({
             value={form.email}
           />
           <Input
-            label={user ? "Mat khau moi (bo trong neu khong doi)" : "Mat khau"}
+            label={user ? "Mật khẩu mới (bỏ trống nếu không đổi)" : "Mật khẩu"}
             onChange={(event) =>
               setForm((current) => ({ ...current, password: event.target.value }))
             }
@@ -199,22 +196,22 @@ function UserEditorModal({
         </div>
 
         <Input
-          label="Ten hien thi"
+          label="Tên hiển thị"
           onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))}
           value={form.full_name}
         />
 
         <label className="block">
-          <span className="mb-2 block text-sm font-extrabold text-slate-950">Role</span>
+          <span className="mb-2 block text-sm font-extrabold text-slate-950">Vai trò</span>
           <select
             className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-coal outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
             onChange={(event) => setForm((current) => ({ ...current, role_id: event.target.value }))}
             value={form.role_id}
           >
-            <option value="">Chon role</option>
+            <option value="">Chọn vai trò</option>
             {roles.map((role) => (
               <option key={role.id} value={role.id}>
-                {role.name} {role.is_active ? "" : "(vo hieu hoa)"}
+                {role.name} {role.is_active ? "" : "(vô hiệu hóa)"}
               </option>
             ))}
           </select>
@@ -229,7 +226,7 @@ function UserEditorModal({
             }
             type="checkbox"
           />
-          User dang hoat dong
+          Tài khoản đang hoạt động
         </label>
 
         {error ? (
@@ -267,9 +264,9 @@ export function UsersPage() {
       setUsers(nextUsers);
     } catch (requestError) {
       setErrorNotice({
-        detail: "Can cau hinh SUPABASE_SERVICE_ROLE_KEY trong .env/Vercel de quan ly user.",
-        message: getErrorMessage(requestError, "Khong tai duoc user."),
-        title: "Khong tai duoc user",
+        detail: "Cần cấu hình SUPABASE_SERVICE_ROLE_KEY trong .env/Vercel để quản lý nhân viên.",
+        message: getErrorMessage(requestError, "Không tải được danh sách nhân viên."),
+        title: "Không tải được nhân viên",
       });
     } finally {
       setLoading(false);
@@ -282,6 +279,11 @@ export function UsersPage() {
 
   const onlineCount = useMemo(
     () => users.filter((user) => getOnlineState(user.last_seen_at).online).length,
+    [users]
+  );
+
+  const offlineCount = useMemo(
+    () => users.filter((user) => !getOnlineState(user.last_seen_at).online).length,
     [users]
   );
 
@@ -346,8 +348,8 @@ export function UsersPage() {
       await loadData();
     } catch (requestError) {
       setErrorNotice({
-        message: getErrorMessage(requestError, "Doi trang thai user that bai."),
-        title: "Doi trang thai that bai",
+        message: getErrorMessage(requestError, "Đổi trạng thái nhân viên thất bại."),
+        title: "Đổi trạng thái thất bại",
       });
     }
   }
@@ -357,7 +359,7 @@ export function UsersPage() {
       return;
     }
 
-    if (!window.confirm(`Xoa user "${user.email}"?`)) {
+    if (!window.confirm(`Xóa nhân viên "${user.email}"?`)) {
       return;
     }
 
@@ -369,8 +371,8 @@ export function UsersPage() {
       await loadData();
     } catch (requestError) {
       setErrorNotice({
-        message: getErrorMessage(requestError, "Xoa user that bai."),
-        title: "Xoa user that bai",
+        message: getErrorMessage(requestError, "Xóa nhân viên thất bại."),
+        title: "Xóa nhân viên thất bại",
       });
     }
   }
@@ -378,60 +380,50 @@ export function UsersPage() {
   const normalizedQuery = query.trim().toLowerCase();
   const filteredUsers = users.filter((user) => {
     const online = getOnlineState(user.last_seen_at);
-    return [user.email, user.full_name, user.role?.name, user.is_active ? "hoat dong" : "vo hieu hoa", online.label]
+    return [user.email, user.full_name, user.role?.name, user.is_active ? "hoạt động" : "vô hiệu hóa", online.label]
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedQuery));
   });
 
   return (
-    <div className="px-3 pb-8 sm:px-4 lg:px-6">
-      <div className="mx-auto max-w-7xl space-y-4">
+    <PageContainer>
         <section className="rounded-xl bg-white p-4 shadow-soft ring-1 ring-coal/5">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
-                Tai khoan noi bo
-              </p>
-              <h2 className="mt-1 font-display text-xl font-bold text-coal">Quan ly user</h2>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge tone="neutral">{users.length} user</Badge>
-                <Badge tone="neutral">{filteredUsers.length} dang hien thi</Badge>
-                <Badge tone="green">{onlineCount} dang online</Badge>
-                <Badge tone="red">{users.filter((user) => !user.is_active).length} vo hieu hoa</Badge>
-              </div>
+            <div className="relative mt-3 w-full xl:max-w-xl">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
+              <Input
+                className="h-10 rounded-xl py-2 pl-11"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Tìm email, tên, vai trò hoặc trạng thái..."
+                value={query}
+              />
             </div>
             {canCreateUser ? (
               <Button className="h-10 rounded-xl px-3" onClick={openCreateModal}>
                 <Plus className="h-4 w-4" />
-                Tao quan tri
+                Thêm nhân viên mới
               </Button>
             ) : null}
           </div>
-
-          <div className="relative mt-3 w-full xl:max-w-xl">
-            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
-            <Input
-              className="h-10 rounded-xl py-2 pl-11"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tim email, ten, role, trang thai..."
-              value={query}
-            />
+          <div className="mt-2 w-full flex justify-start gap-2">
+            <Badge tone="green">{onlineCount} trực tuyến</Badge>
+            <Badge tone="red">{offlineCount} ngoại tuyến</Badge>
           </div>
         </section>
 
         {loading ? (
           <div className="rounded-xl bg-white p-6 shadow-soft">
-            <Spinner label="Dang tai user..." />
+            <Spinner label="Đang tải nhân viên..." />
           </div>
         ) : filteredUsers.length === 0 ? (
-          <EmptyState description="Tao nguoi quan tri dau tien de phan quyen." icon={UserCog} title="Chua co user" />
+          <EmptyState description="Tạo nhân viên đầu tiên để phân quyền." icon={UserCog} title="Chưa có nhân viên" />
         ) : (
           <div className="overflow-hidden rounded-xl bg-white shadow-soft ring-1 ring-coal/5">
             <div className="hidden grid-cols-[minmax(0,1.45fr)_minmax(0,0.85fr)_minmax(0,0.95fr)_minmax(0,1fr)_auto] gap-3 border-b border-coal/5 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
-              <span>User</span>
-              <span>Role</span>
-              <span>Trang thai</span>
-              <span>Hoat dong</span>
+              <span>Nhân viên</span>
+              <span>Vai trò</span>
+              <span>Trạng thái</span>
+              <span>Hoạt động</span>
               <span />
             </div>
             <div className="divide-y divide-coal/5">
@@ -449,21 +441,21 @@ export function UsersPage() {
                       <p className="truncate text-base font-extrabold text-coal">{user.full_name || user.email}</p>
                       <p className="mt-1 truncate text-sm font-semibold text-coal/45">{user.email}</p>
                       <div className="mt-2 flex flex-wrap gap-1.5 lg:hidden">
-                        <Badge tone="neutral">{user.role?.name ?? "Chua gan role"}</Badge>
+                        <Badge tone="neutral">{user.role?.name ?? "Chưa gán vai trò"}</Badge>
                         <Badge tone={user.is_active ? "green" : "red"}>
-                          {user.is_active ? "Hoat dong" : "Vo hieu hoa"}
+                          {user.is_active ? "Hoạt động" : "Vô hiệu hóa"}
                         </Badge>
                       </div>
                       <p className="mt-1 hidden text-xs font-semibold text-coal/35 lg:block">
-                        Tao {user.created_at ? formatDateTime(user.created_at) : "khong ro"}
+                        Tạo {user.created_at ? formatDateTime(user.created_at) : "không rõ"}
                       </p>
                     </div>
                     <div className="hidden lg:block">
-                      <Badge tone="neutral">{user.role?.name ?? "Chua gan role"}</Badge>
+                      <Badge tone="neutral">{user.role?.name ?? "Chưa gán vai trò"}</Badge>
                     </div>
                     <div className="hidden lg:block">
                       <Badge tone={user.is_active ? "green" : "red"}>
-                        {user.is_active ? "Hoat dong" : "Vo hieu hoa"}
+                        {user.is_active ? "Hoạt động" : "Vô hiệu hóa"}
                       </Badge>
                     </div>
                     <div className="hidden lg:block">
@@ -483,18 +475,16 @@ export function UsersPage() {
             </div>
           </div>
         )}
-      </div>
-
       <Modal
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button onClick={() => setViewingUser(null)} type="button" variant="secondary">
-              Dong
+              Đóng
             </Button>
             {viewingUser && canEditUser ? (
               <Button onClick={() => openEditModal(viewingUser)} type="button">
                 <Edit3 className="h-4 w-4" />
-                Sua
+                Sửa
               </Button>
             ) : null}
           </div>
@@ -502,36 +492,36 @@ export function UsersPage() {
         onClose={() => setViewingUser(null)}
         open={Boolean(viewingUser)}
         size="md"
-        title="Xem user"
+        title="Thông tin"
       >
         {viewingUser ? (
-          <div className="space-y-4">
-            <div className="rounded-xl bg-slate-50 p-4">
+          <div className="space-y-6">
+            <div className="flex justify-between rounded-xl bg-slate-50 p-4">
               <h3 className="truncate text-lg font-extrabold text-slate-950">
                 {viewingUser.full_name || viewingUser.email}
               </h3>
               <p className="mt-1 truncate text-sm font-semibold text-slate-500">
                 {viewingUser.email}
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Badge tone="neutral">{viewingUser.role?.name ?? "Chua gan role"}</Badge>
+              <div>
+                <Badge tone="neutral">{viewingUser.role?.name ?? "Chưa gán vai trò"}</Badge>
                 <Badge tone={viewingUser.is_active ? "green" : "red"}>
-                  {viewingUser.is_active ? "Hoat dong" : "Vo hieu hoa"}
+                  {viewingUser.is_active ? "Hoạt động" : "Vô hiệu hóa"}
                 </Badge>
               </div>
             </div>
             <div className="grid gap-2 text-sm font-semibold text-slate-700">
               <p>
-                <span className="text-slate-400">Tao:</span>{" "}
-                {viewingUser.created_at ? formatDateTime(viewingUser.created_at) : "Khong ro"}
+                <span className="text-slate-400">Tạo:</span>{" "}
+                {viewingUser.created_at ? formatDateTime(viewingUser.created_at) : "Không rõ"}
               </p>
               <p>
-                <span className="text-slate-400">Hoat dong:</span>{" "}
+                <span className="text-slate-400">Hoạt động:</span>{" "}
                 {getOnlineState(viewingUser.last_seen_at).label}
               </p>
               {viewingUser.last_seen_at ? (
                 <p>
-                  <span className="text-slate-400">Lan cuoi:</span>{" "}
+                  <span className="text-slate-400">Lần cuối:</span>{" "}
                   {formatDateTime(viewingUser.last_seen_at)}
                 </p>
               ) : null}
@@ -553,6 +543,6 @@ export function UsersPage() {
         user={editingUser}
       />
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
-    </div>
+    </PageContainer>
   );
 }

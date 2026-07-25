@@ -13,10 +13,10 @@ export function UnauthorizedPage() {
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-red-100 text-red-600">
           <ShieldAlert className="h-8 w-8" />
         </div>
-        <h1 className="font-display text-3xl font-bold">Chưa có quyền admin</h1>
+        <h1 className="font-display text-3xl font-bold">Không có quyền truy cập</h1>
         <p className="mt-3 text-sm leading-6 text-coal/65">
-          Tài khoản đã đăng nhập nhưng chưa được gán role admin trong bảng profiles.
-          Hãy dùng tài khoản admin hoặc cập nhật role trên Supabase.
+          Tài khoản đã đăng nhập nhưng chưa được gán vai trò phù hợp.
+          Hãy dùng tài khoản quản trị hoặc cập nhật vai trò trên Supabase.
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button onClick={signOut}>

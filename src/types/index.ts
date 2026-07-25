@@ -3,6 +3,8 @@ import type { Database } from "./database";
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type AppRole = Database["public"]["Tables"]["app_roles"]["Row"];
 export type Product = Database["public"]["Tables"]["products"]["Row"];
+export type InventoryAudit = Database["public"]["Tables"]["inventory_audits"]["Row"];
+export type InventoryAuditLine = Database["public"]["Tables"]["inventory_audit_lines"]["Row"];
 export type CloudinaryImage = Database["public"]["Tables"]["cloudinary_images"]["Row"];
 export type ProductBatch = Database["public"]["Tables"]["product_batches"]["Row"];
 export type Customer = Database["public"]["Tables"]["customers"]["Row"];

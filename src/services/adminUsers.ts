@@ -27,7 +27,7 @@ async function parseResponse<T>(response: Response) {
   const data = (await response.json()) as { message?: string } & T;
 
   if (!response.ok) {
-    throw new Error(data.message || "Yeu cau quan ly user that bai.");
+    throw new Error(data.message || "Yêu cầu quản lý nhân viên thất bại.");
   }
 
   return data;

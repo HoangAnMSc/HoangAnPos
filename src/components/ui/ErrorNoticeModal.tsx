@@ -15,7 +15,7 @@ type ErrorNoticeModalProps = {
 };
 
 export function ErrorNoticeModal({
-  actionLabel = "Da hieu",
+  actionLabel = "Đã hiểu",
   notice,
   onClose,
 }: ErrorNoticeModalProps) {
@@ -29,7 +29,7 @@ export function ErrorNoticeModal({
       onClose={onClose}
       open={Boolean(notice)}
       size="sm"
-      title={notice?.title ?? "Thong bao loi"}
+      title={notice?.title ?? "Thông báo lỗi"}
     >
       {notice ? (
         <div className="space-y-4">

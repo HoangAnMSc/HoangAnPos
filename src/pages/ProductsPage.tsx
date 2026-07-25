@@ -27,6 +27,8 @@ import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useErrorNotice } from "../hooks/useErrorNotice";
+import { getErrorMessage } from "../lib/errors";
 import { formatCurrency } from "../lib/format";
 import {
   createVietnamEan13FromSeed,
@@ -40,6 +42,7 @@ import {
   normalizeEan13Input,
 } from "../lib/productDisplay";
 import { fetchCloudinaryImageResources, uploadProductImageAsset } from "../lib/cloudinary";
+import { normalizeNullableText } from "../lib/text";
 import { saveCloudinaryImageAsset } from "../services/cloudinaryImages";
 import {
   createProductCategory,
@@ -87,11 +90,6 @@ const fieldClassName =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-moss-400 focus:ring-4 focus:ring-moss-100 sm:px-5 sm:py-4 sm:text-base";
 const labelClassName = "mb-2 block text-sm font-extrabold text-slate-950";
 
-function normalizeText(value: string) {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function productToForm(product?: Product | null, initialEan13 = ""): ProductFormState {
   if (!product) {
     return { ...emptyForm, ean13: initialEan13 };
@@ -110,10 +108,6 @@ function productToForm(product?: Product | null, initialEan13 = ""): ProductForm
     ean13: normalizeEan13Input(product.sku),
     stock: String(product.stock),
   };
-}
-
-function getSubmitErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Khong luu duoc san pham.";
 }
 
 function mergeCategoryNames(values: Array<string | null | undefined>) {
@@ -181,17 +175,17 @@ function ProductEan13GateModal({
 
     if (!isValidEan13(ean13Code)) {
       onError({
-        message: "Ma EAN-13 phai co dung 13 chu so va dung so kiem tra.",
-        title: "EAN-13 khong hop le",
+        message: "Mã EAN-13 phải có đúng 13 chữ số và đúng số kiểm tra.",
+        title: "EAN-13 không hợp lệ",
       });
       return;
     }
 
     if (existingProduct) {
       onError({
-        detail: `Ma nay dang gan voi san pham "${existingProduct.name}".`,
-        message: `EAN-13 ${ean13Code} da ton tai trong database.`,
-        title: "EAN-13 da ton tai",
+        detail: `Mã này đang gắn với sản phẩm "${existingProduct.name}".`,
+        message: `EAN-13 ${ean13Code} đã tồn tại trong cơ sở dữ liệu.`,
+        title: "EAN-13 đã tồn tại",
       });
       return;
     }
@@ -208,22 +202,22 @@ function ProductEan13GateModal({
       <Modal
         footer={
           <Button onClick={onClose} variant="secondary">
-            Huy
+            Hủy
           </Button>
         }
         onClose={onClose}
         open={open}
         size="md"
-        title="Chon ma EAN-13"
+        title="Chọn mã EAN-13"
       >
         <div className="space-y-4">
           <div className="rounded-2xl bg-slate-50 p-4">
             <p className="text-sm font-extrabold text-slate-950">
-              Them san pham moi can co EAN-13 truoc.
+              Sản phẩm mới cần có mã EAN-13 trước khi nhập thông tin.
             </p>
             <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
-              Quet ma co san tren bao bi, hoac tao ma Viet Nam bat dau bang 893 de in tem va dan
-              len san pham.
+              Quét mã có sẵn trên bao bì hoặc tạo mã Việt Nam bắt đầu bằng 893 để in tem và dán
+              lên sản phẩm.
             </p>
           </div>
 
@@ -238,10 +232,10 @@ function ProductEan13GateModal({
               </span>
               <span>
                 <span className="block text-base font-extrabold text-slate-950">
-                  Quet EAN-13
+                  Quét EAN-13
                 </span>
                 <span className="mt-1 block text-sm font-semibold leading-5 text-slate-500">
-                  Dung khi san pham da co ma vach tren bao bi.
+                  Dùng khi sản phẩm đã có mã vạch trên bao bì.
                 </span>
               </span>
             </button>
@@ -256,10 +250,10 @@ function ProductEan13GateModal({
               </span>
               <span>
                 <span className="block text-base font-extrabold text-slate-950">
-                  Tao ma Viet Nam
+                  Tạo mã Việt Nam
                 </span>
                 <span className="mt-1 block text-sm font-semibold leading-5 text-slate-500">
-                  Tao EAN-13 prefix 893 cho san pham chua co ma.
+                  Tạo EAN-13 với tiền tố 893 cho sản phẩm chưa có mã.
                 </span>
               </span>
             </button>
@@ -268,11 +262,11 @@ function ProductEan13GateModal({
       </Modal>
 
       <Ean13ScannerModal
-        description="Quet EAN-13 co san tren bao bi. Neu ma chua co trong database, he thong se dung ma nay cho san pham moi."
+        description="Quét EAN-13 có sẵn trên bao bì. Nếu mã chưa có trong cơ sở dữ liệu, hệ thống sẽ dùng mã này cho sản phẩm mới."
         onClose={() => setScannerOpen(false)}
         onDetected={acceptEan13}
         open={open && scannerOpen}
-        title="Quet EAN-13 san pham moi"
+        title="Quét EAN-13 sản phẩm mới"
       />
     </>
   );
@@ -360,14 +354,14 @@ function MediaPickerModal({
             onClick={handleSave}
             type="button"
           >
-            Save
+            Lưu
           </button>
         </div>
       }
       onClose={onClose}
       open={open}
       size="md"
-      title="Add Media"
+      title="Thêm ảnh"
     >
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -392,14 +386,14 @@ function MediaPickerModal({
               onClick={() => setActiveTab("upload")}
               type="button"
             >
-              Upload New
+              Tải ảnh mới
             </button>
           ) : null}
         </div>
 
         <div className="flex items-center justify-between text-sm">
           <span className="text-slate-500">
-            Selected <span className="font-extrabold text-slate-950">{selectedCount}</span>
+            Đã chọn <span className="font-extrabold text-slate-950">{selectedCount}</span>
           </span>
           <button
             className="font-extrabold text-slate-950 underline"
@@ -410,7 +404,7 @@ function MediaPickerModal({
             }}
             type="button"
           >
-            {selectedUrl || draftFile ? "Bo anh" : "Chua chon anh"}
+            {selectedUrl || draftFile ? "Bo ảnh" : "Chưa chọn ảnh"}
           </button>
         </div>
 
@@ -447,14 +441,14 @@ function MediaPickerModal({
             <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl bg-slate-50 p-5 text-center">
               <ImagePlus className="h-8 w-8 text-slate-400" />
               <p className="mt-3 text-sm font-extrabold text-slate-950">No media yet</p>
-              <p className="mt-1 text-xs text-slate-500">Upload a new image for this product.</p>
+              <p className="mt-1 text-xs text-slate-500">Tải ảnh mới cho sản phẩm này.</p>
             </div>
           )
         ) : (
           <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center transition hover:border-moss-500 hover:bg-moss-50">
             {draftPreview ? (
               <img
-                alt="Upload preview"
+                alt="Ảnh xem trước"
                 className="mb-4 h-32 w-32 rounded-2xl object-cover"
                 src={draftPreview}
               />
@@ -467,7 +461,7 @@ function MediaPickerModal({
               {draftFile ? draftFile.name : "Choose image from device"}
             </span>
             <span className="mt-1 text-xs text-slate-500">
-              Image uploads to Cloudinary when the product is saved.
+              Image uploads to Cloudinary when thể product is saved.
             </span>
             <input accept="image/*" className="hidden" onChange={handleUploadChange} type="file" />
           </label>
@@ -564,7 +558,7 @@ function ProductForm({
     const nextCategory = categoryDraft.trim();
 
     if (!nextCategory) {
-      setCategoryError("Nhap ten category.");
+      setCategoryError("Nhập tên nhóm hàng.");
       return;
     }
 
@@ -587,7 +581,7 @@ function ProductForm({
       updateField("category", savedCategory);
       closeCategoryModal();
     } catch (requestError) {
-      setCategoryError(getSubmitErrorMessage(requestError));
+      setCategoryError(getErrorMessage(requestError, "Không lưu được nhóm hàng."));
     } finally {
       setCategorySubmitting(false);
     }
@@ -607,8 +601,8 @@ function ProductForm({
     const costPrice = Number(form.cost_price);
     const stock = Number(form.stock);
     const ean13Code = normalizeEan13Input(form.ean13);
-    const importDate = normalizeText(form.import_date);
-    const expiryDate = normalizeText(form.expiry_date);
+    const importDate = normalizeNullableText(form.import_date);
+    const expiryDate = normalizeNullableText(form.expiry_date);
 
     if (!name) {
       setError("Product title is required.");
@@ -616,28 +610,28 @@ function ProductForm({
     }
 
     if ([price, costPrice, stock].some((value) => Number.isNaN(value) || value < 0)) {
-      setError("Gia ban, gia von va so luong phai la so khong am.");
+      setError("Giá bán, giá vốn và số lượng phải là số không âm.");
       return;
     }
 
     if (importDate && expiryDate && expiryDate < importDate) {
-      setError("Ngay het han phai sau hoac bang ngay nhap.");
+      setError("Ngày hết hạn phải sau hoặc bằng ngày nhập.");
       return;
     }
 
     if ((ean13Required || form.ean13.trim()) && !isValidEan13(ean13Code)) {
-      setError("Ma EAN-13 phai co dung 13 chu so va dung so kiem tra.");
+      setError("Mã EAN-13 phải có đúng 13 chữ số và đúng số kiểm tra.");
       return;
     }
 
     try {
       await onSubmit(
         {
-          category: normalizeText(form.category),
+          category: normalizeNullableText(form.category),
           cost_price: costPrice,
-          description: normalizeText(form.description),
+          description: normalizeNullableText(form.description),
           expiry_date: expiryDate,
-          image_url: normalizeText(form.image_url),
+          image_url: normalizeNullableText(form.image_url),
           import_date: importDate,
           is_active: form.is_active,
           name,
@@ -648,7 +642,7 @@ function ProductForm({
         imageFile
       );
     } catch (requestError) {
-      setError(getSubmitErrorMessage(requestError));
+      setError(getErrorMessage(requestError, "Không lưu được sản phẩm."));
     }
   }
 
@@ -672,7 +666,7 @@ function ProductForm({
               )}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-base font-extrabold text-slate-950">Add Media</span>
+              <span className="block text-base font-extrabold text-slate-950">Thêm ảnh</span>
               {previewUrl ? (
                 <span className="block truncate text-xs font-semibold text-slate-500">
                   Media selected
@@ -684,7 +678,7 @@ function ProductForm({
         </section>
 
         <label className="block">
-          <span className={labelClassName}>Product Title</span>
+          <span className={labelClassName}>Tên sản phẩm</span>
           <input
             className={fieldClassName}
             onChange={(event) => updateField("name", event.target.value)}
@@ -731,7 +725,7 @@ function ProductForm({
         ) : null}
 
         <label className="block">
-          <span className={labelClassName}>Descriptions</span>
+          <span className={labelClassName}>Mô tả</span>
           <textarea
             className={`${fieldClassName} min-h-32 resize-none sm:min-h-36`}
             onChange={(event) => updateField("description", event.target.value)}
@@ -741,14 +735,14 @@ function ProductForm({
         </label>
 
         <label className="block">
-          <span className={labelClassName}>Category</span>
+          <span className={labelClassName}>Nhóm hàng</span>
           <div className="flex gap-2">
             <select
               className={`${fieldClassName} min-w-0 flex-1 appearance-none`}
               onChange={(event) => updateField("category", event.target.value)}
               value={form.category}
             >
-              <option value="">Select category</option>
+              <option value="">Chọn nhóm hàng</option>
               {categoryOptions.map((category) => (
                 <option key={category} value={category}>
                   {category}
@@ -770,7 +764,7 @@ function ProductForm({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className={labelClassName}>Ngay nhap</span>
+            <span className={labelClassName}>Ngày nhập</span>
             <input
               className={fieldClassName}
               onChange={(event) => updateField("import_date", event.target.value)}
@@ -779,7 +773,7 @@ function ProductForm({
             />
           </label>
           <label className="block">
-            <span className={labelClassName}>Ngay het han</span>
+            <span className={labelClassName}>Ngày hết hạn</span>
             <input
               className={fieldClassName}
               onChange={(event) => updateField("expiry_date", event.target.value)}
@@ -791,7 +785,7 @@ function ProductForm({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className={labelClassName}>Gia von</span>
+            <span className={labelClassName}>Giá vốn</span>
             <input
               className={fieldClassName}
               min="0"
@@ -802,7 +796,7 @@ function ProductForm({
             />
           </label>
           <label className="block">
-            <span className={labelClassName}>Gia ban</span>
+            <span className={labelClassName}>Giá bán</span>
             <input
               className={fieldClassName}
               min="0"
@@ -816,7 +810,7 @@ function ProductForm({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className={labelClassName}>Quantity</span>
+            <span className={labelClassName}>Số lượng</span>
             <input
               className={fieldClassName}
               min="0"
@@ -840,23 +834,23 @@ function ProductForm({
                     updateField("ean13", normalizeEan13Input(event.target.value));
                   }
                 }}
-                placeholder="Quet hoac nhap 13 chu so"
+                placeholder="Quét hoặc nhập 13 chữ số"
                 readOnly={ean13Locked}
                 value={form.ean13}
               />
               {ean13Locked ? (
                 <span className="inline-flex h-[46px] shrink-0 items-center justify-center rounded-2xl bg-moss-50 px-4 text-sm font-extrabold text-moss-700 sm:h-[58px]">
-                  Da chon
+                  Đã chọn
                 </span>
               ) : (
                 <Button
-                  aria-label="Quet EAN-13"
+                  aria-label="Quét EAN-13"
                   className="h-[46px] shrink-0 px-4 sm:h-[58px]"
                   onClick={() => setEan13ScannerOpen(true)}
                   variant="secondary"
                 >
                   <Barcode className="h-4 w-4" />
-                  Quet
+                  Quét
                 </Button>
               )}
             </div>
@@ -869,7 +863,7 @@ function ProductForm({
           </div>
         ) : null}
 
-        {submitting ? <span className="sr-only">Saving product</span> : null}
+        {submitting ? <span className="sr-only">Đang lưu sản phẩm</span> : null}
       </form>
 
       <MediaPickerModal
@@ -907,18 +901,18 @@ function ProductForm({
                 onClick={() => void saveCategoryDraft()}
                 type="button"
               >
-                {categorySubmitting ? "Saving..." : "Add"}
+                {categorySubmitting ? "Đang lưu..." : "Thêm"}
               </button>
             </div>
           }
           onClose={closeCategoryModal}
           open={categoryModalOpen}
           size="sm"
-          title="Add Category"
+          title="Thêm nhóm hàng"
         >
           <form className="space-y-3" id="product-category-form" onSubmit={handleAddCategory}>
             <label className="block">
-              <span className={labelClassName}>Category name</span>
+              <span className={labelClassName}>Tên nhóm hàng</span>
               <input
                 autoFocus
                 className={fieldClassName}
@@ -926,7 +920,7 @@ function ProductForm({
                   setCategoryDraft(event.target.value);
                   setCategoryError("");
                 }}
-                placeholder="Vi du: Sua bot, Sua tuoi..."
+                placeholder="Ví dụ: Sữa bột, Sữa tươi..."
                 value={categoryDraft}
               />
             </label>
@@ -939,14 +933,14 @@ function ProductForm({
         </Modal>
       ) : null}
       <Ean13ScannerModal
-        description="Quet EAN-13 co san tren bao bi san pham. Ma quet duoc se luu vao truong EAN-13 cua san pham."
+        description="Quét EAN-13 có sẵn trên bao bì sản phẩm. Mã quét được sẽ lưu vào trường EAN-13 của sản phẩm."
         onClose={() => setEan13ScannerOpen(false)}
         onDetected={(value) => {
           updateField("ean13", value);
           setError("");
         }}
         open={ean13ScannerOpen}
-        title="Quet EAN-13 san pham"
+        title="Quét EAN-13 sản phẩm"
       />
     </>
   );
@@ -1002,7 +996,7 @@ function ProductEditorModal({
               type="button"
             >
               <Trash2 className="h-4 w-4" />
-              Xoa
+              Xóa
             </button>
           ) : (
             <span className="hidden sm:block" />
@@ -1022,7 +1016,7 @@ function ProductEditorModal({
                 form={formId}
                 type="submit"
               >
-                {submitting ? "Saving..." : product ? "Save Product" : "Add Product"}
+                {submitting ? "Đang lưu..." : product ? "Lưu sản phẩm" : "Thêm sản phẩm"}
               </button>
             ) : null}
           </div>
@@ -1031,7 +1025,7 @@ function ProductEditorModal({
       onClose={onCancel}
       open={open}
       size="wide"
-      title={product ? "Edit Product" : "Nhap thong tin san pham"}
+      title={product ? "Sửa sản phẩm" : "Thêm sản phẩm"}
     >
       <ProductForm
         canCreateCategory={canCreateCategory}
@@ -1080,12 +1074,12 @@ function ProductDetailModal({
   const batchTotal = activeBatches.reduce((sum, batch) => sum + batch.quantity, 0);
   const detailItems = [
     { label: "EAN-13", value: getProductEan13Value(product) },
-    { label: "Nhom hang", value: product.category || "Chua phan nhom" },
-    { label: "Gia von", value: formatCurrency(product.cost_price) },
-    { label: "Gia ban", value: formatCurrency(product.price) },
-    { label: "Ton kho", value: String(product.stock) },
-    { label: "Ton theo lo", value: `${batchTotal} / ${activeBatches.length} lo` },
-    { label: "Trang thai", value: product.is_active ? "Dang hien" : "Dang an" },
+    { label: "Nhóm hàng", value: product.category || "Chưa phân nhóm" },
+    { label: "Giá vốn", value: formatCurrency(product.cost_price) },
+    { label: "Giá bán", value: formatCurrency(product.price) },
+    { label: "Tồn kho", value: String(product.stock) },
+    { label: "Tồn theo lô", value: `${batchTotal} / ${activeBatches.length} lô` },
+    { label: "Trạng thái", value: product.is_active ? "Đang hiện" : "Đang ẩn" },
   ];
 
   return (
@@ -1097,7 +1091,7 @@ function ProductDetailModal({
             onClick={onClose}
             type="button"
           >
-            Dong
+            Đóng
           </button>
           {canEditProduct ? (
             <button
@@ -1105,7 +1099,7 @@ function ProductDetailModal({
               onClick={() => onEdit(product)}
               type="button"
             >
-              Sua
+              Sửa
             </button>
           ) : null}
         </div>
@@ -1113,7 +1107,7 @@ function ProductDetailModal({
       onClose={onClose}
       open={open}
       size="lg"
-      title="Chi tiet san pham"
+      title="Chi tiết sản phẩm"
     >
       <div className="space-y-5">
         <div className="flex flex-col gap-4 sm:flex-row">
@@ -1130,13 +1124,13 @@ function ProductDetailModal({
             <div className="flex flex-wrap gap-2">
               <Badge className="items-center gap-1" tone={product.is_active ? "green" : "red"}>
                 {product.is_active ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                {product.is_active ? "Dang hien" : "Dang an"}
+                {product.is_active ? "Đang hiện" : "Đang ẩn"}
               </Badge>
               <Badge tone={getExpiryTone(expiryStatus)}>{getExpiryLabel(expiryStatus)}</Badge>
             </div>
             <h3 className="mt-3 font-display text-2xl font-bold text-coal">{product.name}</h3>
             <p className="mt-2 text-sm leading-6 text-coal/60">
-              {product.description || "Chua co mo ta san pham."}
+              {product.description || "Chưa có mô tả sản phẩm."}
             </p>
           </div>
         </div>
@@ -1155,22 +1149,22 @@ function ProductDetailModal({
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h4 className="text-sm font-extrabold uppercase tracking-wide text-coal/55">
-              Ton kho theo date
+              Tồn kho theo lô
             </h4>
-            <Badge tone="neutral">{activeBatches.length} lo</Badge>
+            <Badge tone="neutral">{activeBatches.length} lô</Badge>
           </div>
 
           {activeBatches.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-bold text-slate-500">
-              Chua co lo nhap kho nao con hang.
+              Chưa có lô nhập kho nào còn hàng.
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-slate-100">
               <div className="hidden grid-cols-[1fr_1fr_110px_120px] gap-3 bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500 sm:grid">
-                <span>Ngay nhap</span>
-                <span>Han su dung</span>
-                <span className="text-right">Con lai</span>
-                <span className="text-right">Trang thai</span>
+                <span>Ngày nhập</span>
+                <span>Hạn sử dụng</span>
+                <span className="text-right">Còn lại</span>
+                <span className="text-right">Trạng thái</span>
               </div>
               <div className="divide-y divide-slate-100">
                 {activeBatches.map((batch) => {
@@ -1183,7 +1177,7 @@ function ProductDetailModal({
                     >
                       <div>
                         <p className="text-xs font-extrabold uppercase text-slate-400 sm:hidden">
-                          Ngay nhap
+                          Ngày nhập
                         </p>
                         <p className="font-bold text-slate-900">
                           {formatProductDate(batch.import_date)}
@@ -1191,7 +1185,7 @@ function ProductDetailModal({
                       </div>
                       <div>
                         <p className="text-xs font-extrabold uppercase text-slate-400 sm:hidden">
-                          Han su dung
+                          Hạn sử dụng
                         </p>
                         <p className="font-bold text-slate-900">
                           {formatProductDate(batch.expiry_date)}
@@ -1252,21 +1246,21 @@ function ReceiveStockModal({
     setError("");
 
     const nextQuantity = Number(quantity);
-    const nextImportDate = normalizeText(importDate);
-    const nextExpiryDate = normalizeText(expiryDate);
+    const nextImportDate = normalizeNullableText(importDate);
+    const nextExpiryDate = normalizeNullableText(expiryDate);
 
     if (!productId) {
-      setError("Chon san pham can nhap kho.");
+      setError("Chọn sản phẩm cần nhập kho.");
       return;
     }
 
     if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
-      setError("So luong nhap phai lon hon 0.");
+      setError("Số lượng nhập phải lon hon 0.");
       return;
     }
 
     if (nextImportDate && nextExpiryDate && nextExpiryDate < nextImportDate) {
-      setError("Ngay het han phai sau hoac bang ngay nhap.");
+      setError("Ngày hết hạn phải sau hoặc bằng ngày nhập.");
       return;
     }
 
@@ -1278,7 +1272,7 @@ function ReceiveStockModal({
         quantity: Math.floor(nextQuantity),
       });
     } catch (requestError) {
-      setError(getSubmitErrorMessage(requestError));
+      setError(getErrorMessage(requestError, "Nhập kho thất bại."));
     }
   }
 
@@ -1287,28 +1281,28 @@ function ReceiveStockModal({
       footer={
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
           <Button onClick={onClose} type="button" variant="secondary">
-            Huy
+            Hủy
           </Button>
           <Button form={formId} isLoading={submitting} type="submit">
-            Nhap kho
+            Nhập kho
           </Button>
         </div>
       }
       onClose={onClose}
       open={open}
       size="md"
-      title="Nhap kho"
+      title="Nhập kho"
     >
       <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
         <label className="block">
-          <span className={labelClassName}>San pham</span>
+          <span className={labelClassName}>Sản phẩm</span>
           <select
             className={`${fieldClassName} appearance-none`}
             disabled={Boolean(product)}
             onChange={(event) => setProductId(event.target.value)}
             value={productId}
           >
-            <option value="">Chon san pham</option>
+            <option value="">Chọn sản phẩm</option>
             {products.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
@@ -1318,7 +1312,7 @@ function ReceiveStockModal({
         </label>
 
         <Input
-          label="So luong nhap"
+          label="Số lượng nhập"
           min="1"
           onChange={(event) => setQuantity(event.target.value)}
           type="number"
@@ -1327,13 +1321,13 @@ function ReceiveStockModal({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
-            label="Ngay nhap"
+            label="Ngày nhập"
             onChange={(event) => setImportDate(event.target.value)}
             type="date"
             value={importDate}
           />
           <Input
-            label="Ngay het han"
+            label="Ngày hết hạn"
             onChange={(event) => setExpiryDate(event.target.value)}
             type="date"
             value={expiryDate}
@@ -1356,7 +1350,6 @@ export function ProductsPage() {
   const [ean13LabelsOpen, setEan13LabelsOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [error, setError] = useState("");
-  const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [initialCreateEan13, setInitialCreateEan13] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [cloudinaryLibraryImages, setCloudinaryLibraryImages] = useState<string[]>([]);
@@ -1370,6 +1363,12 @@ export function ProductsPage() {
   const [submittingReceive, setSubmittingReceive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
+  const {
+    clearErrorNotice,
+    errorNotice,
+    setErrorNotice,
+    showErrorNotice,
+  } = useErrorNotice(setError);
   const canCreateProduct = canAccess("products.create");
   const canEditProduct = canAccess("products.update");
   const canDeleteProduct = canAccess("products.delete");
@@ -1378,11 +1377,6 @@ export function ProductsPage() {
   const canCreateCategory = canAccess("products.categories.create");
   const canPrintEan13 = canAccess("products.ean13.print");
   const canUploadCloudinaryImage = canAccess("cloudinary-images.upload");
-
-  const showErrorNotice = useCallback((message: string, title = "Thong bao loi", detail?: string) => {
-    setError(message);
-    setErrorNotice({ detail, message, title });
-  }, []);
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
@@ -1408,8 +1402,8 @@ export function ProductsPage() {
       const message =
         requestError instanceof Error
           ? requestError.message
-          : "Khong tai duoc danh sach san pham.";
-      showErrorNotice(message, "Khong tai duoc du lieu");
+          : "Không tải được danh sách sản phẩm.";
+      showErrorNotice(message, "Không tải được dữ liệu");
     } finally {
       setLoading(false);
     }
@@ -1489,7 +1483,7 @@ export function ProductsPage() {
 
   async function handleAddCategory(name: string) {
     if (!canCreateCategory) {
-      throw new Error("Ban khong co quyen them nhom hang.");
+      throw new Error("Bạn không có quyền thêm nhóm hàng.");
     }
 
     const savedCategory = await createProductCategory(name);
@@ -1503,7 +1497,7 @@ export function ProductsPage() {
     }
 
     if (imageFile && !canUploadCloudinaryImage) {
-      throw new Error("Ban khong co quyen tai anh len Cloudinary.");
+      throw new Error("Bạn không có quyền tải ảnh lên Cloudinary.");
     }
 
     setSubmitting(true);
@@ -1534,9 +1528,9 @@ export function ProductsPage() {
       await loadProducts();
     } catch (requestError) {
       const message =
-        requestError instanceof Error ? requestError.message : "Luu san pham that bai.";
+        requestError instanceof Error ? requestError.message : "Lưu sản phẩm thất bại.";
       setError(message);
-      setErrorNotice({ message, title: "Luu san pham that bai" });
+      setErrorNotice({ message, title: "Lưu sản phẩm thất bại" });
       throw new Error(message);
     } finally {
       setSubmitting(false);
@@ -1557,9 +1551,9 @@ export function ProductsPage() {
       await loadProducts();
     } catch (requestError) {
       const message =
-        requestError instanceof Error ? requestError.message : "Nhap kho that bai.";
+        requestError instanceof Error ? requestError.message : "Nhập kho thất bại.";
       setError(message);
-      setErrorNotice({ message, title: "Nhap kho that bai" });
+      setErrorNotice({ message, title: "Nhập kho thất bại" });
       throw new Error(message);
     } finally {
       setSubmittingReceive(false);
@@ -1571,7 +1565,7 @@ export function ProductsPage() {
       return;
     }
 
-    const confirmed = window.confirm(`Xoa san pham "${product.name}"?`);
+    const confirmed = window.confirm(`Xóa sản phẩm "${product.name}"?`);
     if (!confirmed) {
       return;
     }
@@ -1592,20 +1586,20 @@ export function ProductsPage() {
       if (result.mode === "soft-deleted") {
         setErrorNotice({
           message:
-            "San pham co lich su hoa don nen he thong da an khoi danh sach thay vi xoa cung.",
-          title: "Da an san pham",
+            "Sản phẩm có lịch sử hóa đơn nên hệ thống đã ẩn khỏi danh sách thay vì xóa vĩnh viễn.",
+          title: "Đã ẩn sản phẩm",
         });
       } else if (result.mode === "hidden") {
         setErrorNotice({
           message:
-            "Database chua co cot deleted_at, san pham da duoc chuyen sang trang thai an.",
-          title: "Da an san pham",
+            "Cơ sở dữ liệu chưa có cột deleted_at; sản phẩm đã được chuyển sang trạng thái ẩn.",
+          title: "Đã ẩn sản phẩm",
         });
       }
     } catch (requestError) {
       showErrorNotice(
-        requestError instanceof Error ? requestError.message : "Xoa san pham that bai.",
-        "Xoa san pham that bai"
+        requestError instanceof Error ? requestError.message : "Xóa sản phẩm thất bại.",
+        "Xóa sản phẩm thất bại"
       );
     }
   }
@@ -1643,7 +1637,7 @@ export function ProductsPage() {
 
   function getProductStockLabel(product: Product) {
     const batches = getProductActiveBatches(product.id);
-    return batches.length > 0 ? `${product.stock}/${batches.length} lo` : String(product.stock);
+    return batches.length > 0 ? `${product.stock}/${batches.length} lô` : String(product.stock);
   }
 
   function getProductExpiryLabel(product: Product) {
@@ -1683,10 +1677,10 @@ export function ProductsPage() {
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Badge tone="neutral">{products.length} mat hang</Badge>
-                {expiringSoonCount > 0 ? <Badge tone="amber">{expiringSoonCount} gan het han</Badge> : null}
-                {expiredCount > 0 ? <Badge tone="red">{expiredCount} het han</Badge> : null}
-                {hiddenCount > 0 ? <Badge tone="red">{hiddenCount} dang an</Badge> : null}
+                <Badge tone="neutral">{products.length} mặt hàng</Badge>
+                {expiringSoonCount > 0 ? <Badge tone="amber">{expiringSoonCount} gần hết hạn</Badge> : null}
+                {expiredCount > 0 ? <Badge tone="red">{expiredCount} hết hạn</Badge> : null}
+                {hiddenCount > 0 ? <Badge tone="red">{hiddenCount} đang ẩn</Badge> : null}
               </div>
             </div>
             <div className="grid gap-2 sm:flex sm:w-auto">
@@ -1698,7 +1692,7 @@ export function ProductsPage() {
                   variant="secondary"
                 >
                   <PackagePlus className="h-4 w-4" />
-                  Nhap kho
+                  Nhập kho
                 </Button>
               ) : null}
               {canPrintEan13 ? (
@@ -1709,13 +1703,13 @@ export function ProductsPage() {
                   variant="secondary"
                 >
                   <Barcode className="h-4 w-4" />
-                  Tao EAN-13
+                  Tạo EAN-13
                 </Button>
               ) : null}
               {canCreateProduct ? (
                 <Button className="w-full sm:w-auto" onClick={openCreateModal}>
                   <PackagePlus className="h-4 w-4" />
-                  Them san pham
+                  Thêm sản phẩm
                 </Button>
               ) : null}
             </div>
@@ -1726,7 +1720,7 @@ export function ProductsPage() {
             <Input
               className="pl-11"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tim theo ten, EAN-13, nhom hang..."
+              placeholder="Tìm theo tên, EAN-13, nhóm hàng..."
               value={query}
             />
           </div>
@@ -1745,9 +1739,9 @@ export function ProductsPage() {
         ) : filteredProducts.length === 0 ? (
           <div className="p-5">
             <EmptyState
-              description="Them san pham dau tien de POS co du lieu ban hang."
+              description="Thêm sản phẩm đầu tiên để POS có dữ liệu bán hàng."
               icon={Boxes}
-              title="Chua co san pham phu hop"
+              title="Chưa có sản phẩm phù hợp"
             />
           </div>
         ) : (
@@ -1818,7 +1812,7 @@ export function ProductsPage() {
           products={products}
         />
       ) : null}
-      <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
+      <ErrorNoticeModal notice={errorNotice} onClose={clearErrorNotice} />
     </div>
   );
 }

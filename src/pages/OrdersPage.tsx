@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, Image, ReceiptText, Search } from "lucide-react";
+import { Eye, Image, ReceiptText } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
-import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { PageContainer, PageToolbar, SearchInput } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { formatCurrency, formatDateTime } from "../lib/format";
+import { getErrorMessage } from "../lib/errors";
 import { formatProductDate } from "../lib/productDisplay";
 import { fetchOrders, type OrderWithItems } from "../services/orders";
 
@@ -31,7 +32,7 @@ type Invoice = OrderWithItems & {
 };
 
 function getPaymentLabel(method: string) {
-  return method === "transfer" ? "Chuyen khoan" : "Tien mat";
+  return method === "transfer" ? "Chuyển khoản" : "Tiền mặt";
 }
 
 export function OrdersPage() {
@@ -49,8 +50,8 @@ export function OrdersPage() {
     } catch (requestError) {
       setErrorNotice({
         message:
-          requestError instanceof Error ? requestError.message : "Khong tai duoc danh sach hoa don.",
-        title: "Khong tai duoc hoa don",
+          getErrorMessage(requestError, "Không tải được danh sách hóa đơn."),
+        title: "Không tải được hóa đơn",
       });
     } finally {
       setLoading(false);
@@ -80,47 +81,39 @@ export function OrdersPage() {
   }, [orders, query]);
 
   return (
-    <div className="px-4 pb-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <ConfigNotice />
+    <PageContainer>
+      <ConfigNotice />
 
-        <div className="rounded-3xl bg-white p-5 shadow-soft ring-1 ring-coal/5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="font-display text-2xl font-bold text-coal">Hoa don da tao</h2>
-              <p className="mt-1 text-sm font-semibold text-coal/50">
-                Luu lai hoa don, san pham va anh xac nhan chuyen khoan.
-              </p>
-            </div>
-            <div className="relative w-full md:max-w-sm">
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
-              <Input
-                className="pl-11"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Tim ma HD, khach hang..."
-                value={query}
-              />
-            </div>
-          </div>
+      <PageToolbar
+        description="Tra cứu hóa đơn, sản phẩm và chứng từ thanh toán đã lưu."
+        eyebrow="Lịch sử bán hàng"
+        title="Hóa đơn đã tạo"
+      >
+        <SearchInput
+          className="md:max-w-md"
+          onChange={setQuery}
+          placeholder="Tìm mã hóa đơn hoặc khách hàng"
+          value={query}
+        />
+      </PageToolbar>
+
+      {loading ? (
+        <div className="rounded-2xl bg-white p-8 shadow-soft">
+          <Spinner label="Đang tải hóa đơn..." />
         </div>
-
-        {loading ? (
-          <div className="rounded-3xl bg-white p-8 shadow-soft">
-            <Spinner label="Dang tai hoa don..." />
-          </div>
-        ) : filteredOrders.length === 0 ? (
-          <EmptyState
-            description="Sau khi thanh toan thanh cong, hoa don se nam o day."
-            icon={ReceiptText}
-            title="Chua co hoa don"
-          />
-        ) : (
-          <div className="overflow-hidden rounded-3xl bg-white shadow-soft ring-1 ring-coal/5">
+      ) : filteredOrders.length === 0 ? (
+        <EmptyState
+          description="Hóa đơn sẽ xuất hiện tại đây sau khi thanh toán thành công."
+          icon={ReceiptText}
+          title="Chưa có hóa đơn"
+        />
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
             <div className="hidden grid-cols-[1.1fr_1fr_0.8fr_0.8fr_0.5fr] gap-4 border-b border-coal/5 px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-coal/45 lg:grid">
-              <span>Hoa don</span>
-              <span>Khach hang</span>
-              <span>Thanh toan</span>
-              <span className="text-right">Tong tien</span>
+              <span>Hóa đơn</span>
+              <span>Khách hàng</span>
+              <span>Thanh toán</span>
+              <span className="text-right">Tổng tiền</span>
               <span />
             </div>
             <div className="divide-y divide-coal/5">
@@ -137,10 +130,10 @@ export function OrdersPage() {
                   </div>
                   <div>
                     <p className="font-bold text-coal">
-                      {order.customers?.name ?? "Khach le"}
+                      {order.customers?.name ?? "Khách lẻ"}
                     </p>
                     <p className="mt-1 text-sm font-semibold text-coal/45">
-                      {order.customers?.phone ?? "Khong co SDT"}
+                      {order.customers?.phone ?? "Không có SDT"}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -150,7 +143,7 @@ export function OrdersPage() {
                     {order.payment_proof_url ? (
                       <Badge className="gap-1" tone="amber">
                         <Image className="h-3.5 w-3.5" />
-                        Anh CK
+                        Ảnh CK
                       </Badge>
                     ) : null}
                     {order.payment_proof_note ? <Badge tone="amber">PC</Badge> : null}
@@ -165,44 +158,43 @@ export function OrdersPage() {
                 </article>
               ))}
             </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <Modal
         footer={
           <Button onClick={() => setSelectedOrder(null)} type="button" variant="secondary">
-            Dong
+            Đóng
           </Button>
         }
         onClose={() => setSelectedOrder(null)}
         open={Boolean(selectedOrder)}
         size="xl"
-        title={selectedOrder ? `Hoa don ${selectedOrder.code}` : "Hoa don"}
+        title={selectedOrder ? `Hóa đơn ${selectedOrder.code}` : "Hóa đơn"}
       >
         {selectedOrder ? (
           <div className="space-y-6">
             <div className="grid gap-4 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
-                <p className="text-xs font-extrabold uppercase text-slate-500">Thoi gian</p>
+                <p className="text-xs font-extrabold uppercase text-slate-500">Thời gian</p>
                 <p className="mt-1 font-bold text-slate-900">
                   {formatDateTime(selectedOrder.created_at)}
                 </p>
               </div>
               <div>
-                <p className="text-xs font-extrabold uppercase text-slate-500">Khach hang</p>
+                <p className="text-xs font-extrabold uppercase text-slate-500">Khách hàng</p>
                 <p className="mt-1 font-bold text-slate-900">
-                  {selectedOrder.customers?.name ?? "Khach le"}
+                  {selectedOrder.customers?.name ?? "Khách lẻ"}
                 </p>
               </div>
               <div>
-                <p className="text-xs font-extrabold uppercase text-slate-500">Thanh toan</p>
+                <p className="text-xs font-extrabold uppercase text-slate-500">Thanh toán</p>
                 <p className="mt-1 font-bold text-slate-900">
                   {getPaymentLabel(selectedOrder.payment_method)}
                 </p>
               </div>
               <div>
-                <p className="text-xs font-extrabold uppercase text-slate-500">Can thu</p>
+                <p className="text-xs font-extrabold uppercase text-slate-500">Cần thử</p>
                 <p className="mt-1 text-xl font-extrabold tabular-nums text-slate-900">
                   {formatCurrency(selectedOrder.total)}
                 </p>
@@ -211,9 +203,9 @@ export function OrdersPage() {
 
             <div className="overflow-hidden rounded-2xl border border-slate-100">
               <div className="grid grid-cols-[minmax(0,1fr)_80px_120px] gap-3 bg-slate-50 px-4 py-3 text-sm font-extrabold text-slate-500">
-                <span>San pham</span>
+                <span>Sản phẩm</span>
                 <span className="text-center">SL</span>
-                <span className="text-right">Tien</span>
+                <span className="text-right">Thành tiền</span>
               </div>
               <div className="divide-y divide-slate-100">
                 {(selectedOrder.order_items ?? []).map((item) => (
@@ -228,7 +220,7 @@ export function OrdersPage() {
                       </p>
                       {item.import_date || item.expiry_date ? (
                         <p className="mt-1 text-xs font-bold text-moss-600">
-                          Nhap {formatProductDate(item.import_date)} - HSD{" "}
+                          Nhập {formatProductDate(item.import_date)} - HSD{" "}
                           {formatProductDate(item.expiry_date)}
                         </p>
                       ) : null}
@@ -247,10 +239,10 @@ export function OrdersPage() {
             {selectedOrder.payment_proof_url ? (
               <div>
                 <p className="mb-3 text-sm font-extrabold uppercase text-slate-500">
-                  Anh thanh toan
+                  Ảnh thanh toán
                 </p>
                 <img
-                  alt="Anh xac nhan thanh toan"
+                  alt="Ảnh xác nhận thanh toán"
                   className="max-h-[60vh] w-full rounded-2xl bg-slate-50 object-contain"
                   src={selectedOrder.payment_proof_url}
                 />
@@ -259,7 +251,7 @@ export function OrdersPage() {
             {selectedOrder.payment_proof_note ? (
               <div className="rounded-2xl bg-slate-50 px-4 py-3">
                 <p className="text-sm font-extrabold uppercase text-slate-500">
-                  Xac nhan thanh toan
+                  Xác nhận thanh toán
                 </p>
                 <p className="mt-2 whitespace-pre-line font-bold text-slate-900">
                   {selectedOrder.payment_proof_note}
@@ -271,6 +263,6 @@ export function OrdersPage() {
       </Modal>
 
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
-    </div>
+    </PageContainer>
   );
 }

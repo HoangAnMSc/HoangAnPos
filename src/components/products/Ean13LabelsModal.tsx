@@ -30,8 +30,8 @@ function createPrintDocument(products: Product[]) {
           <div class="ean13">${createEan13SvgMarkup(ean13Value)}</div>
           <div class="code">${escapeHtml(ean13Value)}</div>
           <div class="meta">
-            <span>Stock: <strong>${product.stock}</strong></span>
-            <span>HSD: <strong>${escapeHtml(formatProductDate(product.expiry_date))}</strong></span>
+            <span>Tồn kho: <strong>${product.stock}</strong></span>
+            <span>Hạn dùng: <strong>${escapeHtml(formatProductDate(product.expiry_date))}</strong></span>
           </div>
         </section>
       `;
@@ -43,7 +43,7 @@ function createPrintDocument(products: Product[]) {
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>EAN-13 san pham</title>
+        <title>EAN-13 sản phẩm</title>
         <style>
           @page {
             size: A4;
@@ -141,7 +141,7 @@ function printProductEan13Labels(products: Product[]) {
   const printWindow = window.open("", "_blank", "width=960,height=720");
 
   if (!printWindow) {
-    window.alert("Trinh duyet dang chan cua so in EAN-13.");
+    window.alert("Trình duyệt đang chặn cửa sổ in EAN-13.");
     return;
   }
 
@@ -158,7 +158,7 @@ export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalPr
       footer={
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
           <Button onClick={onClose} variant="secondary">
-            Dong
+            Đóng
           </Button>
           <Button disabled={products.length === 0} onClick={() => printProductEan13Labels(products)}>
             <Printer className="h-4 w-4" />
@@ -169,12 +169,12 @@ export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalPr
       onClose={onClose}
       open={open}
       size="wide"
-      title="EAN-13 san pham"
+      title="EAN-13 sản phẩm"
     >
       <div className="space-y-5">
         <div className="rounded-2xl border border-moss-100 bg-moss-50 px-4 py-3 text-sm font-semibold text-moss-800">
-          In tem EAN-13 cho tat ca san pham. San pham co EAN-13 da luu se dung ma do;
-          san pham chua co ma hop le se duoc tao ma EAN-13 Viet Nam prefix 893 de dan va quet lai.
+          In tem EAN-13 cho tất cả sản phẩm. Sản phẩm có EAN-13 đã lưu sẽ dùng mã đó;
+          sản phẩm chưa có mã hợp lệ sẽ được tạo mã EAN-13 Việt Nam với tiền tố 893 để dán và quét lại.
         </div>
 
         <div className="grid max-h-[58vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
@@ -203,7 +203,7 @@ export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalPr
                 </p>
                 <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
                   <span>
-                    Stock: <strong className="text-slate-950">{product.stock}</strong>
+                    Tồn kho: <strong className="text-slate-950">{product.stock}</strong>
                   </span>
                   <span>
                     HSD:{" "}
@@ -220,7 +220,7 @@ export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalPr
         {products.length === 0 ? (
           <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl bg-slate-50 text-center">
             <Barcode className="h-8 w-8 text-slate-400" />
-            <p className="mt-3 text-sm font-extrabold text-slate-950">Chua co san pham de in.</p>
+            <p className="mt-3 text-sm font-extrabold text-slate-950">Chưa có sản phẩm để in.</p>
           </div>
         ) : null}
       </div>

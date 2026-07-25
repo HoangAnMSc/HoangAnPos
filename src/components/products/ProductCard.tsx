@@ -104,6 +104,17 @@ export function ProductCard({
               {badgeLabel}
             </span>
           ) : null}
+
+          <span
+            className={clsx(
+              "absolute bottom-2 left-2 rounded-full px-2.5 py-1 text-[11px] font-extrabold shadow-sm",
+              product.is_active
+                ? "bg-moss-100/95 text-moss-800"
+                : "bg-slate-900/90 text-white"
+            )}
+          >
+            {product.is_active ? "Công khai" : "Đang ẩn"}
+          </span>
         </div>
 
         <div className={clsx("flex flex-1 flex-col", compact ? "px-1 pt-2" : "px-1.5 pt-3")}>
@@ -126,13 +137,13 @@ export function ProductCard({
             )}
           >
             <span className="min-w-0">
-              Stock:{" "}
+              Tồn kho:{" "}
               <strong className="font-extrabold text-slate-950">
                 {stockLabel ?? product.stock}
               </strong>
             </span>
             <span className="min-w-0 text-right">
-              Han:{" "}
+              Hạn:{" "}
               <strong
                 className={clsx(
                   "font-extrabold",
