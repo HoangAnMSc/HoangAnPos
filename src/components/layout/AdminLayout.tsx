@@ -45,10 +45,10 @@ export function AdminLayout() {
       >
         <div className="mb-6 flex shrink-0 items-center justify-between">
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-[0.35em] text-moss-700">
-              BABYBOO
+            <p className="text-xs font-extrabold uppercase tracking-[0.01em] text-moss-700">
+              Sữa tả - Yến Sào
             </p>
-            <h1 className="font-display text-3xl font-bold">POS</h1>
+            <h1 className="font-display text-3xl font-bold">BABYBOO</h1>
           </div>
           <button
             className="rounded-xl p-2 text-coal/60 hover:bg-slate-100 lg:hidden"
@@ -79,14 +79,10 @@ export function AdminLayout() {
           ))}
         </nav>
 
-        <div className="mt-4 shrink-0 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-coal/45">Đăng nhập</p>
-          <p className="mt-1 truncate font-bold">{displayName}</p>
-          <Button className="mt-4 w-full" onClick={signOut} variant="secondary">
+        <Button className="mt-4 shrink-0 w-full hover:text-coal" onClick={signOut} variant="secondary">
             <LogOut className="h-4 w-4" />
             Đăng xuất
           </Button>
-        </div>
       </aside>
 
       {sidebarOpen ? (
@@ -126,10 +122,6 @@ export function AdminLayout() {
                 </button>
                 <div className="min-w-0 flex-1">
                   <h2 className="font-display text-2xl font-bold sm:text-3xl">{page.title}</h2>
-                </div>
-                <div className="hidden min-w-72 items-center gap-3 rounded-xl bg-white px-4 py-3 text-coal/55 shadow-soft ring-1 ring-slate-200 xl:flex">
-                  <Search className="h-4 w-4" />
-                  <span className="text-sm font-semibold">Dữ liệu đồng bộ qua Supabase</span>
                 </div>
               </div>
             </header>

@@ -53,26 +53,38 @@ function userToForm(user: ManagedUser | null, roles: AppRole[]): UserFormState {
 
 function getOnlineState(lastSeenAt: string | null) {
   if (!lastSeenAt) {
-    return { label: "Chua co hoat dong", online: false };
+    return { label: "Offline", online: false };
   }
 
   const diffMs = Date.now() - new Date(lastSeenAt).getTime();
-  const minutes = Math.max(0, Math.floor(diffMs / 60_000));
+  const totalMinutes = Math.max(0, Math.floor(diffMs / 60_000));
 
-  if (minutes <= 5) {
-    return { label: "Dang hoat dong", online: true };
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (totalMinutes <= 1) {
+    return { label: "Online", online: true };
   }
 
-  if (minutes < 60) {
-    return { label: `Offline ${minutes} phut`, online: false };
+  if (totalMinutes < 60) {
+    return {
+      label: `Offline ${minutes} minute${minutes !== 1 ? "s" : ""}`,
+      online: false,
+    };
   }
 
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return { label: `Offline ${hours} gio`, online: false };
+  if (days === 0) {
+    return {
+      label: `Offline ${hours} hour${hours !== 1 ? "s" : ""} ${minutes} minute${minutes !== 1 ? "s" : ""}`,
+      online: false,
+    };
   }
 
-  return { label: `Offline ${Math.floor(hours / 24)} ngay`, online: false };
+  return {
+    label: `Offline ${days} day${days !== 1 ? "s" : ""} ${hours} hour${hours !== 1 ? "s" : ""} ${minutes} minute${minutes !== 1 ? "s" : ""}`,
+    online: false,
+  };
 }
 
 type UserEditorModalProps = {

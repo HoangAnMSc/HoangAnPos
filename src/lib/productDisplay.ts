@@ -112,35 +112,35 @@ export function getExpiryTone(status: ExpiryStatus | null): "green" | "amber" | 
 
 export function getExpiryLabel(status: ExpiryStatus | null) {
   if (status === "expired") {
-    return "Het han";
+    return "Hết HSD";
   }
 
   if (status === "soon") {
-    return "Gan het han";
+    return "Sắp hết HSD";
   }
 
   if (status === "valid") {
-    return "Con han";
+    return "Còn HSD";
   }
 
-  return "Chua co HSD";
+  return "Chưa có HSD";
 }
 
 export function formatExpiryCountdown(value?: string | null) {
   const expiryDate = parseDateOnly(value);
   if (!expiryDate) {
-    return "Chua co";
+    return "Chưa có";
   }
 
   const today = new Date();
   let cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
   if (expiryDate.getTime() < cursor.getTime()) {
-    return "Het han";
+    return "Hết HSD";
   }
 
   if (expiryDate.getTime() === cursor.getTime()) {
-    return "Hom nay";
+    return "Hôm nay";
   }
 
   let months = 0;
