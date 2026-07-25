@@ -33,7 +33,7 @@ export function AdminLayout() {
         <div className="mb-6 flex shrink-0 items-center justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.01em] text-moss-700">
-              Sữa tươi · Yến sào
+              Sữa tả · Yến sào
             </p>
             <h1 className="font-display text-3xl font-bold">BABYBOO</h1>
           </div>
