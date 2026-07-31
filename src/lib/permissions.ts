@@ -63,7 +63,13 @@ export const permissionGroups = [
     path: "/orders",
     icon: ReceiptText,
     description: "Xem danh sách và chi tiết hóa đơn đã tạo.",
-    actions: [],
+    actions: [
+      {
+        key: "orders.cancel",
+        label: "Hủy hóa đơn",
+        description: "Hủy hóa đơn thành công và hoàn lại số lượng vào kho.",
+      },
+    ],
   },
   {
     key: "customers",

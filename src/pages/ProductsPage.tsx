@@ -29,7 +29,7 @@ import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
 import { getErrorMessage } from "../lib/errors";
-import { formatCurrency } from "../lib/format";
+import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import {
   createVietnamEan13FromSeed,
   findProductByEan13,
@@ -788,22 +788,26 @@ function ProductForm({
             <span className={labelClassName}>Giá vốn</span>
             <input
               className={fieldClassName}
-              min="0"
-              onChange={(event) => updateField("cost_price", event.target.value)}
+              inputMode="numeric"
+              onChange={(event) =>
+                updateField("cost_price", normalizeIntegerInput(event.target.value))
+              }
               placeholder="0"
-              type="number"
-              value={form.cost_price}
+              type="text"
+              value={formatIntegerInput(form.cost_price)}
             />
           </label>
           <label className="block">
             <span className={labelClassName}>Giá bán</span>
             <input
               className={fieldClassName}
-              min="0"
-              onChange={(event) => updateField("price", event.target.value)}
+              inputMode="numeric"
+              onChange={(event) =>
+                updateField("price", normalizeIntegerInput(event.target.value))
+              }
               placeholder="0"
-              type="number"
-              value={form.price}
+              type="text"
+              value={formatIntegerInput(form.price)}
             />
           </label>
         </div>
@@ -813,11 +817,13 @@ function ProductForm({
             <span className={labelClassName}>Số lượng</span>
             <input
               className={fieldClassName}
-              min="0"
-              onChange={(event) => updateField("stock", event.target.value)}
+              inputMode="numeric"
+              onChange={(event) =>
+                updateField("stock", normalizeIntegerInput(event.target.value))
+              }
               placeholder="0"
-              type="number"
-              value={form.stock}
+              type="text"
+              value={formatIntegerInput(form.stock)}
             />
           </label>
           <label className="block">
@@ -1312,11 +1318,11 @@ function ReceiveStockModal({
         </label>
 
         <Input
+          inputMode="numeric"
           label="Số lượng nhập"
-          min="1"
-          onChange={(event) => setQuantity(event.target.value)}
-          type="number"
-          value={quantity}
+          onChange={(event) => setQuantity(normalizeIntegerInput(event.target.value))}
+          type="text"
+          value={formatIntegerInput(quantity)}
         />
 
         <div className="grid gap-4 sm:grid-cols-2">

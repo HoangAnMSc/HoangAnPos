@@ -36,8 +36,9 @@ import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
 import { uploadPaymentProof } from "../lib/cloudinary";
-import { formatCurrency } from "../lib/format";
+import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { normalizeNullableText } from "../lib/text";
+import { printPosReceipt } from "../lib/receipt";
 import {
   findProductByEan13,
   formatProductDate,
@@ -46,7 +47,7 @@ import {
   normalizeEan13Input,
 } from "../lib/productDisplay";
 import { createCustomer, fetchCustomers, type CustomerInput } from "../services/customers";
-import { createSale, type PaymentMethod } from "../services/orders";
+import { createSale, recordOrderPrint, type PaymentMethod } from "../services/orders";
 import { fetchPaymentSettings } from "../services/paymentSettings";
 import { fetchProductBatches, fetchProducts, getActiveProducts } from "../services/products";
 import type { CartItem, Customer, PaymentSettings, Product, ProductBatch } from "../types";
@@ -855,6 +856,15 @@ export function PosPage() {
         paymentProofNote: normalizeNullableText(paymentProofNote),
         paymentProofUrl,
       });
+      let printCountWarning = "";
+
+      if (autoPrint) {
+        try {
+          await recordOrderPrint(order.id);
+        } catch {
+          printCountWarning = " Không cập nhật được số lần in.";
+        }
+      }
 
       updateActiveBill((bill) => createEmptyBill(bill.id));
       setPaymentModalOpen(false);
@@ -863,10 +873,16 @@ export function PosPage() {
       setPaymentProofFile(null);
       setPaymentProofNote("");
       setPaymentProofPreview("");
-      setSuccess(`Đã tạo hóa đơn ${order.code} với tổng tiền ${formatCurrency(order.total)}.`);
+      setSuccess(
+        `Đã tạo hóa đơn ${order.code} với tổng tiền ${formatCurrency(order.total)}.${printCountWarning}`
+      );
       await loadPosData();
       if (autoPrint) {
-        window.setTimeout(() => window.print(), 150);
+        printPosReceipt({
+          customer: selectedCustomer,
+          items: cart,
+          order,
+        });
       }
     } catch (requestError) {
       showErrorNotice(
@@ -1166,13 +1182,13 @@ export function PosPage() {
                         return (
                           <button
                             aria-label={`Thêm ${product.name} vào đơn`}
-                            className="grid min-h-24 grid-cols-[58px_minmax(0,1fr)] gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-moss-300 hover:bg-moss-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 disabled:cursor-not-allowed disabled:opacity-55"
+                            className="grid min-h-24 grid-cols-[44px_minmax(0,1fr)] gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-left transition hover:border-moss-300 hover:bg-moss-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 disabled:cursor-not-allowed disabled:opacity-55 sm:grid-cols-[58px_minmax(0,1fr)] sm:gap-3 sm:p-3"
                             disabled={disabled}
                             key={product.id}
                             onClick={() => addToCart(product)}
                             type="button"
                           >
-                            <div className="h-[58px] w-[58px] overflow-hidden rounded-xl bg-slate-100">
+                            <div className="h-11 w-11 overflow-hidden rounded-lg bg-slate-100 sm:h-[58px] sm:w-[58px] sm:rounded-xl">
                               {product.image_url ? (
                                 <img
                                   alt={product.name}
@@ -1185,12 +1201,18 @@ export function PosPage() {
                                 </div>
                               )}
                             </div>
-                            <div className="flex min-w-0 flex-col">
-                              <span className="line-clamp-2 text-sm font-extrabold leading-tight text-slate-900">
+                            <div className="flex min-w-0 flex-col overflow-hidden">
+                              <span
+                                className="truncate text-sm font-extrabold leading-tight text-slate-900 sm:line-clamp-2 sm:whitespace-normal"
+                                title={product.name}
+                              >
                                 {product.name}
                               </span>
-                              <span className="mt-1 text-sm font-extrabold tabular-nums text-moss-700">
-                                {formatCurrency(product.price)}
+                              <span
+                                className="mt-1 block max-w-full truncate whitespace-nowrap text-xs font-extrabold tabular-nums text-moss-700 sm:text-sm"
+                                title={formatCurrency(product.price)}
+                              >
+                                {formatIntegerInput(String(product.price))} đ
                               </span>
                               <span className="mt-auto truncate text-xs font-bold text-slate-500">
                                 Tồn {product.stock}
@@ -1501,11 +1523,16 @@ export function PosPage() {
                         <span>Giảm giá:</span>
                         <input
                           className="h-9 w-28 rounded-lg border border-slate-100 bg-white px-2 text-right text-sm font-extrabold text-moss-600 outline-none focus:border-moss-300 focus:ring-4 focus:ring-moss-100"
-                          min="0"
-                          onChange={(event) => updateActiveBillField("discount", event.target.value)}
+                          inputMode="numeric"
+                          onChange={(event) =>
+                            updateActiveBillField(
+                              "discount",
+                              normalizeIntegerInput(event.target.value)
+                            )
+                          }
                           ref={discountRef}
-                          type="number"
-                          value={discount}
+                          type="text"
+                          value={formatIntegerInput(discount)}
                         />
                         <ShortcutTag>F6</ShortcutTag>
                       </label>
@@ -1634,6 +1661,8 @@ export function PosPage() {
       ) : null}
       {canCheckout ? (
         <Modal
+        bodyClassName="px-4 py-3 sm:px-8 sm:py-7"
+        contentClassName="!h-auto max-h-[calc(100dvh-1rem)] sm:max-h-[86vh]"
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button
@@ -1672,11 +1701,11 @@ export function PosPage() {
         size="lg"
         title={`Thanh toán đơn ${activeBill.id}`}
       >
-        <div className="space-y-6">
-          <div className="rounded-2xl bg-slate-50 p-5">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <span className="text-lg font-extrabold text-slate-700">Cần thu</span>
-              <span className="break-words text-2xl font-extrabold tabular-nums text-slate-950 sm:text-right sm:text-3xl">
+        <div className="space-y-3 sm:space-y-6">
+          <div className="rounded-xl bg-slate-50 px-4 py-3 sm:rounded-2xl sm:p-5">
+            <div className="flex items-center justify-between gap-3 sm:gap-4">
+              <span className="text-sm font-extrabold text-slate-600 sm:text-lg">Cần thu</span>
+              <span className="break-words text-right text-2xl font-black tabular-nums text-slate-950 sm:text-3xl">
                 {formatCurrency(total)}
               </span>
             </div>
@@ -1688,15 +1717,17 @@ export function PosPage() {
           </div>
 
           {canApplyDiscount ? (
-            <label className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 xl:hidden">
-              <span className="text-sm font-extrabold text-slate-700">Giảm giá đơn hàng</span>
-              <span className="relative w-full sm:w-36">
+            <label className="flex min-h-14 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 sm:px-4 sm:py-3 xl:hidden">
+              <span className="shrink-0 text-sm font-extrabold text-slate-700">Giảm giá</span>
+              <span className="relative w-36">
                 <input
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 pr-8 text-right text-base font-extrabold text-moss-700 outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
-                  min="0"
-                  onChange={(event) => updateActiveBillField("discount", event.target.value)}
-                  type="number"
-                  value={discount}
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 pr-8 text-right text-base font-extrabold text-moss-700 outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100 sm:h-11"
+                  inputMode="numeric"
+                  onChange={(event) =>
+                    updateActiveBillField("discount", normalizeIntegerInput(event.target.value))
+                  }
+                  type="text"
+                  value={formatIntegerInput(discount)}
                 />
                 <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
                   đ
@@ -1705,14 +1736,14 @@ export function PosPage() {
             </label>
           ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {(["cash", "transfer"] as PaymentMethod[]).map((method) => {
               const active = selectedPaymentMethod === method;
               return (
                 <button
-                  className={`flex min-h-20 min-w-0 items-center gap-3 rounded-2xl border px-4 py-3 text-left transition sm:gap-4 sm:px-5 ${
+                  className={`flex min-h-16 min-w-0 items-center justify-center gap-2 rounded-xl border-2 px-2 py-2.5 text-left transition sm:min-h-20 sm:justify-start sm:gap-4 sm:rounded-2xl sm:px-5 sm:py-3 ${
                     active
-                      ? "border-moss-500 bg-moss-50 text-moss-800 ring-4 ring-moss-100"
+                      ? "border-moss-500 bg-moss-50 text-moss-800 shadow-[inset_0_0_0_1px_rgba(105,122,77,0.12)]"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                   key={method}
@@ -1728,15 +1759,15 @@ export function PosPage() {
                   type="button"
                 >
                   {method === "cash" ? (
-                    <DollarSign className="h-7 w-7 flex-none" />
+                    <DollarSign className="h-5 w-5 flex-none sm:h-7 sm:w-7" />
                   ) : (
-                    <QrCode className="h-7 w-7 flex-none" />
+                    <QrCode className="h-5 w-5 flex-none sm:h-7 sm:w-7" />
                   )}
                   <span className="min-w-0">
-                    <span className="block text-lg font-extrabold sm:text-xl">
+                    <span className="block text-sm font-extrabold sm:text-xl">
                       {method === "cash" ? "Tiền mặt" : "Chuyển khoản"}
                     </span>
-                    <span className="mt-1 block text-xs font-bold opacity-70 sm:text-sm">
+                    <span className="mt-1 hidden text-xs font-bold opacity-70 sm:block sm:text-sm">
                       {method === "cash" ? "Nhập tiền khách đưa" : "Cần ảnh xác nhận"}
                     </span>
                   </span>
@@ -1746,24 +1777,36 @@ export function PosPage() {
           </div>
 
           {selectedPaymentMethod === "cash" ? (
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               <div className="relative">
+                <label
+                  className="mb-1.5 block text-sm font-extrabold text-slate-700"
+                  htmlFor="payment-cash-received"
+                >
+                  Tiền khách đưa
+                </label>
                 <input
-                  className="h-[66px] w-full rounded-xl border border-slate-200 bg-white px-5 pr-16 text-xl font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-moss-300 focus:ring-4 focus:ring-moss-100"
-                  min="0"
-                  onChange={(event) => updateActiveBillField("cashReceived", event.target.value)}
+                  className="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 pr-16 text-xl font-extrabold text-slate-900 outline-none transition placeholder:text-base placeholder:font-medium placeholder:text-slate-400 focus:border-moss-300 focus:ring-4 focus:ring-moss-100 sm:h-[66px] sm:px-5"
+                  id="payment-cash-received"
+                  inputMode="numeric"
+                  onChange={(event) =>
+                    updateActiveBillField(
+                      "cashReceived",
+                      normalizeIntegerInput(event.target.value)
+                    )
+                  }
                   placeholder="Nhập số tiền khách đưa"
                   ref={paidAmountRef}
-                  type="number"
-                  value={cashReceived}
+                  type="text"
+                  value={formatIntegerInput(cashReceived)}
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2">
+                <span className="absolute right-4 top-[calc(50%+13px)] hidden -translate-y-1/2 sm:block">
                   <ShortcutTag>F4</ShortcutTag>
                 </span>
               </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
                 <button
-                  className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-extrabold text-slate-600 transition hover:bg-slate-200"
+                  className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-extrabold text-slate-700 transition hover:bg-slate-200 sm:px-4 sm:py-2"
                   disabled={cart.length === 0}
                   onClick={() => updateActiveBillField("cashReceived", String(total))}
                   type="button"
@@ -1771,7 +1814,7 @@ export function PosPage() {
                   Nhận đủ
                 </button>
                 <button
-                  className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-extrabold text-slate-600 transition hover:bg-slate-200"
+                  className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-extrabold text-slate-700 transition hover:bg-slate-200 sm:px-4 sm:py-2"
                   disabled={cart.length === 0}
                   onClick={() =>
                     updateActiveBillField(
@@ -1784,16 +1827,16 @@ export function PosPage() {
                   Làm tròn tiền đưa
                 </button>
               </div>
-              <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2">
-                <div>
-                  <p className="text-sm font-bold text-slate-500">Khách đưa</p>
-                  <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
+              <div className="grid grid-cols-2 divide-x divide-slate-200 rounded-xl bg-slate-50 px-3 py-3 sm:rounded-2xl sm:px-4 sm:py-4">
+                <div className="pr-3">
+                  <p className="text-xs font-bold text-slate-500 sm:text-sm">Khách đưa</p>
+                  <p className="mt-1 truncate text-lg font-extrabold tabular-nums text-slate-900 sm:text-2xl">
                     {formatCurrency(paidAmount)}
                   </p>
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-500">Tiền thừa</p>
-                  <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
+                <div className="pl-3">
+                  <p className="text-xs font-bold text-slate-500 sm:text-sm">Tiền thừa</p>
+                  <p className="mt-1 truncate text-lg font-extrabold tabular-nums text-moss-700 sm:text-2xl">
                     {formatCurrency(changeAmount)}
                   </p>
                 </div>
@@ -1852,7 +1895,7 @@ export function PosPage() {
               </button>
             </div>
           )}
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 xl:hidden">
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 sm:gap-3 sm:px-4 sm:py-3 sm:text-sm xl:hidden">
             <input
               checked={autoPrint}
               className="h-5 w-5 rounded border-slate-300 text-moss-600 focus:ring-moss-500"

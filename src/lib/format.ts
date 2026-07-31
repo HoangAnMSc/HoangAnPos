@@ -6,6 +6,26 @@ export function formatCurrency(value: number) {
   }).format(value);
 }
 
+export function normalizeIntegerInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  return digits.replace(/^0+(?=\d)/, "");
+}
+
+export function formatIntegerInput(value: string | number) {
+  const normalizedValue = normalizeIntegerInput(String(value));
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  return normalizedValue.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
 export function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("vi-VN", {
     dateStyle: "medium",

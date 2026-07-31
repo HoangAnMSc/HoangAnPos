@@ -39,6 +39,14 @@ select {
   -webkit-tap-highlight-color: transparent;
 }
 
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,

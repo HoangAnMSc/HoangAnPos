@@ -11,6 +11,9 @@ export const isCloudinaryConfigured = Boolean(cloudName && uploadPreset);
 
 type CloudinaryUploadResponse = {
   delete_token?: string;
+  error?: {
+    message?: string;
+  };
   public_id?: string;
   secure_url?: string;
 };
@@ -219,24 +222,35 @@ async function uploadImage(file: File, folder: string): Promise<CloudinaryImageU
     );
   }
 
+  if (!file.type.startsWith("image/")) {
+    throw new Error("File đã chọn không phải là ảnh hợp lệ.");
+  }
+
+  if (file.size === 0) {
+    throw new Error("File ảnh đang trống.");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_preset", uploadPreset);
   formData.append("folder", folder);
-  formData.append("return_delete_token", "true");
 
   const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
     method: "POST",
     body: formData,
   });
+  const data = (await response.json().catch(() => null)) as CloudinaryUploadResponse | null;
 
   if (!response.ok) {
-    throw new Error("Tải ảnh lên Cloudinary thất bại. Vui lòng kiểm tra upload preset.");
+    const cloudinaryMessage = data?.error?.message?.trim();
+    throw new Error(
+      cloudinaryMessage
+        ? `Cloudinary: ${cloudinaryMessage}`
+        : `Tải ảnh lên Cloudinary thất bại (HTTP ${response.status}).`
+    );
   }
 
-  const data = (await response.json()) as CloudinaryUploadResponse;
-
-  if (!data.secure_url) {
+  if (!data?.secure_url) {
     throw new Error("Cloudinary không trả về đường dẫn ảnh hợp lệ.");
   }
 

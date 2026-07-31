@@ -142,7 +142,9 @@ export function CloudinaryImagesPage() {
       const [nextProducts, nextRecords, nextCloudinaryResources] = await Promise.all([
         fetchProducts(),
         fetchCloudinaryImageRecords(),
-        fetchCloudinaryImageResources(),
+        // The Admin API is optional. Unsigned uploads only need the cloud name
+        // and upload preset; uploaded images are also tracked in Supabase.
+        fetchCloudinaryImageResources().catch(() => []),
       ]);
 
       const nextImages = createImageLibraryItems(
@@ -160,8 +162,6 @@ export function CloudinaryImagesPage() {
     } catch (requestError) {
       const message = getErrorMessage(requestError, "Không tải được danh sách ảnh.");
       setErrorNotice({
-        detail:
-          "Trang này cần Cloudinary Admin API qua /api/cloudinary-images để hiển thị toàn bộ thư viện ảnh.",
         message,
         title: "Không tải được ảnh Cloudinary",
       });

@@ -12,6 +12,7 @@ import { PageContainer, PageToolbar, SearchInput, StateNotice } from "../compone
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
+import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import {
   hasInventoryCount,
   type InventoryCountMap,
@@ -83,12 +84,10 @@ function QuantityModal({
             autoFocus
             className="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 text-2xl font-extrabold tabular-nums text-slate-950 outline-none transition focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
             inputMode="numeric"
-            min="0"
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => onChange(normalizeIntegerInput(event.target.value))}
             placeholder="0"
-            step="1"
-            type="number"
-            value={countValue}
+            type="text"
+            value={formatIntegerInput(countValue)}
           />
         </label>
         {error ? <StateNotice message={error} tone="error" /> : null}

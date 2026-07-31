@@ -38,6 +38,7 @@ values
       'pos.quick-customer.create',
       'pos.payment-proof.upload',
       'orders',
+      'orders.cancel',
       'customers',
       'customers.create',
       'customers.update',
@@ -245,6 +246,7 @@ create table if not exists public.orders (
   change_amount numeric(12, 2) not null default 0 check (change_amount >= 0),
   payment_proof_url text,
   payment_proof_note text,
+  print_count integer not null default 0 check (print_count >= 0),
   note text,
   status text not null default 'paid' check (status in ('paid', 'cancelled')),
   created_at timestamptz not null default now()
@@ -264,6 +266,9 @@ add column if not exists payment_proof_url text;
 
 alter table public.orders
 add column if not exists payment_proof_note text;
+
+alter table public.orders
+add column if not exists print_count integer not null default 0;
 
 alter table public.orders
 add column if not exists note text;
@@ -1180,6 +1185,94 @@ begin
       line_total
     );
   end loop;
+
+  return order_record;
+end;
+$$;
+
+create or replace function public.cancel_pos_order(order_id_input uuid)
+returns public.orders
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  item_record public.order_items;
+  order_record public.orders;
+begin
+  if not public.has_permission('orders.cancel') then
+    raise exception 'Permission denied';
+  end if;
+
+  select *
+  into order_record
+  from public.orders
+  where id = order_id_input
+  for update;
+
+  if not found then
+    raise exception 'Order not found';
+  end if;
+
+  if order_record.status = 'cancelled' then
+    return order_record;
+  end if;
+
+  for item_record in
+    select *
+    from public.order_items
+    where order_id = order_record.id
+    order by id
+  loop
+    update public.products
+    set stock = stock + item_record.quantity
+    where id = item_record.product_id;
+
+    if item_record.batch_id is not null then
+      update public.product_batches
+      set quantity = quantity + item_record.quantity
+      where id = item_record.batch_id;
+    end if;
+  end loop;
+
+  update public.orders
+  set status = 'cancelled'
+  where id = order_record.id
+  returning * into order_record;
+
+  return order_record;
+end;
+$$;
+
+create or replace function public.record_order_print(order_id_input uuid)
+returns public.orders
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  order_record public.orders;
+begin
+  if not (
+    public.has_permission('orders')
+    or public.has_permission('pos.checkout')
+  ) then
+    raise exception 'Permission denied';
+  end if;
+
+  update public.orders
+  set print_count = print_count + 1
+  where id = order_id_input
+    and (
+      public.has_permission('orders')
+      or cashier_id = auth.uid()
+      or public.is_admin()
+    )
+  returning * into order_record;
+
+  if not found then
+    raise exception 'Order not found or permission denied';
+  end if;
 
   return order_record;
 end;

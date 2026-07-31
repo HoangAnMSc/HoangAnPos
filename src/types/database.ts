@@ -342,6 +342,7 @@ export type Database = {
           change_amount: number;
           payment_proof_url: string | null;
           payment_proof_note: string | null;
+          print_count: number;
           note: string | null;
           status: "paid" | "cancelled";
           created_at: string;
@@ -359,6 +360,7 @@ export type Database = {
           change_amount?: number;
           payment_proof_url?: string | null;
           payment_proof_note?: string | null;
+          print_count?: number;
           note?: string | null;
           status?: "paid" | "cancelled";
           created_at?: string;
@@ -376,6 +378,7 @@ export type Database = {
           change_amount?: number;
           payment_proof_url?: string | null;
           payment_proof_note?: string | null;
+          print_count?: number;
           note?: string | null;
           status?: "paid" | "cancelled";
           created_at?: string;
@@ -643,6 +646,53 @@ export type Database = {
           change_amount: number;
           payment_proof_note: string | null;
           payment_proof_url: string | null;
+          print_count: number;
+          note: string | null;
+          status: "paid" | "cancelled";
+          created_at: string;
+        };
+      };
+      cancel_pos_order: {
+        Args: {
+          order_id_input: string;
+        };
+        Returns: {
+          id: string;
+          code: string;
+          customer_id: string | null;
+          cashier_id: string | null;
+          subtotal: number;
+          discount: number;
+          total: number;
+          payment_method: "cash" | "transfer";
+          cash_received: number;
+          change_amount: number;
+          payment_proof_note: string | null;
+          payment_proof_url: string | null;
+          print_count: number;
+          note: string | null;
+          status: "paid" | "cancelled";
+          created_at: string;
+        };
+      };
+      record_order_print: {
+        Args: {
+          order_id_input: string;
+        };
+        Returns: {
+          id: string;
+          code: string;
+          customer_id: string | null;
+          cashier_id: string | null;
+          subtotal: number;
+          discount: number;
+          total: number;
+          payment_method: "cash" | "transfer";
+          cash_received: number;
+          change_amount: number;
+          payment_proof_note: string | null;
+          payment_proof_url: string | null;
+          print_count: number;
           note: string | null;
           status: "paid" | "cancelled";
           created_at: string;

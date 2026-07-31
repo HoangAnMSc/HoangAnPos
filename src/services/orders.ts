@@ -70,7 +70,7 @@ export async function fetchOrders() {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "*, customers(name, phone), order_items(id, product_id, batch_id, import_date, expiry_date, product_name, quantity, unit_price, line_total, created_at)"
+      "*, customers(name, phone, address), order_items(id, product_id, batch_id, import_date, expiry_date, product_name, quantity, unit_price, line_total, created_at)"
     )
     .order("created_at", { ascending: false });
 
@@ -79,6 +79,38 @@ export async function fetchOrders() {
   }
 
   return data ?? [];
+}
+
+export async function cancelOrder(orderId: string) {
+  requireSupabaseConfig();
+
+  const { data, error } = await supabase.rpc("cancel_pos_order", {
+    order_id_input: orderId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("Không nhận được kết quả hủy hóa đơn.");
+  }
+
+  return data;
+}
+
+export async function recordOrderPrint(orderId: string) {
+  requireSupabaseConfig();
+
+  const { data, error } = await supabase.rpc("record_order_print", {
+    order_id_input: orderId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
 }
 
 export type OrderWithItems = Awaited<ReturnType<typeof fetchOrders>>[number];
