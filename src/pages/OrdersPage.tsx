@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Printer, ReceiptText } from "lucide-react";
+import { Printer, ReceiptText, Trash2 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -14,6 +14,7 @@ import { formatProductDate } from "../lib/productDisplay";
 import { printSavedReceipt } from "../lib/receipt";
 import {
   cancelOrder,
+  deleteOrders,
   fetchOrders,
   recordOrderPrint,
   type OrderWithItems,
@@ -54,6 +55,7 @@ export function OrdersPage() {
   const { canAccess } = useAuth();
   const [activeList, setActiveList] = useState<"paid" | "cancelled">("paid");
   const [cancelling, setCancelling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<Invoice[]>([]);
@@ -62,8 +64,10 @@ export function OrdersPage() {
   const [selectedDay, setSelectedDay] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<Invoice | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [selectedYear, setSelectedYear] = useState("");
   const canCancelOrder = canAccess("orders.cancel");
+  const canDeleteOrders = canAccess("orders.delete");
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -84,6 +88,10 @@ export function OrdersPage() {
   useEffect(() => {
     void loadOrders();
   }, [loadOrders]);
+
+  useEffect(() => {
+    setSelectedOrderIds(new Set());
+  }, [activeList, query, selectedDay, selectedMonth, selectedYear]);
 
   const availableYears = useMemo(
     () =>
@@ -133,6 +141,45 @@ export function OrdersPage() {
   }, [activeList, orders, query, selectedDay, selectedMonth, selectedYear]);
   const paidCount = orders.filter((order) => order.status === "paid").length;
   const cancelledCount = orders.filter((order) => order.status === "cancelled").length;
+  const allFilteredSelected = filteredOrders.length > 0 && filteredOrders.every((order) => selectedOrderIds.has(order.id));
+
+  function toggleOrderSelection(orderId: string) {
+    setSelectedOrderIds((current) => {
+      const next = new Set(current);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }
+
+  function toggleAllFiltered() {
+    setSelectedOrderIds((current) => {
+      const next = new Set(current);
+      if (allFilteredSelected) filteredOrders.forEach((order) => next.delete(order.id));
+      else filteredOrders.forEach((order) => next.add(order.id));
+      return next;
+    });
+  }
+
+  async function handleDeleteOrders() {
+    if (!canDeleteOrders || deleting || selectedOrderIds.size === 0) return;
+    const selected = orders.filter((order) => selectedOrderIds.has(order.id));
+    const paidSelected = selected.filter((order) => order.status === "paid").length;
+    const stockNotice = paidSelected > 0 ? ` ${paidSelected} hóa đơn thành công sẽ được hoàn hàng vào kho.` : "";
+    if (!window.confirm(`Xóa vĩnh viễn ${selected.length} hóa đơn đã chọn?${stockNotice} Thao tác này không thể hoàn tác.`)) return;
+
+    setDeleting(true);
+    try {
+      await deleteOrders(selected.map((order) => order.id));
+      setOrders((current) => current.filter((order) => !selectedOrderIds.has(order.id)));
+      if (selectedOrder && selectedOrderIds.has(selectedOrder.id)) setSelectedOrder(null);
+      setSelectedOrderIds(new Set());
+    } catch (requestError) {
+      setErrorNotice({ message: getErrorMessage(requestError, "Không xóa được hóa đơn."), title: "Xóa hóa đơn thất bại" });
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function handleCancelOrder() {
     if (!selectedOrder || selectedOrder.status !== "paid" || !canCancelOrder || cancelling) {
@@ -193,7 +240,7 @@ export function OrdersPage() {
   }
 
   return (
-    <PageContainer>
+    <PageContainer className={selectedOrderIds.size > 0 ? "pb-28" : undefined}>
       <ConfigNotice />
 
       <PageToolbar
@@ -301,12 +348,13 @@ export function OrdersPage() {
           title={activeList === "paid" ? "Chưa có hóa đơn thành công" : "Chưa có hóa đơn đã hủy"}
         />
       ) : (
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+          <div className="max-h-[58dvh] overflow-auto overscroll-contain rounded-2xl border border-slate-200 bg-white shadow-soft">
             <table className="w-full table-fixed border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-extrabold uppercase tracking-wide text-slate-500">
-                  <th className="w-[42%] px-5 py-3">Tên khách hàng</th>
-                  <th className="w-[58%] px-5 py-3">Thời gian</th>
+                  {canDeleteOrders ? <th className="w-12 px-3 py-3 text-center"><input aria-label="Chọn tất cả hóa đơn đang hiển thị" checked={allFilteredSelected} className="h-5 w-5 rounded border-slate-300 text-moss-700 focus:ring-moss-500" onChange={toggleAllFiltered} type="checkbox" /></th> : null}
+                  <th className="w-[40%] px-3 py-3 sm:px-5">Tên khách hàng</th>
+                  <th className="px-3 py-3 sm:px-5">Thời gian</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -317,10 +365,21 @@ export function OrdersPage() {
                     onClick={() => setSelectedOrder(order)}
                     tabIndex={0}
                   >
-                    <td className="truncate px-5 py-3 text-sm font-bold text-slate-800">
+                    {canDeleteOrders ? (
+                      <td className="px-3 py-3 text-center" onClick={(event) => event.stopPropagation()}>
+                        <input
+                          aria-label={`Chọn hóa đơn ${order.code}`}
+                          checked={selectedOrderIds.has(order.id)}
+                          className="h-5 w-5 rounded border-slate-300 text-moss-700 focus:ring-moss-500"
+                          onChange={() => toggleOrderSelection(order.id)}
+                          type="checkbox"
+                        />
+                      </td>
+                    ) : null}
+                    <td className="truncate px-3 py-3 text-xs font-bold text-slate-800 sm:px-5 sm:text-sm">
                       {order.customers?.name ?? "Khách lẻ"}
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-sm font-semibold text-slate-600">
+                    <td className="whitespace-nowrap px-3 py-3 text-xs font-semibold text-slate-600 sm:px-5 sm:text-sm">
                       {formatOrderTime(order.created_at)}
                     </td>
                   </tr>
@@ -453,6 +512,28 @@ export function OrdersPage() {
           </div>
         ) : null}
       </Modal>
+      {canDeleteOrders && selectedOrderIds.size > 0 ? (
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-red-100 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-14px_36px_rgba(15,23,42,0.14)] backdrop-blur-xl lg:left-72">
+          <div className="mx-auto flex max-w-4xl items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Đã chọn</p>
+              <p className="truncate text-lg font-black text-slate-950">{selectedOrderIds.size} hóa đơn</p>
+            </div>
+            <button
+              className="hidden h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-700 sm:flex"
+              disabled={deleting}
+              onClick={() => setSelectedOrderIds(new Set())}
+              type="button"
+            >
+              Bỏ chọn
+            </button>
+            <Button className="h-12 min-w-32" isLoading={deleting} onClick={() => void handleDeleteOrders()} type="button" variant="danger">
+              <Trash2 className="h-4 w-4" />
+              Xóa hóa đơn
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
     </PageContainer>

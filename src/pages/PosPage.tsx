@@ -17,6 +17,7 @@ import {
   Minus,
   PackageSearch,
   Plus,
+  Printer,
   QrCode,
   Save,
   Search,
@@ -50,10 +51,16 @@ import { createCustomer, fetchCustomers, type CustomerInput } from "../services/
 import { createSale, recordOrderPrint, type PaymentMethod } from "../services/orders";
 import { fetchPaymentSettings } from "../services/paymentSettings";
 import { fetchProductBatches, fetchProducts, getActiveProducts } from "../services/products";
-import type { CartItem, Customer, PaymentSettings, Product, ProductBatch } from "../types";
+import type { CartItem, Customer, Order, PaymentSettings, Product, ProductBatch } from "../types";
 
 type PosCartItem = CartItem & {
   lineId: string;
+};
+
+type CompletedSale = {
+  customer: Customer | null;
+  items: PosCartItem[];
+  order: Order;
 };
 
 type PosBill = {
@@ -251,10 +258,11 @@ export function PosPage() {
   const productSearchRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLInputElement>(null);
   const discountRef = useRef<HTMLInputElement>(null);
+  const focusSearchAfterBatchRef = useRef(true);
   const paidAmountRef = useRef<HTMLInputElement>(null);
 
-  const [autoPrint, setAutoPrint] = useState(true);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [ean13ScannerOpen, setEan13ScannerOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -275,6 +283,7 @@ export function PosPage() {
   const [quickProductsExpanded, setQuickProductsExpanded] = useState(true);
   const [productQuery, setProductQuery] = useState("");
   const [productToBatchSelect, setProductToBatchSelect] = useState<Product | null>(null);
+  const [printingCompletedSale, setPrintingCompletedSale] = useState(false);
   const [submittingCustomer, setSubmittingCustomer] = useState(false);
   const [submittingSale, setSubmittingSale] = useState(false);
   const [success, setSuccess] = useState("");
@@ -542,7 +551,11 @@ export function PosPage() {
     });
   }
 
-  function addToCart(product: Product, batch?: ProductBatch | null) {
+  function addToCart(
+    product: Product,
+    batch?: ProductBatch | null,
+    focusSearchAfterAdd = true
+  ) {
     if (!canCheckout) {
       return;
     }
@@ -559,6 +572,7 @@ export function PosPage() {
     const selectedBatch = batch === undefined && batches.length === 1 ? batches[0] : batch;
 
     if (batch === undefined && batches.length > 1) {
+      focusSearchAfterBatchRef.current = focusSearchAfterAdd;
       setProductToBatchSelect(product);
       setBatchModalOpen(true);
       return;
@@ -608,7 +622,9 @@ export function PosPage() {
     setBatchModalOpen(false);
     setProductToBatchSelect(null);
     setProductQuery("");
-    productSearchRef.current?.focus();
+    if (focusSearchAfterAdd) {
+      productSearchRef.current?.focus();
+    }
   }
 
   function changeQuantity(lineId: string, nextQuantity: number) {
@@ -856,15 +872,8 @@ export function PosPage() {
         paymentProofNote: normalizeNullableText(paymentProofNote),
         paymentProofUrl,
       });
-      let printCountWarning = "";
-
-      if (autoPrint) {
-        try {
-          await recordOrderPrint(order.id);
-        } catch {
-          printCountWarning = " Không cập nhật được số lần in.";
-        }
-      }
+      const completedItems = [...cart];
+      const completedCustomer = selectedCustomer;
 
       updateActiveBill((bill) => createEmptyBill(bill.id));
       setPaymentModalOpen(false);
@@ -873,17 +882,13 @@ export function PosPage() {
       setPaymentProofFile(null);
       setPaymentProofNote("");
       setPaymentProofPreview("");
-      setSuccess(
-        `Đã tạo hóa đơn ${order.code} với tổng tiền ${formatCurrency(order.total)}.${printCountWarning}`
-      );
+      setSuccess(`Đã tạo hóa đơn ${order.code} với tổng tiền ${formatCurrency(order.total)}.`);
+      setCompletedSale({
+        customer: completedCustomer,
+        items: completedItems,
+        order,
+      });
       await loadPosData();
-      if (autoPrint) {
-        printPosReceipt({
-          customer: selectedCustomer,
-          items: cart,
-          order,
-        });
-      }
     } catch (requestError) {
       showErrorNotice(
         requestError instanceof Error ? requestError.message : "Tạo hóa đơn thất bại.",
@@ -891,6 +896,30 @@ export function PosPage() {
       );
     } finally {
       setSubmittingSale(false);
+    }
+  }
+
+  async function handlePrintCompletedSale() {
+    if (!completedSale || printingCompletedSale) {
+      return;
+    }
+
+    setPrintingCompletedSale(true);
+    try {
+      const updatedOrder = await recordOrderPrint(completedSale.order.id);
+      const nextSale = {
+        ...completedSale,
+        order: { ...completedSale.order, print_count: updatedOrder.print_count },
+      };
+      setCompletedSale(nextSale);
+      printPosReceipt(nextSale);
+    } catch (requestError) {
+      showErrorNotice(
+        requestError instanceof Error ? requestError.message : "Không in được hóa đơn.",
+        "In hóa đơn thất bại"
+      );
+    } finally {
+      setPrintingCompletedSale(false);
     }
   }
 
@@ -1117,7 +1146,7 @@ export function PosPage() {
         </div>
       </header>
 
-      <main className="w-full max-w-[100vw] px-3 pb-28 pt-3 xl:pb-4 xl:px-4">
+      <main className="w-full max-w-[100vw] px-2 pb-[calc(7.5rem+env(safe-area-inset-bottom))] pt-3 sm:px-3 xl:pb-4 xl:px-4">
         <div className="mx-auto w-full max-w-none space-y-4">
           <ConfigNotice />
 
@@ -1137,7 +1166,7 @@ export function PosPage() {
               {!loading && quickProducts.length > 0 ? (
                 <section className="overflow-hidden rounded-2xl bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/70">
                   <div
-                    className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 ${
+                    className={`grid grid-cols-1 gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
                       quickProductsExpanded ? "border-b border-slate-100" : ""
                     }`}
                   >
@@ -1172,7 +1201,7 @@ export function PosPage() {
                   </div>
                   {quickProductsExpanded ? (
                     <div
-                      className="grid grid-flow-col auto-cols-[minmax(170px,72vw)] gap-2 overflow-x-auto p-3 sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-3 2xl:grid-cols-4"
+                      className="grid max-h-[min(48dvh,520px)] grid-cols-3 gap-2 overflow-y-auto overscroll-contain p-2.5 sm:grid-cols-4 sm:p-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-4 2xl:grid-cols-6"
                       id="pos-quick-products"
                     >
                       {quickProducts.map((product) => {
@@ -1182,17 +1211,17 @@ export function PosPage() {
                         return (
                           <button
                             aria-label={`Thêm ${product.name} vào đơn`}
-                            className="grid min-h-24 grid-cols-[44px_minmax(0,1fr)] gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-left transition hover:border-moss-300 hover:bg-moss-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 disabled:cursor-not-allowed disabled:opacity-55 sm:grid-cols-[58px_minmax(0,1fr)] sm:gap-3 sm:p-3"
+                            className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 text-left transition hover:border-moss-300 hover:bg-moss-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 disabled:cursor-not-allowed disabled:opacity-55 sm:p-2"
                             disabled={disabled}
                             key={product.id}
-                            onClick={() => addToCart(product)}
+                            onClick={() => addToCart(product, undefined, false)}
                             type="button"
                           >
-                            <div className="h-11 w-11 overflow-hidden rounded-lg bg-slate-100 sm:h-[58px] sm:w-[58px] sm:rounded-xl">
+                            <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-100 sm:rounded-xl">
                               {product.image_url ? (
                                 <img
                                   alt={product.name}
-                                  className="h-full w-full object-cover"
+                                  className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                                   src={product.image_url}
                                 />
                               ) : (
@@ -1201,20 +1230,20 @@ export function PosPage() {
                                 </div>
                               )}
                             </div>
-                            <div className="flex min-w-0 flex-col overflow-hidden">
+                            <div className="flex min-w-0 flex-1 flex-col px-0.5 pb-0.5 pt-1.5">
                               <span
-                                className="truncate text-sm font-extrabold leading-tight text-slate-900 sm:line-clamp-2 sm:whitespace-normal"
+                                className="line-clamp-2 min-h-8 text-[11px] font-extrabold leading-4 text-slate-900 sm:text-xs"
                                 title={product.name}
                               >
                                 {product.name}
                               </span>
                               <span
-                                className="mt-1 block max-w-full truncate whitespace-nowrap text-xs font-extrabold tabular-nums text-moss-700 sm:text-sm"
+                                className="mt-1 block max-w-full truncate whitespace-nowrap text-[11px] font-extrabold tabular-nums text-moss-700 sm:text-xs"
                                 title={formatCurrency(product.price)}
                               >
                                 {formatIntegerInput(String(product.price))} đ
                               </span>
-                              <span className="mt-auto truncate text-xs font-bold text-slate-500">
+                              <span className="mt-1 truncate text-[10px] font-bold text-slate-500 sm:text-[11px]">
                                 Tồn {product.stock}
                                 {quantityInCart > 0 ? ` / Đã chọn ${quantityInCart}` : ""}
                               </span>
@@ -1229,7 +1258,7 @@ export function PosPage() {
 
               <section className="overflow-hidden rounded-2xl bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
                 <div
-                  className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 ${
+                  className={`grid grid-cols-1 gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
                     cartExpanded ? "border-b border-slate-100" : ""
                   }`}
                 >
@@ -1254,7 +1283,7 @@ export function PosPage() {
                       }`}
                     />
                   </button>
-                  <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 sm:justify-end">
                     <label className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-slate-700 sm:gap-2 sm:text-sm">
                       <input
                         checked={lineSeparated}
@@ -1265,11 +1294,10 @@ export function PosPage() {
                       <span className="sm:hidden">Tách dòng</span>
                       <span className="hidden sm:inline">Tách dòng sản phẩm</span>
                     </label>
-                    {canCheckout ? (
+                    {canCheckout && cart.length > 0 ? (
                       <button
                         aria-label="Xóa tất cả sản phẩm trong giỏ"
                         className="flex h-10 items-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-3 text-sm font-extrabold text-red-500 transition hover:border-red-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={cart.length === 0}
                         onClick={clearCart}
                         type="button"
                       >
@@ -1344,23 +1372,23 @@ export function PosPage() {
                                 ) : null}
                               </div>
 
-                              <div className="col-span-3 row-start-2 flex min-w-0 items-center justify-between gap-3 sm:contents">
+                              <div className="col-span-3 row-start-2 flex min-w-0 items-center justify-between gap-2 sm:contents">
                                 {canCheckout ? (
-                                  <div className="flex w-fit flex-none items-center gap-1 rounded-xl bg-slate-100 p-1">
+                                  <div className="flex w-fit flex-none items-center gap-0.5 rounded-xl bg-slate-100 p-1">
                                     <button
                                       aria-label={`Giảm số lượng ${item.product.name}`}
-                                      className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+                                      className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 sm:h-10 sm:w-10"
                                       onClick={() => changeQuantity(item.lineId, item.quantity - 1)}
                                       type="button"
                                     >
                                       <Minus className="h-4 w-4" />
                                     </button>
-                                    <span className="min-w-9 text-center text-lg font-extrabold tabular-nums text-slate-900">
+                                    <span className="min-w-8 text-center text-base font-extrabold tabular-nums text-slate-900 sm:min-w-9 sm:text-lg">
                                       {item.quantity}
                                     </span>
                                     <button
                                       aria-label={`Tăng số lượng ${item.product.name}`}
-                                      className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:w-10"
                                       disabled={quantityInProduct >= item.product.stock}
                                       onClick={() => changeQuantity(item.lineId, item.quantity + 1)}
                                       type="button"
@@ -1378,7 +1406,7 @@ export function PosPage() {
                                   <p className="text-xs font-bold text-slate-400 sm:hidden">
                                     Thành tiền
                                   </p>
-                                  <p className="truncate text-sm font-extrabold tabular-nums text-slate-900 sm:text-lg">
+                                  <p className="truncate text-xs font-extrabold tabular-nums text-slate-900 min-[360px]:text-sm sm:text-lg">
                                     {formatCurrency(item.product.price * item.quantity)}
                                   </p>
                                 </div>
@@ -1403,7 +1431,7 @@ export function PosPage() {
                 ) : null}
               </section>
 
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
                 <input
                   aria-label="Ghi chú đơn hàng"
                   className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
@@ -1575,19 +1603,9 @@ export function PosPage() {
               </section>
 
               <section className="hidden rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 xl:block xl:flex-none">
-                <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
-                  <input
-                    checked={autoPrint}
-                    className="h-4 w-4 rounded border-slate-300 text-moss-600 focus:ring-moss-500"
-                    onChange={(event) => setAutoPrint(event.target.checked)}
-                    type="checkbox"
-                  />
-                  In hóa đơn tự động
-                </label>
-
                 {canCheckout ? (
                   <button
-                    className="mt-3 hidden h-14 w-full items-center justify-center gap-2 rounded-xl bg-coal text-base font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-coal/90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-moss-200 disabled:cursor-not-allowed disabled:opacity-60 xl:flex"
+                    className="hidden h-14 w-full items-center justify-center gap-2 rounded-xl bg-coal text-base font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-coal/90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-moss-200 disabled:cursor-not-allowed disabled:opacity-60 xl:flex"
                     disabled={cart.length === 0 || submittingSale}
                     onClick={openPaymentModal}
                     type="button"
@@ -1895,18 +1913,59 @@ export function PosPage() {
               </button>
             </div>
           )}
-          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 sm:gap-3 sm:px-4 sm:py-3 sm:text-sm xl:hidden">
-            <input
-              checked={autoPrint}
-              className="h-5 w-5 rounded border-slate-300 text-moss-600 focus:ring-moss-500"
-              onChange={(event) => setAutoPrint(event.target.checked)}
-              type="checkbox"
-            />
-            In hóa đơn tự động sau khi hoàn tất
-          </label>
         </div>
         </Modal>
       ) : null}
+      <Modal
+        contentClassName="!h-auto"
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button
+              disabled={printingCompletedSale}
+              onClick={() => setCompletedSale(null)}
+              type="button"
+              variant="secondary"
+            >
+              Đóng
+            </Button>
+            <Button
+              isLoading={printingCompletedSale}
+              onClick={() => void handlePrintCompletedSale()}
+              type="button"
+            >
+              <Printer className="h-4 w-4" />
+              In hóa đơn
+            </Button>
+          </div>
+        }
+        onClose={() => {
+          if (!printingCompletedSale) {
+            setCompletedSale(null);
+          }
+        }}
+        open={Boolean(completedSale)}
+        size="sm"
+        title="Tạo hóa đơn thành công"
+      >
+        {completedSale ? (
+          <div className="text-center">
+            <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-moss-100 text-moss-700">
+              <Check className="h-8 w-8" />
+            </span>
+            <p className="mt-4 text-sm font-bold text-slate-500">Mã hóa đơn</p>
+            <p className="mt-1 text-lg font-black text-slate-950">{completedSale.order.code}</p>
+            <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-4">
+              <p className="text-sm font-bold text-slate-500">Tổng thanh toán</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">
+                {formatCurrency(completedSale.order.total)}
+              </p>
+            </div>
+            <p className="mt-3 text-xs font-semibold text-slate-500">
+              Bạn có thể in ngay hoặc đóng để tiếp tục bán hàng.
+            </p>
+          </div>
+        ) : null}
+      </Modal>
       <Modal
         footer={
           <Button onClick={() => setPaymentQrModalOpen(false)} type="button" variant="secondary">
@@ -2047,7 +2106,13 @@ export function PosPage() {
                     className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-55 sm:grid-cols-[minmax(0,1fr)_150px_auto] sm:items-center"
                     disabled={disabled}
                     key={batch.id}
-                    onClick={() => addToCart(productToBatchSelect, batch)}
+                    onClick={() =>
+                      addToCart(
+                        productToBatchSelect,
+                        batch,
+                        focusSearchAfterBatchRef.current
+                      )
+                    }
                     type="button"
                   >
                     <div>

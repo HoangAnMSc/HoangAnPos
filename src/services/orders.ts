@@ -99,6 +99,24 @@ export async function cancelOrder(orderId: string) {
   return data;
 }
 
+export async function deleteOrders(orderIds: string[]) {
+  requireSupabaseConfig();
+
+  if (orderIds.length === 0) {
+    return 0;
+  }
+
+  const { data, error } = await supabase.rpc("delete_pos_orders", {
+    order_ids_input: orderIds,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return Number(data ?? 0);
+}
+
 export async function recordOrderPrint(orderId: string) {
   requireSupabaseConfig();
 

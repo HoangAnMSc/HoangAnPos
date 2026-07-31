@@ -85,7 +85,6 @@ function RoleEditorModal({
   const [form, setForm] = useState<RoleFormState>(() => roleToForm(role));
   const [error, setError] = useState("");
   const formId = role ? `role-form-${role.id}` : "role-form-create";
-  const systemRole = role?.code === "admin" || role?.code === "staff";
   const permissionLocked = role?.code === "admin";
 
   useEffect(() => {
@@ -190,13 +189,12 @@ function RoleEditorModal({
       <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
-            disabled={systemRole}
             label="Tên vai trò"
             onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
             value={form.name}
           />
           <Input
-            disabled={systemRole}
+            disabled={role?.code === "admin"}
             label="Mã vai trò"
             onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}
             value={form.code}

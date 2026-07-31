@@ -1,5 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { ImagePlus, QrCode, Save } from "lucide-react";
+import { MediaPickerModal } from "../components/media/MediaPickerModal";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
@@ -8,7 +9,7 @@ import { PageContainer, StateNotice } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
-import { uploadPaymentQr } from "../lib/cloudinary";
+import { fetchCloudinaryImageResources, uploadPaymentQr } from "../lib/cloudinary";
 import { getErrorMessage } from "../lib/errors";
 import { normalizeNullableText } from "../lib/text";
 import { fetchPaymentSettings, savePaymentSettings } from "../services/paymentSettings";
@@ -17,7 +18,9 @@ export function PaymentSettingsPage() {
   const { canAccess } = useAuth();
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
+  const [libraryImages, setLibraryImages] = useState<string[]>([]);
   const [note, setNote] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [qrFile, setQrFile] = useState<File | null>(null);
   const [qrPreview, setQrPreview] = useState("");
   const [qrUrl, setQrUrl] = useState("");
@@ -28,10 +31,22 @@ export function PaymentSettingsPage() {
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const settings = await fetchPaymentSettings();
+      const [settings, cloudinaryResources] = await Promise.all([
+        fetchPaymentSettings(),
+        fetchCloudinaryImageResources().catch(() => []),
+      ]);
       setNote(settings?.transfer_note ?? "");
       setQrUrl(settings?.transfer_qr_url ?? "");
       setQrPreview(settings?.transfer_qr_url ?? "");
+      setLibraryImages(
+        Array.from(
+          new Set(
+            cloudinaryResources
+              .map((resource) => resource.secure_url || resource.url)
+              .filter((url): url is string => Boolean(url))
+          )
+        )
+      );
     } catch (requestError) {
       setErrorNotice({
         message:
@@ -64,6 +79,16 @@ export function PaymentSettingsPage() {
       setQrPreview(typeof reader.result === "string" ? reader.result : "");
     };
     reader.readAsDataURL(file);
+  }
+
+  function selectLibraryImage(imageUrl: string) {
+    if (!canUpdateSettings) {
+      return;
+    }
+
+    setQrFile(null);
+    setQrUrl(imageUrl);
+    setQrPreview(imageUrl);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -117,7 +142,7 @@ export function PaymentSettingsPage() {
             onSubmit={handleSubmit}
           >
             <div className="space-y-4">
-              <label
+              <div
                 className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-coal/15 bg-slate-50 p-4 text-center transition ${
                   canUpdateSettings ? "cursor-pointer hover:bg-slate-100" : ""
                 }`}
@@ -136,19 +161,13 @@ export function PaymentSettingsPage() {
                 )}
                 {canUpdateSettings ? (
                   <>
-                    <span className="mt-4 inline-flex items-center gap-2 rounded-xl bg-coal px-4 py-2 text-sm font-extrabold text-white">
+                    <button className="mt-4 inline-flex items-center gap-2 rounded-xl bg-coal px-4 py-2 text-sm font-extrabold text-white" onClick={() => setPickerOpen(true)} type="button">
                       <ImagePlus className="h-4 w-4" />
                       Chọn ảnh QR
-                    </span>
-                    <input
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
-                      type="file"
-                    />
+                    </button>
                   </>
                 ) : null}
-              </label>
+              </div>
             </div>
 
             <div className="space-y-5">
@@ -183,6 +202,21 @@ export function PaymentSettingsPage() {
           </form>
         )}
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
+      <MediaPickerModal
+        canUploadImage={canUpdateSettings}
+        currentImageUrl={qrUrl}
+        libraryImages={libraryImages}
+        onClose={() => setPickerOpen(false)}
+        onSave={({ imageFile, imageUrl }) => {
+          if (imageFile) {
+            handleFileChange(imageFile);
+          } else {
+            selectLibraryImage(imageUrl);
+          }
+          setPickerOpen(false);
+        }}
+        open={pickerOpen}
+      />
     </PageContainer>
   );
 }

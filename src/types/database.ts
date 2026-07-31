@@ -334,6 +334,7 @@ export type Database = {
           code: string;
           customer_id: string | null;
           cashier_id: string | null;
+          cashier_name: string | null;
           subtotal: number;
           discount: number;
           total: number;
@@ -352,6 +353,7 @@ export type Database = {
           code: string;
           customer_id?: string | null;
           cashier_id?: string | null;
+          cashier_name?: string | null;
           subtotal: number;
           discount?: number;
           total: number;
@@ -370,6 +372,7 @@ export type Database = {
           code?: string;
           customer_id?: string | null;
           cashier_id?: string | null;
+          cashier_name?: string | null;
           subtotal?: number;
           discount?: number;
           total?: number;
@@ -638,6 +641,7 @@ export type Database = {
           code: string;
           customer_id: string | null;
           cashier_id: string | null;
+          cashier_name: string | null;
           subtotal: number;
           discount: number;
           total: number;
@@ -661,6 +665,7 @@ export type Database = {
           code: string;
           customer_id: string | null;
           cashier_id: string | null;
+          cashier_name: string | null;
           subtotal: number;
           discount: number;
           total: number;
@@ -675,6 +680,12 @@ export type Database = {
           created_at: string;
         };
       };
+      delete_pos_orders: {
+        Args: {
+          order_ids_input: string[];
+        };
+        Returns: number;
+      };
       record_order_print: {
         Args: {
           order_id_input: string;
@@ -684,6 +695,7 @@ export type Database = {
           code: string;
           customer_id: string | null;
           cashier_id: string | null;
+          cashier_name: string | null;
           subtotal: number;
           discount: number;
           total: number;

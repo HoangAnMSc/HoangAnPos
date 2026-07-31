@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Images,
   ReceiptText,
+  ChartNoAxesCombined,
   Settings,
   ShieldCheck,
   Warehouse,
@@ -68,6 +69,25 @@ export const permissionGroups = [
         key: "orders.cancel",
         label: "Hủy hóa đơn",
         description: "Hủy hóa đơn thành công và hoàn lại số lượng vào kho.",
+      },
+      {
+        key: "orders.delete",
+        label: "Xóa hóa đơn",
+        description: "Chọn và xóa vĩnh viễn một hoặc nhiều hóa đơn.",
+      },
+    ],
+  },
+  {
+    key: "revenue",
+    label: "Doanh thu",
+    path: "/revenue",
+    icon: ChartNoAxesCombined,
+    description: "Theo dõi doanh thu và lập sổ S1a-HKD từ hóa đơn bán hàng.",
+    actions: [
+      {
+        key: "revenue.export",
+        label: "In / xuất sổ doanh thu",
+        description: "In hoặc xuất dữ liệu sổ doanh thu S1a-HKD.",
       },
     ],
   },

@@ -29,6 +29,9 @@ const NotFoundPage = lazy(() =>
 const OrdersPage = lazy(() =>
   import("./pages/OrdersPage").then((module) => ({ default: module.OrdersPage }))
 );
+const RevenuePage = lazy(() =>
+  import("./pages/RevenuePage").then((module) => ({ default: module.RevenuePage }))
+);
 const PaymentSettingsPage = lazy(() =>
   import("./pages/PaymentSettingsPage").then((module) => ({
     default: module.PaymentSettingsPage,
@@ -77,6 +80,7 @@ export function App() {
             <Route index element={<DefaultAdminRedirect />} />
             <Route path="pos" element={<PosPage />} />
             <Route path="orders" element={<OrdersPage />} />
+            <Route path="revenue" element={<RevenuePage />} />
             <Route path="customers" element={<CustomersPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="cloudinary-images" element={<CloudinaryImagesPage />} />

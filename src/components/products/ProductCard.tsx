@@ -132,23 +132,24 @@ export function ProductCard({
 
           <div
             className={clsx(
-              "mt-auto grid grid-cols-2 gap-2 pt-4 text-xs text-slate-500",
-              compact ? "pt-3 text-[11px]" : "sm:text-sm"
+              "mt-auto grid gap-2 pt-4 text-xs text-slate-500",
+              compact ? "grid-cols-1 gap-1 pt-3 text-[11px]" : "grid-cols-2 sm:text-sm"
             )}
           >
-            <span className="min-w-0">
-              Tồn kho:{" "}
-              <strong className="font-extrabold text-slate-950">
+            <span className="flex min-w-0 items-center justify-between gap-2">
+              <span className="flex-none">Tồn kho:</span>
+              <strong className="truncate text-right font-extrabold text-slate-950" title={String(stockLabel ?? product.stock)}>
                 {stockLabel ?? product.stock}
               </strong>
             </span>
-            <span className="min-w-0 text-right">
-              Hạn:{" "}
+            <span className="flex min-w-0 items-center justify-between gap-2">
+              <span className="flex-none">Hạn:</span>
               <strong
                 className={clsx(
-                  "font-extrabold",
+                  "truncate text-right font-extrabold",
                   expiryClassName ?? getExpiryClassName(expiryStatus)
                 )}
+                title={expiryLabel ?? formatExpiryDays(product.expiry_date)}
               >
                 {expiryLabel ?? formatExpiryDays(product.expiry_date)}
               </strong>

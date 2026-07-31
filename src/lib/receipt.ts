@@ -25,10 +25,10 @@ function money(value: number) {
 }
 
 function dateTime(value: string) {
-  return new Intl.DateTimeFormat("vi-VN", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+
+  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
 }
 
 export function printPosReceipt({ customer, items, order }: ReceiptInput) {
@@ -61,9 +61,8 @@ export function printPosReceipt({ customer, items, order }: ReceiptInput) {
   * { box-sizing: border-box; }
   body { width: 72mm; margin: 0 auto; color: #111; font: 12px/1.35 Arial, sans-serif; }
   .center { text-align: center; }
-  .brand { margin: 0; font-size: 23px; font-weight: 900; letter-spacing: .5px; }
-  .subtitle { margin: 2px 0; font-size: 11px; }
-  h2 { margin: 8px 0 4px; font-size: 17px; text-align: center; }
+  .brand { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .2px; }
+  h2 { margin: 5px 0 4px; font-size: 17px; text-align: center; }
   .meta { margin: 7px 0; }
   .meta div, .total div { display: flex; justify-content: space-between; gap: 8px; }
   .meta span:first-child { flex: none; }
@@ -77,14 +76,13 @@ export function printPosReceipt({ customer, items, order }: ReceiptInput) {
   .number { text-align: right; }
   .total { padding: 5px 0; border-bottom: 1px dashed #555; font-size: 12px; }
   .total .grand { margin-top: 3px; font-size: 16px; font-weight: 900; }
-  .note { min-height: 28px; padding: 5px 0; border-bottom: 1px dashed #555; }
-  .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; text-align: center; }
-  .signatures div { min-height: 55px; }
-  .thanks { margin: 8px 0 0; font-size: 11px; font-style: italic; text-align: center; }
+  .note { min-height: 34px; padding: 6px 0; border-bottom: 1px dashed #555; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .note b { display: block; margin-bottom: 2px; }
+  .contact { margin: 7px 0 0; padding-top: 6px; border-top: 1px dashed #555; font-size: 11px; text-align: center; }
+  .thanks { margin: 5px 0 0; font-size: 11px; font-weight: 700; text-align: center; }
 </style></head><body>
   <header class="center">
-    <p class="brand">HOÀNG AN</p>
-    <p class="subtitle">HÓA ĐƠN BÁN HÀNG</p>
+    <p class="brand">HỘ KINH DOANH SỮA TÃ BABYBOO</p>
   </header>
   <h2>HÓA ĐƠN BÁN HÀNG</h2>
   <section class="meta">
@@ -93,6 +91,7 @@ export function printPosReceipt({ customer, items, order }: ReceiptInput) {
     <div><span>Khách hàng:</span><b>${escapeHtml(customer?.name ?? "Khách lẻ")}</b></div>
     <div><span>Số ĐT:</span><span>${escapeHtml(customer?.phone ?? "—")}</span></div>
     <div><span>Địa chỉ:</span><span>${escapeHtml(customer?.address ?? "—")}</span></div>
+    <div><span>Người lên đơn:</span><b>${escapeHtml(order.cashier_name ?? "Nhân viên")}</b></div>
   </section>
   <table>
     <thead><tr><th>Tên hàng hóa</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
@@ -105,9 +104,9 @@ export function printPosReceipt({ customer, items, order }: ReceiptInput) {
     <div><span>Khách đưa</span><b>${money(order.cash_received)}đ</b></div>
     <div><span>Tiền thừa</span><b>${money(order.change_amount)}đ</b></div>
   </section>
-  <div class="note"><b>Ghi chú:</b> ${escapeHtml(order.note ?? "")}</div>
-  <div class="signatures"><div>Khách hàng ký</div><div>Người bán hàng</div></div>
-  <p class="thanks">Cảm ơn quý khách và hẹn gặp lại!</p>
+  <div class="note"><b>Ghi chú:</b>${escapeHtml(order.note?.trim() || "—")}</div>
+  <p class="contact">Cần hỗ trợ, kính mời Quý khách liên hệ:<br><b>0362791662 (Mr. An)</b></p>
+  <p class="thanks">Trân trọng cảm ơn Quý khách và hẹn gặp lại!</p>
 </body></html>`);
   receiptDocument.close();
 

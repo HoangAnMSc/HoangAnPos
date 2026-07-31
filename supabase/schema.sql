@@ -238,6 +238,7 @@ create table if not exists public.orders (
   code text not null unique,
   customer_id uuid references public.customers(id) on delete set null,
   cashier_id uuid references auth.users(id) on delete set null,
+  cashier_name text,
   subtotal numeric(12, 2) not null check (subtotal >= 0),
   discount numeric(12, 2) not null default 0 check (discount >= 0),
   total numeric(12, 2) not null check (total >= 0),
@@ -254,6 +255,9 @@ create table if not exists public.orders (
 
 alter table public.orders
 add column if not exists payment_method text not null default 'cash';
+
+alter table public.orders
+add column if not exists cashier_name text;
 
 alter table public.orders
 add column if not exists cash_received numeric(12, 2) not null default 0;
@@ -1104,6 +1108,7 @@ begin
     code,
     customer_id,
     cashier_id,
+    cashier_name,
     subtotal,
     discount,
     total,
@@ -1119,6 +1124,19 @@ begin
     code_input,
     customer_id_input,
     coalesce(cashier_id_input, auth.uid()),
+    coalesce(
+      (
+        select concat_ws(
+          ' - ',
+          coalesce(r.name, nullif(trim(p.role), ''), 'Nhân viên'),
+          nullif(trim(p.full_name), '')
+        )
+        from public.profiles p
+        left join public.app_roles r on r.id = p.role_id
+        where p.id = coalesce(cashier_id_input, auth.uid())
+      ),
+      'Nhân viên'
+    ),
     subtotal_value,
     discount_value,
     total_value,
@@ -1275,6 +1293,55 @@ begin
   end if;
 
   return order_record;
+end;
+$$;
+
+create or replace function public.delete_pos_orders(order_ids_input uuid[])
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  deleted_count integer := 0;
+  item_record public.order_items;
+  order_record public.orders;
+begin
+  if not public.has_permission('orders.delete') then
+    raise exception 'Permission denied';
+  end if;
+
+  for order_record in
+    select orders.*
+    from public.orders
+    where id = any(order_ids_input)
+    order by id
+    for update
+  loop
+    if order_record.status = 'paid' then
+      for item_record in
+        select *
+        from public.order_items
+        where order_id = order_record.id
+        order by id
+      loop
+        update public.products
+        set stock = stock + item_record.quantity
+        where id = item_record.product_id;
+
+        if item_record.batch_id is not null then
+          update public.product_batches
+          set quantity = quantity + item_record.quantity
+          where id = item_record.batch_id;
+        end if;
+      end loop;
+    end if;
+
+    delete from public.orders where id = order_record.id;
+    deleted_count := deleted_count + 1;
+  end loop;
+
+  return deleted_count;
 end;
 $$;
 

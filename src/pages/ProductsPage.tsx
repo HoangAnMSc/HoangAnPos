@@ -1,19 +1,17 @@
-import { type ChangeEvent, type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import {
   Barcode,
   Boxes,
-  Check,
   ChevronRight,
   Eye,
   EyeOff,
   Image as ImageIcon,
-  ImagePlus,
   PackagePlus,
   Plus,
   Search,
   Trash2,
-  Upload,
 } from "lucide-react";
+import { MediaPickerModal } from "../components/media/MediaPickerModal";
 import { Ean13LabelsModal } from "../components/products/Ean13LabelsModal";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { ProductCard } from "../components/products/ProductCard";
@@ -272,6 +270,8 @@ function ProductEan13GateModal({
   );
 }
 
+/* MediaPickerModal is shared with payment settings. */
+/*
 type MediaPickerModalProps = {
   canUploadImage: boolean;
   currentImageUrl: string;
@@ -281,7 +281,7 @@ type MediaPickerModalProps = {
   onSave: (value: { imageUrl: string; imageFile: File | null; previewUrl: string }) => void;
 };
 
-function MediaPickerModal({
+function LegacyMediaPickerModal({
   canUploadImage,
   currentImageUrl,
   libraryImages,
@@ -470,6 +470,7 @@ function MediaPickerModal({
     </Modal>
   );
 }
+*/
 
 type ProductFormProps = {
   canCreateCategory: boolean;
@@ -1675,21 +1676,40 @@ export function ProductsPage() {
   const hiddenCount = products.filter((product) => !product.is_active).length;
 
   return (
-    <div className="w-full max-w-[100vw] px-[1vw]">
+    <div className="w-full max-w-[100vw] px-2 sm:px-3">
       <ConfigNotice />
 
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-coal/10 p-4 sm:p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <div className="mt-3 flex flex-wrap gap-2">
+        <div className="border-b border-coal/10 p-3 sm:p-5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap gap-2">
                 <Badge tone="neutral">{products.length} mặt hàng</Badge>
                 {expiringSoonCount > 0 ? <Badge tone="amber">{expiringSoonCount} gần hết hạn</Badge> : null}
                 {expiredCount > 0 ? <Badge tone="red">{expiredCount} hết hạn</Badge> : null}
                 {hiddenCount > 0 ? <Badge tone="red">{hiddenCount} đang ẩn</Badge> : null}
               </div>
+
+              <div className="relative w-full lg:max-w-2xl">
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
+                <Input
+                  className="pl-11"
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Tìm theo tên, EAN-13, nhóm hàng..."
+                  value={query}
+                />
+              </div>
             </div>
-            <div className="grid gap-2 sm:flex sm:w-auto">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:w-auto lg:justify-end">
+              {canCreateProduct ? (
+                <Button
+                  className="order-first col-span-2 w-full sm:order-none sm:w-auto"
+                  onClick={openCreateModal}
+                >
+                  <PackagePlus className="h-4 w-4" />
+                  Thêm sản phẩm
+                </Button>
+              ) : null}
               {canReceiveStock ? (
                 <Button
                   className="w-full sm:w-auto"
@@ -1712,23 +1732,7 @@ export function ProductsPage() {
                   Tạo EAN-13
                 </Button>
               ) : null}
-              {canCreateProduct ? (
-                <Button className="w-full sm:w-auto" onClick={openCreateModal}>
-                  <PackagePlus className="h-4 w-4" />
-                  Thêm sản phẩm
-                </Button>
-              ) : null}
             </div>
-          </div>
-
-          <div className="relative mt-4 w-full xl:max-w-[42vw]">
-            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
-            <Input
-              className="pl-11"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm theo tên, EAN-13, nhóm hàng..."
-              value={query}
-            />
           </div>
         </div>
 
@@ -1751,18 +1755,20 @@ export function ProductsPage() {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 mt-2">
-            {filteredProducts.map((product) => (
-              <ProductCard
-                compact
-                expiryClassName={getProductExpiryClassName(product)}
-                expiryLabel={getProductExpiryLabel(product)}
-                key={product.id}
-                onSelect={() => openViewModal(product)}
-                product={product}
-                stockLabel={getProductStockLabel(product)}
-              />
-            ))}
+          <div className="max-h-[62dvh] overflow-y-auto overscroll-contain p-2.5 sm:p-4">
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {filteredProducts.map((product) => (
+                <ProductCard
+                  compact
+                  expiryClassName={getProductExpiryClassName(product)}
+                  expiryLabel={getProductExpiryLabel(product)}
+                  key={product.id}
+                  onSelect={() => openViewModal(product)}
+                  product={product}
+                  stockLabel={getProductStockLabel(product)}
+                />
+              ))}
+            </div>
           </div>
         )}
       </Card>
