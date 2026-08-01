@@ -25,8 +25,8 @@ type AuthContextValue = {
   isAdmin: boolean;
   canAccess: (permission: AppPermissionKey | string) => boolean;
   signIn: (identifier: string, password: string) => Promise<void>;
-  requestPasswordResetOtp: (identifier: string) => Promise<void>;
-  verifyPasswordResetOtp: (identifier: string, token: string) => Promise<void>;
+  requestPasswordResetOtp: (email: string) => Promise<void>;
+  verifyPasswordResetOtp: (email: string, token: string) => Promise<void>;
   updatePasswordAfterOtp: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -186,40 +186,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(result.data.user);
   }, []);
 
-  const requestPasswordResetOtp = useCallback(async (identifier: string) => {
+  const requestPasswordResetOtp = useCallback(async (email: string) => {
     requireSupabaseConfig();
 
-    const normalizedIdentifier = identifier.trim();
-    const result = isEmailIdentifier(normalizedIdentifier)
-      ? await supabase.auth.signInWithOtp({
-          email: normalizedIdentifier.toLowerCase(),
-          options: { shouldCreateUser: false },
-        })
-      : await supabase.auth.signInWithOtp({
-          phone: normalizePhoneNumber(normalizedIdentifier),
-          options: { shouldCreateUser: false },
-        });
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isEmailIdentifier(normalizedEmail)) {
+      throw new Error("Nhập đúng email đã đăng ký để nhận mã OTP.");
+    }
+
+    const result = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: { shouldCreateUser: false },
+    });
 
     if (result.error) {
       throw result.error;
     }
   }, []);
 
-  const verifyPasswordResetOtp = useCallback(async (identifier: string, token: string) => {
+  const verifyPasswordResetOtp = useCallback(async (email: string, token: string) => {
     requireSupabaseConfig();
 
-    const normalizedIdentifier = identifier.trim();
-    const result = isEmailIdentifier(normalizedIdentifier)
-      ? await supabase.auth.verifyOtp({
-          email: normalizedIdentifier.toLowerCase(),
-          token,
-          type: "email",
-        })
-      : await supabase.auth.verifyOtp({
-          phone: normalizePhoneNumber(normalizedIdentifier),
-          token,
-          type: "sms",
-        });
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isEmailIdentifier(normalizedEmail)) {
+      throw new Error("Email nhận OTP không hợp lệ.");
+    }
+
+    const result = await supabase.auth.verifyOtp({
+      email: normalizedEmail,
+      token,
+      type: "email",
+    });
 
     if (result.error) {
       throw result.error;

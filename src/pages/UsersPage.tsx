@@ -194,7 +194,7 @@ function UserEditorModal({
           />
           <Input
             autoComplete="email"
-            label="Email (không bắt buộc)"
+            label="Email (tùy chọn, dùng để quên mật khẩu)"
             onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
             placeholder="nhanvien@example.com"
             type="email"

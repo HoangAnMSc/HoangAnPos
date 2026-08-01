@@ -66,9 +66,9 @@ De trang quan ly user tao/sua/xoa duoc tai khoan Auth, can them `SUPABASE_SERVIC
 
 ### Cau hinh OTP quen mat khau
 
-- Trong **Authentication > Providers > Phone**, bat Phone Auth va cau hinh mot nha cung cap SMS (Twilio, MessageBird hoac Vonage). Neu chua co nha cung cap SMS, OTP qua so dien thoai se khong gui duoc.
 - Trong **Authentication > Email Templates > Magic Link**, dung bien `{{ .Token }}` de email chua ma OTP 6 so, vi du: `<p>Ma OTP cua ban: {{ .Token }}</p>`. Neu template dung `{{ .ConfirmationURL }}`, Supabase se gui lien ket thay vi ma OTP.
-- Tai khoan nhan vien dung so dien thoai bat buoc theo chuan E.164. Giao dien chap nhan so Viet Nam dang `0901234567` va tu chuyen thanh `+84901234567`.
+- Quen mat khau chi gui OTP qua email, khong dung SMS va khong can Twilio. Nhan vien khong co email phai nho quan ly dat lai mat khau trong trang Nhan vien.
+- De gui OTP den email nhan vien trong moi truong thuc te, cau hinh **Custom SMTP** trong Supabase thay vi dich vu email mac dinh bi gioi han.
 - OTP khong tao tai khoan moi (`shouldCreateUser: false`). Sau khi xac thuc OTP va doi mat khau, ung dung dang xuat phien OTP de nhan vien dang nhap lai bang mat khau moi.
 
 Nếu đã có database trước đó, hãy chạy lại `supabase/schema.sql` để cập nhật bảng quỹ, nhật ký kiểm toán, danh sách quyền và các policy bảo mật. Sau cập nhật, mỗi nhân viên phải mở ca tại trang **Quỹ & đối soát** trước khi tạo hóa đơn mới. Tiền thực đếm đầu ca phải khớp số cuối ca trước; chỉ người có quyền **Xác nhận lệch bàn giao** mới được chấp nhận chênh lệch kèm lý do.

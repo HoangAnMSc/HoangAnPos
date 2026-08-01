@@ -5,6 +5,7 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
 import { useAuth } from "../contexts/AuthContext";
+import { isEmailIdentifier } from "../lib/phone";
 
 type LocationState = {
   from?: {
@@ -18,7 +19,8 @@ function getRequestError(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message.trim() : "";
   const translations: Array<[RegExp, string]> = [
     [/invalid login credentials/i, "Email/số điện thoại hoặc mật khẩu không đúng."],
-    [/phone provider.*disabled|unsupported phone provider/i, "OTP qua số điện thoại chưa được bật trong Supabase."],
+    [/phone provider.*disabled|unsupported phone provider/i, "Đăng nhập bằng số điện thoại chưa được bật trong Supabase."],
+    [/email address not authorized/i, "Email này chưa được Supabase cho phép gửi. Hãy cấu hình Custom SMTP trong Supabase."],
     [/email rate limit|rate limit/i, "Bạn vừa yêu cầu OTP. Vui lòng chờ một lúc trước khi gửi lại."],
     [/token.*expired|otp.*expired/i, "Mã OTP đã hết hạn. Hãy yêu cầu mã mới."],
     [/token.*invalid|invalid.*otp/i, "Mã OTP không đúng."],
@@ -87,10 +89,10 @@ export function LoginPage() {
     }
   }
 
-  async function sendOtp(destination: string) {
-    const normalizedDestination = destination.trim();
-    if (!normalizedDestination) {
-      setError("Nhập email hoặc số điện thoại đã đăng ký.");
+  async function sendOtp(email: string) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isEmailIdentifier(normalizedEmail)) {
+      setError("Nhập đúng email đã đăng ký để nhận mã OTP.");
       return;
     }
 
@@ -98,10 +100,10 @@ export function LoginPage() {
     setSubmitting(true);
 
     try {
-      await requestPasswordResetOtp(normalizedDestination);
-      setResetIdentifier(normalizedDestination);
+      await requestPasswordResetOtp(normalizedEmail);
+      setResetIdentifier(normalizedEmail);
       setMode("verify-otp");
-      setSuccess(`Đã gửi mã OTP đến ${normalizedDestination}.`);
+      setSuccess(`Đã gửi mã OTP đến ${normalizedEmail}.`);
     } catch (requestError) {
       setError(getRequestError(requestError, "Không gửi được mã OTP. Vui lòng thử lại."));
     } finally {
@@ -186,7 +188,7 @@ export function LoginPage() {
           <h2 className="mt-2 font-display text-3xl font-bold">{title}</h2>
           {mode !== "login" ? (
             <p className="mt-2 text-sm font-semibold leading-6 text-coal/55">
-              {mode === "request-otp" && "Nhận mã OTP qua email hoặc số điện thoại."}
+              {mode === "request-otp" && "Mã OTP chỉ được gửi qua email đã đăng ký."}
               {mode === "verify-otp" && `Nhập mã 6 số đã gửi đến ${resetIdentifier}.`}
               {mode === "new-password" && "OTP đã xác thực, hãy tạo mật khẩu mới."}
             </p>
@@ -220,7 +222,7 @@ export function LoginPage() {
               className="ml-auto block text-sm font-extrabold text-moss-700 transition hover:text-moss-900"
               onClick={() => {
                 clearMessages();
-                setResetIdentifier(identifier.trim());
+                setResetIdentifier(isEmailIdentifier(identifier) ? identifier.trim() : "");
                 setMode("request-otp");
               }}
               type="button"
@@ -248,11 +250,12 @@ export function LoginPage() {
         {mode === "request-otp" ? (
           <form className="space-y-4" onSubmit={handleRequestOtp}>
             <Input
-              autoComplete="username"
-              label="Email hoặc số điện thoại"
+              autoComplete="email"
+              label="Email nhận OTP"
               onChange={(event) => setResetIdentifier(event.target.value)}
-              placeholder="0901234567 hoặc email@example.com"
+              placeholder="email@example.com"
               required
+              type="email"
               value={resetIdentifier}
             />
             {error ? (
@@ -305,7 +308,7 @@ export function LoginPage() {
                 Gửi lại mã
               </button>
               <button className="text-coal/55 hover:text-coal" onClick={() => setMode("request-otp")} type="button">
-                Đổi phương thức
+                Đổi email
               </button>
             </div>
           </form>
