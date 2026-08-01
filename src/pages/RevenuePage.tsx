@@ -147,7 +147,79 @@ export function RevenuePage() {
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-lg font-bold">Tổng doanh thu theo ngày</h3><p className="text-sm font-semibold text-slate-500">{periodLabel}</p></div></div>{dailyRows.length ? <div className="mt-5 flex h-44 items-end gap-2 overflow-x-auto border-b border-slate-200 pb-1">{dailyRows.map((row) => <div className="group flex h-full min-w-10 flex-1 flex-col justify-end" key={row.day} title={`${shortDate(row.day)}: ${formatCurrency(row.revenue)} · ${row.count} hóa đơn`}><span className="mb-1 hidden text-center text-[10px] font-bold text-slate-500 group-hover:block">{money(row.revenue)}</span><div className="min-h-1 rounded-t-lg bg-moss-500" style={{ height: `${Math.max((row.revenue / maxDailyRevenue) * 100, 4)}%` }} /><span className="mt-1 text-center text-[10px] font-bold text-slate-500">{row.day.slice(8, 10)}</span></div>)}</div> : <p className="py-12 text-center text-sm font-semibold text-slate-500">Chưa có doanh thu trong kỳ đã chọn.</p>}</section>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft"><div className="border-b border-slate-200 px-4 py-4 sm:px-5"><h3 className="font-display text-lg font-bold">Sổ doanh thu bán hàng hóa, dịch vụ</h3><p className="mt-1 text-sm font-semibold text-slate-500">Mẫu S1a-HKD · Tổng hợp mỗi ngày một dòng · Đơn vị tính: đồng</p></div><div className="max-h-[58dvh] overflow-y-auto overscroll-contain"><table className="w-full table-fixed border-collapse"><colgroup><col className="w-[26%] sm:w-[22%]" /><col className="w-[43%] sm:w-[50%]" /><col className="w-[31%] sm:w-[28%]" /></colgroup><thead className="sticky top-0 z-10 bg-slate-100 text-left text-[10px] font-extrabold uppercase text-slate-600 sm:text-xs"><tr><th className="px-2 py-3 sm:px-4">Ngày tháng <span className="hidden sm:inline">(A)</span></th><th className="px-2 py-3 sm:px-4">Giao dịch <span className="hidden sm:inline">(B)</span></th><th className="px-2 py-3 text-right sm:px-4">Số tiền <span className="hidden sm:inline">(1)</span></th></tr></thead><tbody className="divide-y divide-slate-100">{dailyRows.map((row) => <tr className="hover:bg-moss-50/50" key={row.day}><td className="px-2 py-3 text-xs font-bold leading-5 text-slate-700 sm:px-4 sm:text-sm">{shortDate(row.day)}</td><td className="min-w-0 px-2 py-3 sm:px-4"><p className="line-clamp-2 text-xs font-bold leading-4 text-slate-900 sm:text-sm">Tổng doanh thu trong ngày</p><p className="mt-1 text-[10px] font-semibold text-slate-500 sm:text-xs">{row.count} hóa đơn</p></td><td className="break-words px-2 py-3 text-right text-xs font-extrabold leading-5 tabular-nums text-slate-950 sm:px-4 sm:text-sm">{money(row.revenue)}<span className="ml-0.5 text-[10px]">đ</span></td></tr>)}{!dailyRows.length ? <tr><td className="px-4 py-12 text-center text-sm font-semibold text-slate-500" colSpan={3}>Không có giao dịch trong kỳ đã chọn.</td></tr> : null}</tbody><tfoot className="sticky bottom-0 border-t-2 border-slate-300 bg-white"><tr><td></td><td className="px-2 py-4 text-sm font-black sm:px-4">Tổng cộng</td><td className="break-words px-2 py-4 text-right text-sm font-black leading-5 tabular-nums text-moss-800 sm:px-4 sm:text-lg">{money(totals.revenue)}<span className="ml-0.5 text-xs">đ</span></td></tr></tfoot></table></div></section>
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+        <div className="flex flex-col gap-3 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div>
+            <h3 className="font-display text-lg font-bold text-slate-950">
+              Sổ doanh thu bán hàng hóa, dịch vụ
+            </h3>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              Mẫu S1a-HKD · Tổng hợp mỗi ngày một dòng · Đơn vị tính: đồng
+            </p>
+          </div>
+          <span className="w-fit rounded-full bg-moss-100 px-3 py-1 text-xs font-extrabold text-moss-800">
+            {dailyRows.length} ngày có doanh thu
+          </span>
+        </div>
+
+        <div className="max-h-[58dvh] overflow-y-auto overscroll-contain">
+          <div className="sticky top-0 z-10 hidden grid-cols-[150px_minmax(240px,1fr)_180px] gap-4 bg-slate-100 px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
+            <span>Ngày tháng</span>
+            <span>Giao dịch</span>
+            <span className="text-right">Số tiền</span>
+          </div>
+
+          {dailyRows.length ? (
+            <div className="divide-y divide-slate-100">
+              {dailyRows.map((row) => (
+                <article
+                  className="grid gap-3 px-3 py-3 transition hover:bg-moss-50/60 sm:px-4 md:grid-cols-[150px_minmax(240px,1fr)_180px] md:items-center md:gap-4 md:px-5"
+                  key={row.day}
+                >
+                  <div className="flex items-center justify-between gap-3 md:block">
+                    <span className="text-xs font-bold uppercase tracking-wide text-slate-400 md:hidden">
+                      Ngày
+                    </span>
+                    <span className="inline-flex rounded-lg bg-slate-100 px-2.5 py-1.5 text-sm font-extrabold tabular-nums text-slate-700">
+                      {shortDate(row.day)}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-extrabold text-slate-950">
+                      Tổng doanh thu trong ngày
+                    </p>
+                    <span className="mt-1 inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-700">
+                      {row.count} hóa đơn
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-xl bg-moss-50 px-3 py-2 md:block md:bg-transparent md:px-0 md:py-0 md:text-right">
+                    <span className="text-xs font-bold uppercase tracking-wide text-moss-600 md:hidden">
+                      Doanh thu
+                    </span>
+                    <span className="text-base font-black tabular-nums text-moss-800 md:text-lg">
+                      {formatCurrency(row.revenue)}
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="px-4 py-14 text-center text-sm font-semibold text-slate-500">
+              Không có giao dịch trong kỳ đã chọn.
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t-2 border-moss-200 bg-moss-50 px-4 py-4 sm:px-5">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-wide text-moss-600">Tổng cộng</p>
+            <p className="mt-0.5 text-xs font-semibold text-slate-500">{periodLabel}</p>
+          </div>
+          <p className="text-right text-xl font-black tabular-nums text-moss-900 sm:text-2xl">
+            {formatCurrency(totals.revenue)}
+          </p>
+        </div>
+      </section>
     </>}
     <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
   </PageContainer>;

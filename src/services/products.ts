@@ -337,12 +337,10 @@ export async function updateProduct(id: string, input: ProductInput) {
 export async function updateProductActive(id: string, isActive: boolean) {
   requireSupabaseConfig();
 
-  const { data, error } = await supabase
-    .from("products")
-    .update({ is_active: isActive })
-    .eq("id", id)
-    .select("*")
-    .single();
+  const { data, error } = await supabase.rpc("set_product_active", {
+    is_active_input: isActive,
+    product_id_input: id,
+  });
 
   if (error) {
     throw error;
@@ -368,27 +366,9 @@ export async function deleteProduct(id: string): Promise<DeleteProductResult> {
 }
 
 async function softDeleteProduct(id: string): Promise<DeleteProductResult> {
-  const deletedAt = new Date().toISOString();
-  const { error } = await supabase
-    .from("products")
-    .update({ deleted_at: deletedAt, is_active: false })
-    .eq("id", id);
-
-  if (!error) {
-    return { mode: "soft-deleted" };
-  }
-
-  if (isMissingDeletedAtColumn(error)) {
-    const fallback = await supabase.from("products").update({ is_active: false }).eq("id", id);
-
-    if (fallback.error) {
-      throw fallback.error;
-    }
-
-    return { mode: "hidden" };
-  }
-
-  throw error;
+  const { error } = await supabase.rpc("soft_delete_product", { product_id_input: id });
+  if (error) throw error;
+  return { mode: "soft-deleted" };
 }
 
 export async function receiveProductStock(input: ReceiveStockInput) {

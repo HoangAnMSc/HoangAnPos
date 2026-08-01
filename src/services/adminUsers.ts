@@ -12,6 +12,7 @@ export type ManagedUser = {
   created_at: string | null;
   last_sign_in_at: string | null;
   banned_until: string | null;
+  phone: string;
   profile: Profile | null;
 };
 
@@ -20,6 +21,7 @@ export type UserInput = {
   full_name: string;
   is_active: boolean;
   password?: string;
+  phone: string;
   role_id: string;
 };
 

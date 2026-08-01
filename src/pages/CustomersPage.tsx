@@ -318,16 +318,17 @@ export function CustomersPage() {
         />
       ) : (
         <div className="overflow-hidden rounded-xl bg-white shadow-soft ring-1 ring-coal/5">
-          <div className="hidden grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.3fr)_auto] gap-3 border-b border-coal/5 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
+          <div className="hidden grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_110px_minmax(0,1.2fr)_auto] gap-3 border-b border-coal/5 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
             <span>Khách hàng</span>
             <span>Liên hệ</span>
+            <span>Điểm</span>
             <span>Thông tin thêm</span>
             <span className="text-right">Thao tác</span>
           </div>
           <div className="divide-y divide-coal/5">
             {filteredCustomers.map((customer) => (
               <button
-                className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3 text-left transition hover:bg-cream/30 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.3fr)_auto] lg:gap-3"
+                className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3 text-left transition hover:bg-cream/30 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_110px_minmax(0,1.2fr)_auto] lg:gap-3"
                 key={customer.id}
                 onClick={() => setViewingCustomer(customer)}
                 type="button"
@@ -343,6 +344,9 @@ export function CustomersPage() {
                     <p className="mt-1 truncate text-xs font-semibold text-coal/45 lg:hidden">
                       {customer.phone || customer.email || "Chưa có liên hệ"}
                     </p>
+                    <Badge className="mt-1.5 lg:hidden" tone="amber">
+                      {(customer.points ?? 0).toLocaleString("vi-VN")} điểm
+                    </Badge>
                   </div>
                 </div>
 
@@ -357,6 +361,10 @@ export function CustomersPage() {
                     <Mail className="h-4 w-4 shrink-0 text-clay" />
                     <span className="truncate">{customer.email || "Chưa có email"}</span>
                   </div>
+                </div>
+
+                <div className="hidden lg:block">
+                  <Badge tone="amber">{(customer.points ?? 0).toLocaleString("vi-VN")} điểm</Badge>
                 </div>
 
                 <div className="hidden gap-1.5 text-sm text-coal/65 lg:grid">
@@ -411,6 +419,12 @@ export function CustomersPage() {
                 <p className="mt-1 text-sm font-semibold text-slate-500">
                   Tạo ngày {new Intl.DateTimeFormat("vi-VN").format(new Date(viewingCustomer.created_at))}
                 </p>
+              </div>
+              <div className="ml-auto shrink-0 rounded-xl bg-amber-100 px-4 py-2 text-center text-amber-800">
+                <p className="text-xl font-extrabold tabular-nums">
+                  {(viewingCustomer.points ?? 0).toLocaleString("vi-VN")}
+                </p>
+                <p className="text-xs font-bold">điểm tích lũy</p>
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">

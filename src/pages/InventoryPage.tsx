@@ -113,6 +113,7 @@ export function InventoryPage() {
   const { clearErrorNotice, errorNotice, showErrorNotice } = useErrorNotice(setError);
   const canCountInventory = canAccess("inventory.count");
   const canSubmitInventory = canAccess("inventory.submit");
+  const hasInventoryActions = canCountInventory || canSubmitInventory;
   const staffName = profile?.full_name || user?.email || "Nhân viên";
 
   const loadProducts = useCallback(async () => {
@@ -256,28 +257,12 @@ export function InventoryPage() {
   }
 
   return (
-    <PageContainer maxWidth="none">
+    <PageContainer
+      className={hasInventoryActions ? "!pb-28" : undefined}
+      maxWidth="none"
+    >
       <ConfigNotice />
       <PageToolbar
-        action={
-          <div className="grid gap-2 sm:flex">
-            {canCountInventory ? (
-              <Button onClick={() => setEan13ScannerOpen(true)} variant="secondary">
-                <Barcode className="h-4 w-4" />
-                Quét EAN-13
-              </Button>
-            ) : null}
-            {canSubmitInventory ? (
-              <Button
-                disabled={countedProducts.length === 0}
-                onClick={() => setSubmitConfirmOpen(true)}
-              >
-                <ClipboardCheck className="h-4 w-4" />
-                Hoàn tất kiểm kê
-              </Button>
-            ) : null}
-          </div>
-        }
         description="Nhân viên nhập số lượng đếm thực tế. Số tồn hệ thống và chênh lệch chỉ hiển thị tại trang Kho."
         eyebrow="Ghi nhận thực tế"
         title="Tồn kho"
@@ -292,8 +277,18 @@ export function InventoryPage() {
           <div className="flex flex-wrap gap-2">
             <Badge tone="neutral">{products.length} sản phẩm</Badge>
             <Badge tone="green">{countedProducts.length} đã nhập</Badge>
-            <Badge tone="neutral">{products.length - countedProducts.length} chưa nhập</Badge>
+            <Badge tone={products.length - countedProducts.length > 0 ? "amber" : "green"}>
+              {products.length - countedProducts.length} chưa nhập
+            </Badge>
           </div>
+        </div>
+        <div className="mt-3 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="h-2 rounded-full bg-gradient-to-r from-moss-500 to-moss-700 transition-all"
+            style={{
+              width: `${products.length ? (countedProducts.length / products.length) * 100 : 0}%`,
+            }}
+          />
         </div>
       </PageToolbar>
 
@@ -301,7 +296,7 @@ export function InventoryPage() {
       {success ? <StateNotice icon={CheckCircle2} message={success} tone="success" /> : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
-        <Card className="min-w-0 p-4">
+        <Card className="min-w-0 border border-sky-100 p-4 shadow-[0_10px_28px_rgba(14,165,233,0.07)]">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h3 className="font-extrabold text-slate-950">Chọn sản phẩm</h3>
@@ -329,8 +324,8 @@ export function InventoryPage() {
                   <button
                     className={`grid w-full grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-2.5 text-left transition ${
                       counted
-                        ? "border-moss-200 bg-moss-50/60 hover:bg-moss-50"
-                        : "border-slate-200 bg-white hover:border-moss-200 hover:bg-slate-50"
+                        ? "border-moss-300 bg-moss-50 shadow-[0_5px_14px_rgba(72,84,54,0.08)] hover:bg-moss-100/70"
+                        : "border-slate-200 bg-white hover:border-sky-200 hover:bg-sky-50/50"
                     } disabled:cursor-not-allowed disabled:opacity-60`}
                     disabled={!canCountInventory}
                     key={product.id}
@@ -366,7 +361,7 @@ export function InventoryPage() {
           )}
         </Card>
 
-        <Card className="min-w-0 p-4">
+        <Card className="min-w-0 border border-moss-100 p-4 shadow-[0_10px_28px_rgba(57,67,46,0.07)]">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h3 className="font-extrabold text-slate-950">Số lượng đã nhập</h3>
@@ -375,7 +370,11 @@ export function InventoryPage() {
               </p>
             </div>
             {canCountInventory && countedProducts.length > 0 ? (
-              <Button className="px-3" onClick={() => setCounts({})} variant="secondary">
+              <Button
+                className="!bg-red-50 px-3 !text-red-700 ring-red-200 hover:!bg-red-100"
+                onClick={() => setCounts({})}
+                variant="secondary"
+              >
                 Xóa tất cả
               </Button>
             ) : null}
@@ -393,7 +392,7 @@ export function InventoryPage() {
             <div className="space-y-2">
               {countedProducts.map((product) => (
                 <article
-                  className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center"
+                  className="flex flex-col gap-3 rounded-xl border border-moss-200 bg-gradient-to-r from-moss-50/80 to-white p-3 shadow-[0_5px_14px_rgba(72,84,54,0.06)] sm:flex-row sm:items-center"
                   key={product.id}
                 >
                   <div className="min-w-0 flex-1">
@@ -413,7 +412,7 @@ export function InventoryPage() {
                       <div className="flex gap-1">
                         <button
                           aria-label={`Sửa số lượng ${product.name}`}
-                          className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                          className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
                           onClick={() => openQuantityModal(product)}
                           type="button"
                         >
@@ -436,6 +435,37 @@ export function InventoryPage() {
           )}
         </Card>
       </div>
+
+      {hasInventoryActions ? (
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-moss-100 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-14px_36px_rgba(57,67,46,0.16)] backdrop-blur-xl lg:left-72">
+          <div
+            className={`mx-auto grid w-full max-w-3xl gap-2 sm:flex sm:justify-end ${
+              canCountInventory && canSubmitInventory ? "grid-cols-2" : "grid-cols-1"
+            }`}
+          >
+            {canCountInventory ? (
+              <Button
+                className="!min-h-12 w-full !rounded-xl !bg-sky-50 !px-4 !py-2.5 !text-sky-700 ring-sky-200 hover:!bg-sky-100 sm:w-auto"
+                onClick={() => setEan13ScannerOpen(true)}
+                variant="secondary"
+              >
+                <Barcode className="h-5 w-5" />
+                Quét EAN-13
+              </Button>
+            ) : null}
+            {canSubmitInventory ? (
+              <Button
+                className="!min-h-12 w-full !rounded-xl !bg-moss-700 !px-4 !py-2.5 !text-white hover:!bg-moss-800 sm:w-auto"
+                disabled={countedProducts.length === 0}
+                onClick={() => setSubmitConfirmOpen(true)}
+              >
+                <ClipboardCheck className="h-5 w-5" />
+                Hoàn tất kiểm kê
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <Ean13ScannerModal
         description="Quét mã trên tem sản phẩm, sau đó nhập số lượng thực tế vừa đếm."

@@ -7,6 +7,7 @@ Trang quản trị bán hàng dùng ReactJS, Tailwind CSS, Supabase và Cloudina
 - Đăng nhập bằng Supabase Auth, tự lưu phiên đăng nhập bằng Supabase session.
 - Phân quyền admin qua bảng `profiles.role`.
 - POS: chọn sản phẩm, gắn khách hàng, giảm giá, tạo hóa đơn và trừ tồn kho.
+- Quỹ & đối soát: số cuối ca tự động bàn giao sang ca sau, chỉ một ca được mở trên két, tự động tách tiền mặt/chuyển khoản và lưu mọi chênh lệch theo nhân viên.
 - Khách hàng: thêm, sửa, xóa, tìm kiếm.
 - Sản phẩm: thêm, sửa, xóa, tìm kiếm, upload ảnh lên Cloudinary.
 - Layout và component UI tái sử dụng: button, input, modal, card, badge, empty state.
@@ -25,7 +26,6 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 CLOUDINARY_CLOUD_NAME=your-cloud-name
-CLOUDINARY_UPLOAD_PRESET=your-unsigned-upload-preset
 CLOUDINARY_API_KEY=your-api-key
 CLOUDINARY_API_SECRET=your-api-secret
 ```
@@ -39,7 +39,7 @@ CLOUDINARY_API_SECRET=your-api-secret
 
 ```sql
 update public.profiles
-set role = 'admin'
+set role = 'admin', is_active = true
 where id = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'::uuid;
 ```
 
@@ -47,7 +47,7 @@ Hoặc gán admin theo email để đỡ phải copy UUID:
 
 ```sql
 update public.profiles p
-set role = 'admin'
+set role = 'admin', is_active = true
 from auth.users u
 where p.id = u.id
   and u.email = 'hoanganmsc@gmail.com';
@@ -64,12 +64,18 @@ order by p.created_at desc;
 
 De trang quan ly user tao/sua/xoa duoc tai khoan Auth, can them `SUPABASE_SERVICE_ROLE_KEY` vao `.env` khi chay local va vao Environment Variables tren Vercel. Day la server-side secret, khong doi thanh `VITE_SUPABASE_SERVICE_ROLE_KEY` va khong commit gia tri that len git. Sau khi them tren Vercel, redeploy project de API route doc duoc bien moi truong moi.
 
-Neu da co database truoc do, hay chay lai `supabase/schema.sql` de cap nhat bang role, danh sach permission chi tiet va cac policy `has_permission()`.
+### Cau hinh OTP quen mat khau
+
+- Trong **Authentication > Providers > Phone**, bat Phone Auth va cau hinh mot nha cung cap SMS (Twilio, MessageBird hoac Vonage). Neu chua co nha cung cap SMS, OTP qua so dien thoai se khong gui duoc.
+- Trong **Authentication > Email Templates > Magic Link**, dung bien `{{ .Token }}` de email chua ma OTP 6 so, vi du: `<p>Ma OTP cua ban: {{ .Token }}</p>`. Neu template dung `{{ .ConfirmationURL }}`, Supabase se gui lien ket thay vi ma OTP.
+- Tai khoan nhan vien dung so dien thoai bat buoc theo chuan E.164. Giao dien chap nhan so Viet Nam dang `0901234567` va tu chuyen thanh `+84901234567`.
+- OTP khong tao tai khoan moi (`shouldCreateUser: false`). Sau khi xac thuc OTP va doi mat khau, ung dung dang xuat phien OTP de nhan vien dang nhap lai bang mat khau moi.
+
+Nếu đã có database trước đó, hãy chạy lại `supabase/schema.sql` để cập nhật bảng quỹ, nhật ký kiểm toán, danh sách quyền và các policy bảo mật. Sau cập nhật, mỗi nhân viên phải mở ca tại trang **Quỹ & đối soát** trước khi tạo hóa đơn mới. Tiền thực đếm đầu ca phải khớp số cuối ca trước; chỉ người có quyền **Xác nhận lệch bàn giao** mới được chấp nhận chênh lệch kèm lý do.
 
 ## Cloudinary
 
-Tạo unsigned upload preset trong Cloudinary và điền vào `CLOUDINARY_UPLOAD_PRESET`.
-Ảnh sản phẩm sẽ được upload vào folder `hoang-an-pos/products`.
+Ảnh được upload bằng chữ ký ngắn hạn do API đã xác thực tạo ra; không dùng unsigned upload preset. Ảnh sản phẩm được lưu trong folder `hoang-an-pos/products`.
 
 De xoa anh truc tiep tren Cloudinary tu trang quan ly anh, deploy Supabase Edge Function:
 
@@ -88,7 +94,7 @@ CLOUDINARY_API_KEY=your-api-key
 CLOUDINARY_API_SECRET=your-api-secret
 ```
 
-Anh moi upload se luu `delete_token` va co the xoa nhanh trong khoang ngan sau upload. Anh cu van can API key/secret de xoa that tren Cloudinary.
+API key và secret chỉ được đặt ở môi trường server, tuyệt đối không đặt tên biến bắt đầu bằng `VITE_` và không commit giá trị thật.
 
 ## Scripts
 

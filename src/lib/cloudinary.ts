@@ -3,11 +3,8 @@ import { requireSupabaseConfig, supabase } from "./supabase";
 
 const cloudName =
   import.meta.env.CLOUDINARY_CLOUD_NAME || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-const uploadPreset =
-  import.meta.env.CLOUDINARY_UPLOAD_PRESET || import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-
 export const productImageFolder = "hoang-an-pos/products";
-export const isCloudinaryConfigured = Boolean(cloudName && uploadPreset);
+export const isCloudinaryConfigured = Boolean(cloudName);
 
 type CloudinaryUploadResponse = {
   delete_token?: string;
@@ -29,6 +26,15 @@ type CloudinaryDeleteResponse = {
   ok?: boolean;
   result?: string;
   message?: string;
+};
+
+type CloudinaryUploadSignature = {
+  apiKey: string;
+  cloudName: string;
+  folder: string;
+  ok: boolean;
+  signature: string;
+  timestamp: string;
 };
 
 export type CloudinaryImageResource = {
@@ -216,13 +222,14 @@ async function deleteCloudinaryImageViaSupabase(publicId: string) {
 }
 
 async function uploadImage(file: File, folder: string): Promise<CloudinaryImageUpload> {
-  if (!cloudName || !uploadPreset) {
+  if (!cloudName) {
     throw new Error(
-      "Chưa cấu hình Cloudinary. Hãy điền CLOUDINARY_CLOUD_NAME và CLOUDINARY_UPLOAD_PRESET trong file .env."
+      "Chưa cấu hình Cloudinary. Hãy điền CLOUDINARY_CLOUD_NAME trong file .env."
     );
   }
 
-  if (!file.type.startsWith("image/")) {
+  const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+  if (!allowedImageTypes.has(file.type)) {
     throw new Error("File đã chọn không phải là ảnh hợp lệ.");
   }
 
@@ -230,12 +237,38 @@ async function uploadImage(file: File, folder: string): Promise<CloudinaryImageU
     throw new Error("File ảnh đang trống.");
   }
 
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("Ảnh không được lớn hơn 10 MB.");
+  }
+
+  const signatureResponse = await fetch("/api/cloudinary-images", {
+    body: JSON.stringify({ action: "sign-upload", folder }),
+    headers: await createAuthHeaders({ "Content-Type": "application/json" }),
+    method: "POST",
+  });
+  const signatureData = (await signatureResponse.json().catch(() => null)) as
+    | (Partial<CloudinaryUploadSignature> & { message?: string })
+    | null;
+
+  if (
+    !signatureResponse.ok ||
+    !signatureData?.ok ||
+    !signatureData.apiKey ||
+    !signatureData.cloudName ||
+    !signatureData.signature ||
+    !signatureData.timestamp
+  ) {
+    throw new Error(signatureData?.message || "Không lấy được chữ ký tải ảnh an toàn.");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", uploadPreset);
-  formData.append("folder", folder);
+  formData.append("api_key", signatureData.apiKey);
+  formData.append("folder", signatureData.folder || folder);
+  formData.append("signature", signatureData.signature);
+  formData.append("timestamp", signatureData.timestamp);
 
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${signatureData.cloudName}/image/upload`, {
     method: "POST",
     body: formData,
   });

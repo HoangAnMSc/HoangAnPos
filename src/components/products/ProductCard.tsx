@@ -59,15 +59,15 @@ export function ProductCard({
   return (
     <article
       className={clsx(
-        "group relative h-full overflow-hidden rounded-[1.4rem] border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.06)] transition",
-        disabled ? "opacity-55" : "hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
+        "group relative h-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_4px_14px_rgba(15,23,42,0.05)] transition",
+        disabled ? "opacity-55" : "hover:-translate-y-0.5 hover:border-moss-300 hover:shadow-[0_10px_24px_rgba(15,23,42,0.10)]",
         className
       )}
     >
       <button
         className={clsx(
           "flex h-full w-full flex-col text-left focus:outline-none focus:ring-4 focus:ring-moss-100",
-          compact ? "p-1.5" : "p-2"
+          compact ? "p-1" : "p-2"
         )}
         disabled={disabled || !onSelect}
         onClick={onSelect}
@@ -75,22 +75,22 @@ export function ProductCard({
       >
         <div
           className={clsx(
-            "relative flex w-full items-center justify-center overflow-hidden rounded-[20px] bg-slate-50",
-            compact ? "aspect-[1.55]" : "aspect-[1.14]"
+            "relative flex w-full items-center justify-center overflow-hidden rounded-lg bg-slate-50",
+            compact ? "aspect-[1.6]" : "aspect-[1.14]"
           )}
         >
           {product.image_url ? (
             <img
               alt={product.name}
               className={clsx(
-                "h-full w-full object-cover transition rounded-[20px] duration-300 group-hover:scale-[1.03]",
-                compact ? "p-2" : "p-3"
+                "h-full w-full rounded-lg object-cover transition duration-300 group-hover:scale-[1.03]",
+                compact ? "p-0" : "p-3"
               )}
               src={product.image_url}
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-slate-300">
-              <Boxes className={compact ? "h-8 w-8" : "h-11 w-11"} />
+            <div className="flex h-full w-full items-center justify-center bg-slate-100 text-slate-300">
+              <Boxes className={compact ? "h-7 w-7" : "h-11 w-11"} />
             </div>
           )}
 
@@ -107,7 +107,9 @@ export function ProductCard({
 
           <span
             className={clsx(
-              "absolute bottom-2 left-2 rounded-full px-2.5 py-1 text-[11px] font-extrabold shadow-sm",
+              compact
+                ? "absolute bottom-1.5 left-1.5 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold shadow-sm"
+                : "absolute bottom-2 left-2 rounded-full px-2.5 py-1 text-[11px] font-extrabold shadow-sm",
               product.is_active
                 ? "bg-moss-100/95 text-moss-800"
                 : "bg-slate-900/90 text-white"
@@ -117,36 +119,37 @@ export function ProductCard({
           </span>
         </div>
 
-        <div className={clsx("flex flex-1 flex-col", compact ? "px-1 pt-2" : "px-1.5 pt-3")}>
+        <div className={clsx("flex flex-1 flex-col", compact ? "px-1.5 pb-1.5 pt-1.5" : "px-1.5 pt-3")}>
           <h3
             className={clsx(
               "line-clamp-2 font-extrabold leading-tight text-slate-950",
-              compact ? "min-h-[2.25rem] text-[13px]" : "min-h-[2.6rem] text-base sm:text-lg"
+              compact ? "min-h-8 text-xs sm:text-[13px]" : "min-h-[2.6rem] text-base sm:text-lg"
             )}
           >
             {product.name}
           </h3>
-          <p className={clsx("mt-1 font-semibold text-slate-500", compact ? "text-xs" : "text-sm")}>
+          <p className={clsx("mt-1 font-black text-moss-700", compact ? "text-xs" : "text-sm")}>
             {formatCurrency(product.price)}
           </p>
 
           <div
             className={clsx(
               "mt-auto grid gap-2 pt-4 text-xs text-slate-500",
-              compact ? "grid-cols-1 gap-1 pt-3 text-[11px]" : "grid-cols-2 sm:text-sm"
+              compact ? "grid-cols-2 gap-1 pt-2 text-[10px]" : "grid-cols-2 sm:text-sm"
             )}
           >
-            <span className="flex min-w-0 items-center justify-between gap-2">
-              <span className="flex-none">Tồn kho:</span>
-              <strong className="truncate text-right font-extrabold text-slate-950" title={String(stockLabel ?? product.stock)}>
+            <span className={clsx("min-w-0", compact ? "rounded-md bg-slate-50 px-1.5 py-1" : "flex items-center justify-between gap-2")}>
+              <span className={clsx("flex-none", compact && "block text-slate-400")}>Tồn kho</span>
+              <strong className={clsx("truncate font-extrabold text-slate-950", compact ? "mt-0.5 block" : "text-right")} title={String(stockLabel ?? product.stock)}>
                 {stockLabel ?? product.stock}
               </strong>
             </span>
-            <span className="flex min-w-0 items-center justify-between gap-2">
-              <span className="flex-none">Hạn:</span>
+            <span className={clsx("min-w-0", compact ? "rounded-md bg-slate-50 px-1.5 py-1" : "flex items-center justify-between gap-2")}>
+              <span className={clsx("flex-none", compact && "block text-slate-400")}>Hạn</span>
               <strong
                 className={clsx(
-                  "truncate text-right font-extrabold",
+                  "truncate font-extrabold",
+                  compact ? "mt-0.5 block" : "text-right",
                   expiryClassName ?? getExpiryClassName(expiryStatus)
                 )}
                 title={expiryLabel ?? formatExpiryDays(product.expiry_date)}

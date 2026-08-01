@@ -11,6 +11,7 @@ import {
   Warehouse,
   UsersRound,
   UserCog,
+  WalletCards,
 } from "lucide-react";
 
 type PermissionAction = {
@@ -88,6 +89,35 @@ export const permissionGroups = [
         key: "revenue.export",
         label: "In / xuất sổ doanh thu",
         description: "In hoặc xuất dữ liệu sổ doanh thu S1a-HKD.",
+      },
+    ],
+  },
+  {
+    key: "cash-management",
+    label: "Quỹ & đối soát",
+    path: "/cash-management",
+    icon: WalletCards,
+    description: "Mở ca, chốt két và đối chiếu tiền mặt với doanh thu của từng nhân viên.",
+    actions: [
+      {
+        key: "cash-management.session.open",
+        label: "Mở ca bán hàng",
+        description: "Khai báo số tiền đầu ca trước khi bắt đầu bán hàng.",
+      },
+      {
+        key: "cash-management.session.close",
+        label: "Chốt ca / kiểm đếm két",
+        description: "Nhập tiền mặt thực đếm và ghi nhận chênh lệch cuối ca.",
+      },
+      {
+        key: "cash-management.handover.override",
+        label: "Xác nhận lệch bàn giao",
+        description: "Cho phép quản lý mở ca khi tiền thực nhận khác số tiền ca trước bàn giao; bắt buộc ghi lý do.",
+      },
+      {
+        key: "cash-management.view-all",
+        label: "Xem đối soát toàn bộ nhân viên",
+        description: "Xem doanh thu, tiền két và chênh lệch của tất cả nhân viên.",
       },
     ],
   },
@@ -229,6 +259,11 @@ export const permissionGroups = [
         description: "Xem danh sách giờ đã chấm công trong tháng.",
       },
       {
+        key: "attendance.history.view-all",
+        label: "Xem lịch sử toàn bộ nhân viên",
+        description: "Mở tab lịch sử theo tháng của tất cả nhân viên.",
+      },
+      {
         key: "attendance.history.update",
         label: "Sửa lịch sử chấm công",
         description: "Chỉnh sửa giờ chấm công và giờ tan làm đã lưu.",
@@ -303,7 +338,7 @@ export const permissionGroups = [
       {
         key: "users.update",
         label: "Sửa nhân viên",
-        description: "Cập nhật email, mật khẩu, tên và vai trò.",
+        description: "Cập nhật số điện thoại, email, mật khẩu, tên và vai trò.",
       },
       {
         key: "users.toggle-active",

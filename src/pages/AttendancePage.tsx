@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CalendarDays,
+  AlertTriangle,
+  Banknote,
   CheckCircle2,
   Clock,
   Download,
@@ -14,42 +15,122 @@ import {
   MapPin,
   RotateCcw,
   Save,
+  Search,
   Trash2,
   UsersRound,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
-import { EmptyState } from "../components/ui/EmptyState";
+import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
+import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import {
   downloadAttendanceExcel,
   downloadAttendanceImages,
 } from "../lib/attendanceExport";
 import { getErrorMessage } from "../lib/errors";
+import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
+import { normalizeNullableText } from "../lib/text";
 import {
   clockInAttendance,
   clockOutAttendance,
   deleteAttendanceRecord,
+  fetchAllAttendanceRecords,
+  fetchAttendanceCashCheck,
   fetchAttendanceEmployees,
   fetchAttendanceRecords,
   fetchAttendanceRecordsForExport,
   fetchOpenAttendanceRecord,
+  submitAttendanceCashCheck,
+  type AttendanceCashCheck,
   type AttendanceEmployee,
+  type AttendanceHistoryRecord,
   type AttendanceLocationInput,
   updateAttendanceRecord,
 } from "../services/attendance";
 import type { AttendanceRecord } from "../types";
 
-type AttendanceTab = "clock" | "history";
+type AttendanceTab = "clock" | "history" | "team-history";
 type AttendanceExportFormat = "excel" | "image";
 
 type AttendanceEditForm = {
   clockIn: string;
   clockOut: string;
 };
+
+type SelectedTeamAttendance = {
+  employeeName: string;
+  record: AttendanceHistoryRecord;
+};
+
+type AttendanceCashDetailProps = {
+  cashCheck: AttendanceCashCheck | null;
+  loading: boolean;
+};
+
+function AttendanceCashDetail({ cashCheck, loading }: AttendanceCashDetailProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 rounded-2xl bg-slate-50 px-4 py-5 text-sm font-bold text-slate-500">
+        <RotateCcw className="h-4 w-4 animate-spin" /> Đang tải đối soát tiền mặt...
+      </div>
+    );
+  }
+
+  if (!cashCheck) {
+    return (
+      <p className="rounded-2xl bg-slate-50 px-4 py-4 text-center text-sm font-semibold text-slate-500">
+        Ca này không có dữ liệu đối soát tiền mặt.
+      </p>
+    );
+  }
+
+  const variance = cashCheck.actual_cash == null
+    ? null
+    : Number(cashCheck.actual_cash) - Number(cashCheck.expected_cash);
+  const statusTone = cashCheck.is_match === true
+    ? "bg-emerald-100 text-emerald-700"
+    : cashCheck.is_match === false
+      ? "bg-red-100 text-red-700"
+      : "bg-amber-100 text-amber-700";
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200">
+      <div className="flex items-center justify-between gap-3 bg-slate-50 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Banknote className="h-4 w-4 text-moss-700" />
+          <h4 className="text-sm font-extrabold text-slate-900">Đối soát tiền mặt đầu ca</h4>
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${statusTone}`}>
+          {cashCheck.is_match === true ? "Đã khớp" : cashCheck.is_match === false ? "Không khớp" : "Chờ xác nhận"}
+        </span>
+      </div>
+      <dl className="grid grid-cols-2 gap-px bg-slate-200">
+        <div className="bg-white p-3">
+          <dt className="text-[11px] font-bold text-slate-500">Tiền mặt hệ thống</dt>
+          <dd className="mt-1 text-sm font-black tabular-nums text-slate-950">{formatCurrency(Number(cashCheck.expected_cash))}</dd>
+        </div>
+        <div className="bg-white p-3">
+          <dt className="text-[11px] font-bold text-slate-500">Nhân viên thực đếm</dt>
+          <dd className="mt-1 text-sm font-black tabular-nums text-slate-950">
+            {cashCheck.actual_cash == null ? "Chưa xác nhận" : formatCurrency(Number(cashCheck.actual_cash))}
+          </dd>
+        </div>
+      </dl>
+      {variance !== null || cashCheck.reason ? (
+        <div className="border-t border-slate-200 px-4 py-3 text-xs font-semibold text-slate-600">
+          {variance !== null ? (
+            <p>Chênh lệch: <strong className={variance === 0 ? "text-emerald-700" : "text-red-700"}>{formatCurrency(variance)}</strong></p>
+          ) : null}
+          {cashCheck.reason ? <p className="mt-1 leading-5 text-red-700">Lý do: {cashCheck.reason}</p> : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
 
 const vietnamTimeZone = "Asia/Ho_Chi_Minh";
 
@@ -77,6 +158,7 @@ const timeFormatter = new Intl.DateTimeFormat("vi-VN", {
 });
 
 const weekdayLabels = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+const calendarWeekdayLabels = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "CN"];
 
 function getVietnamMonthKey(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -100,15 +182,58 @@ function formatMonthLabel(monthKey: string) {
 }
 
 function getWorkDate(value: string) {
-  return new Date(`${value}T00:00:00+07:00`);
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 function formatShortDate(value: string) {
   const date = getWorkDate(value);
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
 
-  return `${weekdayLabels[date.getDay()]}, ${day}/${month}`;
+  return `${weekdayLabels[date.getUTCDay()]}, ${day}/${month}`;
+}
+
+function getMonthDays(monthKey: string) {
+  const [yearValue, monthValue] = monthKey.split("-").map(Number);
+  const year = Number.isFinite(yearValue) ? yearValue : new Date().getFullYear();
+  const month = Number.isFinite(monthValue) ? monthValue : new Date().getMonth() + 1;
+  const totalDays = new Date(year, month, 0).getDate();
+
+  return Array.from({ length: totalDays }, (_, index) => {
+    const day = String(index + 1).padStart(2, "0");
+    return `${year}-${String(month).padStart(2, "0")}-${day}`;
+  });
+}
+
+function getCalendarSlots(monthDays: string[]) {
+  if (monthDays.length === 0) {
+    return [];
+  }
+
+  const firstWeekday = getWorkDate(monthDays[0]).getUTCDay();
+  const leadingEmptyDays = (firstWeekday + 6) % 7;
+
+  return [
+    ...Array.from({ length: leadingEmptyDays }, () => null),
+    ...monthDays,
+  ] as Array<string | null>;
+}
+
+function getDayKind(value: string): "weekday" | "saturday" | "sunday" {
+  const weekday = getWorkDate(value).getUTCDay();
+  if (weekday === 0) return "sunday";
+  if (weekday === 6) return "saturday";
+  return "weekday";
+}
+
+function getDayNumber(value: string) {
+  return Number(value.slice(-2));
+}
+
+function getShortWeekday(value: string) {
+  const weekday = getWorkDate(value).getUTCDay();
+  return weekday === 0 ? "CN" : `T${weekday + 1}`;
 }
 
 function formatDateTime(value?: string | null) {
@@ -247,11 +372,22 @@ async function getCurrentAttendanceLocation(): Promise<AttendanceLocationInput> 
 export function AttendancePage() {
   const { canAccess, profile, user } = useAuth();
   const [activeTab, setActiveTab] = useState<AttendanceTab>("clock");
+  const [allHistoryEmployees, setAllHistoryEmployees] = useState<AttendanceEmployee[]>([]);
+  const [allHistoryLoading, setAllHistoryLoading] = useState(false);
+  const [allHistoryRecords, setAllHistoryRecords] = useState<AttendanceHistoryRecord[]>([]);
+  const [cashActual, setCashActual] = useState("");
+  const [cashCheck, setCashCheck] = useState<AttendanceCashCheck | null>(null);
+  const [cashCheckError, setCashCheckError] = useState("");
+  const [cashMismatch, setCashMismatch] = useState(false);
+  const [cashModalOpen, setCashModalOpen] = useState(false);
+  const [cashReason, setCashReason] = useState("");
+  const [cashSaving, setCashSaving] = useState(false);
   const [confirmClockOutOpen, setConfirmClockOutOpen] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [editError, setEditError] = useState("");
   const [editForm, setEditForm] = useState<AttendanceEditForm>({ clockIn: "", clockOut: "" });
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const [error, setError] = useState("");
   const [exportEmployees, setExportEmployees] = useState<AttendanceEmployee[]>([]);
   const [exportError, setExportError] = useState("");
@@ -263,6 +399,10 @@ export function AttendancePage() {
   const [selectedExportEmployeeIds, setSelectedExportEmployeeIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [detailCashCheck, setDetailCashCheck] = useState<AttendanceCashCheck | null>(null);
+  const [detailCashLoading, setDetailCashLoading] = useState(false);
+  const [selectedHistoryAttendance, setSelectedHistoryAttendance] = useState<AttendanceRecord | null>(null);
+  const [selectedTeamAttendance, setSelectedTeamAttendance] = useState<SelectedTeamAttendance | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRecords, setHistoryRecords] = useState<AttendanceRecord[]>([]);
   const [monthKey, setMonthKey] = useState(() => getVietnamMonthKey());
@@ -273,6 +413,7 @@ export function AttendancePage() {
   const [success, setSuccess] = useState("");
   const canClock = canAccess("attendance.clock");
   const canViewHistory = canAccess("attendance.history.view");
+  const canViewAllHistory = canAccess("attendance.history.view-all");
   const canUpdateHistory = canAccess("attendance.history.update");
   const canDeleteHistory = canAccess("attendance.history.delete");
   const canExportAttendance = canAccess("attendance.export");
@@ -280,10 +421,6 @@ export function AttendancePage() {
   const isClockedIn = Boolean(openRecord && !openRecord.clock_out_at);
   const isTodayCompleted = Boolean(openRecord?.clock_out_at);
   const clockInLocation = getClockInLocation(openRecord);
-  const canManageHistory = canUpdateHistory || canDeleteHistory;
-  const historyGridColumns = canManageHistory
-    ? "grid-cols-[1.25fr_0.85fr_0.85fr_0.85fr_5rem]"
-    : "grid-cols-[1.35fr_0.9fr_0.9fr_0.95fr]";
   const allExportEmployeesSelected =
     exportEmployees.length > 0 &&
     exportEmployees.every((employee) => selectedExportEmployeeIds.has(employee.id));
@@ -298,7 +435,18 @@ export function AttendancePage() {
     setOpenLoading(true);
 
     try {
-      setOpenRecord(await fetchOpenAttendanceRecord(user.id));
+      const record = await fetchOpenAttendanceRecord(user.id);
+      setOpenRecord(record);
+
+      if (record) {
+        const nextCashCheck = await fetchAttendanceCashCheck(record.id);
+        setCashCheck(nextCashCheck);
+        if (nextCashCheck && !nextCashCheck.checked_at) {
+          setCashModalOpen(true);
+        }
+      } else {
+        setCashCheck(null);
+      }
     } catch (requestError) {
       setError(getErrorMessage(requestError, "Không tải được trạng thái chấm công."));
     } finally {
@@ -323,6 +471,28 @@ export function AttendancePage() {
     }
   }, [canViewHistory, monthKey, user?.id]);
 
+  const loadAllHistory = useCallback(async () => {
+    if (!canViewAllHistory) {
+      setAllHistoryEmployees([]);
+      setAllHistoryRecords([]);
+      return;
+    }
+
+    setAllHistoryLoading(true);
+    try {
+      const [records, employees] = await Promise.all([
+        fetchAllAttendanceRecords(monthKey),
+        fetchAttendanceEmployees(),
+      ]);
+      setAllHistoryRecords(records);
+      setAllHistoryEmployees(employees);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Không tải được lịch sử toàn bộ nhân viên."));
+    } finally {
+      setAllHistoryLoading(false);
+    }
+  }, [canViewAllHistory, monthKey]);
+
   useEffect(() => {
     const interval = window.setInterval(() => {
       setNow(new Date());
@@ -338,14 +508,20 @@ export function AttendancePage() {
   useEffect(() => {
     if (activeTab === "history") {
       void loadHistory();
+    } else if (activeTab === "team-history") {
+      void loadAllHistory();
     }
-  }, [activeTab, loadHistory]);
+  }, [activeTab, loadAllHistory, loadHistory]);
 
   useEffect(() => {
-    if (activeTab === "clock" && !canClock && canViewHistory) {
-      setActiveTab("history");
+    if (activeTab === "clock" && !canClock) {
+      if (canViewHistory) {
+        setActiveTab("history");
+      } else if (canViewAllHistory) {
+        setActiveTab("team-history");
+      }
     }
-  }, [activeTab, canClock, canViewHistory]);
+  }, [activeTab, canClock, canViewAllHistory, canViewHistory]);
 
   const historySummary = useMemo(() => {
     const totalMs = historyRecords.reduce((total, record) => {
@@ -359,6 +535,44 @@ export function AttendancePage() {
       totalShifts: historyRecords.length,
     };
   }, [historyRecords, now]);
+
+  const monthDays = useMemo(() => getMonthDays(monthKey), [monthKey]);
+  const calendarSlots = useMemo(() => getCalendarSlots(monthDays), [monthDays]);
+  const historyByDay = useMemo(
+    () => new Map(historyRecords.map((record) => [record.work_date, record])),
+    [historyRecords]
+  );
+  const allHistoryMatrix = useMemo(() => {
+    const employeeMap = new Map(
+      allHistoryEmployees.map((employee) => [employee.id, employee.name] as const)
+    );
+    allHistoryRecords.forEach((record) => employeeMap.set(record.user_id, record.employee_name));
+    const recordsByEmployee = new Map<string, Map<string, AttendanceHistoryRecord>>();
+    allHistoryRecords.forEach((record) => {
+      const employeeRecords = recordsByEmployee.get(record.user_id) ?? new Map();
+      employeeRecords.set(record.work_date, record);
+      recordsByEmployee.set(record.user_id, employeeRecords);
+    });
+    const normalizedSearch = employeeSearch.trim().toLocaleLowerCase("vi");
+
+    return [...employeeMap.entries()]
+      .sort((left, right) => left[1].localeCompare(right[1], "vi"))
+      .filter(([, employeeName]) =>
+        normalizedSearch ? employeeName.toLocaleLowerCase("vi").includes(normalizedSearch) : true
+      )
+      .map(([employeeId, employeeName]) => {
+        const employeeRecords = recordsByEmployee.get(employeeId) ?? new Map();
+        return {
+          employeeId,
+          employeeName,
+          records: monthDays.map((workDate) => ({
+            record: employeeRecords.get(workDate) ?? null,
+            workDate,
+          })),
+          totalShifts: employeeRecords.size,
+        };
+      });
+  }, [allHistoryEmployees, allHistoryRecords, employeeSearch, monthDays]);
 
   async function handleClockIn() {
     if (!canClock || !user?.id) {
@@ -378,6 +592,23 @@ export function AttendancePage() {
       const location = await getCurrentAttendanceLocation();
       const record = await clockInAttendance({ location });
       setOpenRecord(record);
+      try {
+        const nextCashCheck = await fetchAttendanceCashCheck(record.id);
+        setCashCheck(nextCashCheck);
+        if (nextCashCheck && !nextCashCheck.checked_at) {
+          setCashModalOpen(true);
+          setCashMismatch(false);
+          setCashActual("");
+          setCashReason("");
+        }
+      } catch (cashCheckRequestError) {
+        setError(
+          getErrorMessage(
+            cashCheckRequestError,
+            "Đã chấm công nhưng chưa tải được bước xác nhận tiền két."
+          )
+        );
+      }
       setSuccess(`Đã chấm công lúc ${formatDateTime(record.clock_in_at)}.`);
 
       if (canViewHistory) {
@@ -426,6 +657,7 @@ export function AttendancePage() {
 
       const closedRecord = await clockOutAttendance(openRecord.id, location);
       setOpenRecord(null);
+      setCashCheck(null);
       setConfirmClockOutOpen(false);
       setSuccess(`Đã tan làm lúc ${formatDateTime(closedRecord.clock_out_at)}.`);
 
@@ -439,12 +671,45 @@ export function AttendancePage() {
     }
   }
 
+  async function loadAttendanceCashDetail(recordId: string) {
+    setDetailCashCheck(null);
+    setDetailCashLoading(true);
+    try {
+      setDetailCashCheck(await fetchAttendanceCashCheck(recordId));
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Không tải được thông tin đối soát tiền mặt."));
+    } finally {
+      setDetailCashLoading(false);
+    }
+  }
+
+  function openHistoryAttendanceDetail(record: AttendanceRecord) {
+    setSelectedTeamAttendance(null);
+    setSelectedHistoryAttendance(record);
+    void loadAttendanceCashDetail(record.id);
+  }
+
+  function openTeamAttendanceDetail(employeeName: string, record: AttendanceHistoryRecord) {
+    setSelectedHistoryAttendance(null);
+    setSelectedTeamAttendance({ employeeName, record });
+    void loadAttendanceCashDetail(record.id);
+  }
+
+  function closeAttendanceDetail() {
+    setSelectedHistoryAttendance(null);
+    setSelectedTeamAttendance(null);
+    setDetailCashCheck(null);
+    setDetailCashLoading(false);
+  }
+
   function openEditModal(record: AttendanceRecord) {
     if (!canUpdateHistory) {
       return;
     }
 
     setEditError("");
+    setSelectedTeamAttendance(null);
+    setDetailCashCheck(null);
     setEditingRecord(record);
     setEditForm({
       clockIn: formatDateTimeLocalInput(record.clock_in_at),
@@ -483,7 +748,7 @@ export function AttendancePage() {
       });
       setEditingRecord(null);
       setSuccess("Đã cập nhật lịch sử chấm công.");
-      await Promise.all([loadOpenRecord(), loadHistory()]);
+      await Promise.all([loadOpenRecord(), loadHistory(), loadAllHistory()]);
     } catch (requestError) {
       setEditError(getErrorMessage(requestError, "Sửa lịch sử chấm công thất bại."));
     } finally {
@@ -508,8 +773,9 @@ export function AttendancePage() {
 
     try {
       await deleteAttendanceRecord(record.id);
+      setSelectedTeamAttendance(null);
       setSuccess("Đã xóa lịch sử chấm công.");
-      await Promise.all([loadOpenRecord(), loadHistory()]);
+      await Promise.all([loadOpenRecord(), loadHistory(), loadAllHistory()]);
     } catch (requestError) {
       setError(getErrorMessage(requestError, "Xóa lịch sử chấm công thất bại."));
     } finally {
@@ -539,6 +805,68 @@ export function AttendancePage() {
     } finally {
       setExportLoading(false);
     }
+  }
+
+  async function saveCashCheck(actualCash: number, reason: string | null) {
+    if (!cashCheck || cashSaving) {
+      return;
+    }
+
+    setCashSaving(true);
+    setCashCheckError("");
+    try {
+      const savedCashCheck = await submitAttendanceCashCheck(
+        cashCheck.attendance_record_id,
+        actualCash,
+        reason
+      );
+      setCashCheck(savedCashCheck);
+      setCashModalOpen(false);
+      setCashMismatch(false);
+      setCashActual("");
+      setCashReason("");
+      setSuccess(
+        actualCash === Number(cashCheck.expected_cash)
+          ? "Đã xác nhận tiền trong két khớp với hệ thống."
+          : "Đã ghi nhận số tiền thực tế và lý do chênh lệch."
+      );
+    } catch (requestError) {
+      setCashCheckError(getErrorMessage(requestError, "Không lưu được đối soát tiền két."));
+    } finally {
+      setCashSaving(false);
+    }
+  }
+
+  function handleConfirmCashMatches() {
+    if (!cashCheck) {
+      return;
+    }
+
+    void saveCashCheck(Number(cashCheck.expected_cash), null);
+  }
+
+  function handleSubmitCashMismatch() {
+    if (!cashCheck) {
+      return;
+    }
+
+    if (!cashActual) {
+      setCashCheckError("Nhập số tiền thực tế đang có trong két.");
+      return;
+    }
+
+    const actualCash = Number(cashActual);
+    if (actualCash === Number(cashCheck.expected_cash)) {
+      setCashCheckError("Số vừa nhập đang khớp với hệ thống; hãy chọn “Đúng”.");
+      return;
+    }
+
+    if (!cashReason.trim()) {
+      setCashCheckError("Nhập lý do khi số tiền trong két không khớp.");
+      return;
+    }
+
+    void saveCashCheck(actualCash, normalizeNullableText(cashReason));
   }
 
   function toggleAllExportEmployees() {
@@ -603,17 +931,19 @@ export function AttendancePage() {
   }
 
   return (
-    <PageContainer maxWidth="5xl">
+    <PageContainer maxWidth="none">
         <ConfigNotice />
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div
-            className="grid w-full grid-cols-2 rounded-2xl bg-white p-1 shadow-soft ring-1 ring-coal/5 sm:w-auto"
+            className={`grid w-full rounded-2xl bg-white p-1 shadow-soft ring-1 ring-coal/5 sm:w-auto ${
+              canViewAllHistory ? "grid-cols-3" : "grid-cols-2"
+            }`}
             role="tablist"
           >
             <button
               aria-selected={activeTab === "clock"}
-              className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold transition ${
+              className={`flex min-w-0 items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-xs font-extrabold transition sm:gap-2 sm:px-4 sm:text-sm ${
                 activeTab === "clock" ? "bg-coal text-white" : "text-coal/60 hover:bg-coal/5"
               }`}
               disabled={!canClock}
@@ -621,12 +951,13 @@ export function AttendancePage() {
               role="tab"
               type="button"
             >
-              <Clock className="h-4 w-4" />
-              Chấm công
+              <Clock className="h-4 w-4 shrink-0" />
+              <span className="sm:hidden">Chấm</span>
+              <span className="hidden sm:inline">Chấm công</span>
             </button>
             <button
               aria-selected={activeTab === "history"}
-              className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold transition ${
+              className={`flex min-w-0 items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-xs font-extrabold transition sm:gap-2 sm:px-4 sm:text-sm ${
                 activeTab === "history" ? "bg-coal text-white" : "text-coal/60 hover:bg-coal/5"
               }`}
               disabled={!canViewHistory}
@@ -634,18 +965,35 @@ export function AttendancePage() {
               role="tab"
               type="button"
             >
-              <History className="h-4 w-4" />
-              Lịch sử
+              <History className="h-4 w-4 shrink-0" />
+              <span className="whitespace-nowrap">Lịch sử</span>
             </button>
+            {canViewAllHistory ? (
+              <button
+                aria-selected={activeTab === "team-history"}
+                className={`flex min-w-0 items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-xs font-extrabold transition sm:gap-2 sm:px-3 sm:text-sm ${
+                  activeTab === "team-history"
+                    ? "bg-coal text-white"
+                    : "text-coal/60 hover:bg-coal/5"
+                }`}
+                onClick={() => setActiveTab("team-history")}
+                role="tab"
+                type="button"
+              >
+                <UsersRound className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Toàn bộ nhân viên</span>
+                <span className="sm:hidden">Toàn bộ</span>
+              </button>
+            ) : null}
           </div>
           <div className="flex min-w-0 items-center gap-2">
             {canExportAttendance ? (
-              <Button onClick={() => void openExportModal()} variant="secondary">
+              <Button className="w-full sm:w-auto" onClick={() => void openExportModal()} variant="secondary">
                 <Download className="h-4 w-4" />
                 Xuất chấm công
               </Button>
             ) : null}
-            <div className="min-w-0 truncate rounded-2xl bg-white px-4 py-3 text-sm font-bold text-coal/60 shadow-soft ring-1 ring-coal/5">
+            <div className="hidden min-w-0 truncate rounded-2xl bg-white px-4 py-3 text-sm font-bold text-coal/60 shadow-soft ring-1 ring-coal/5 sm:block">
               {displayName}
             </div>
           </div>
@@ -672,10 +1020,10 @@ export function AttendancePage() {
                 <div className="flex justify-center pt-4">
                   <button
                     aria-label={isTodayCompleted ? "Đã tan làm" : isClockedIn ? "Tan làm" : "Chấm công"}
-                    className={`flex h-44 w-44 flex-col items-center justify-center rounded-full text-white shadow-[0_0_0_12px_rgba(111,129,85,0.18),0_22px_45px_rgba(16,32,24,0.20)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 ${
+                    className={`flex h-44 w-44 flex-col items-center justify-center rounded-full text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 ${
                       isClockedIn
-                        ? "bg-gradient-to-b from-moss-500 to-moss-900"
-                        : "bg-gradient-to-b from-moss-400 to-moss-800"
+                        ? "bg-gradient-to-b from-red-500 to-red-800 shadow-[0_0_0_12px_rgba(239,68,68,0.16),0_22px_45px_rgba(127,29,29,0.24)]"
+                        : "bg-gradient-to-b from-moss-400 to-moss-800 shadow-[0_0_0_12px_rgba(111,129,85,0.18),0_22px_45px_rgba(16,32,24,0.20)]"
                     }`}
                     disabled={!canClock || submitting || isTodayCompleted}
                     onClick={handleClockButton}
@@ -758,18 +1106,61 @@ export function AttendancePage() {
                     </div>
                   </div>
                 ) : null}
+
+                {cashCheck && !cashCheck.checked_at ? (
+                  <button
+                    className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-left text-sm font-bold text-amber-900 transition hover:bg-amber-100"
+                    onClick={() => setCashModalOpen(true)}
+                    type="button"
+                  >
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-amber-700">
+                      <Banknote className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-extrabold">Cần xác nhận tiền trong két</span>
+                      <span className="mt-1 block text-xs font-semibold text-amber-800/75">
+                        Số hệ thống: {formatCurrency(Number(cashCheck.expected_cash))}
+                      </span>
+                    </span>
+                  </button>
+                ) : cashCheck ? (
+                  <section className={`mt-4 overflow-hidden rounded-2xl border ${cashCheck.is_match ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+                    <div className="flex items-center gap-3 px-3 py-3">
+                      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white ${cashCheck.is_match ? "text-emerald-700" : "text-red-700"}`}>
+                        <Banknote className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className={`font-extrabold ${cashCheck.is_match ? "text-emerald-950" : "text-red-950"}`}>
+                          {cashCheck.is_match ? "Đã xác nhận tiền két khớp" : "Đã xác nhận tiền két không khớp"}
+                        </p>
+                        <p className="mt-0.5 text-xs font-semibold text-coal/50">Tiền mặt đã đối soát trong ca hiện tại</p>
+                      </div>
+                    </div>
+                    <dl className="grid grid-cols-2 gap-px bg-white/70">
+                      <div className="p-3">
+                        <dt className="text-[11px] font-bold text-coal/45">Số hệ thống</dt>
+                        <dd className="mt-1 text-sm font-black tabular-nums text-coal">{formatCurrency(Number(cashCheck.expected_cash))}</dd>
+                      </div>
+                      <div className="p-3">
+                        <dt className="text-[11px] font-bold text-coal/45">Số đã xác nhận</dt>
+                        <dd className="mt-1 text-sm font-black tabular-nums text-coal">{formatCurrency(Number(cashCheck.actual_cash ?? 0))}</dd>
+                      </div>
+                    </dl>
+                    {cashCheck.reason ? <p className="border-t border-red-200 px-3 py-2.5 text-xs font-semibold leading-5 text-red-800">Lý do: {cashCheck.reason}</p> : null}
+                  </section>
+                ) : null}
               </>
             )}
           </section>
         ) : null}
 
         {activeTab === "history" ? (
-          <section className="mx-auto max-w-4xl rounded-[2rem] bg-white p-4 shadow-soft ring-1 ring-coal/5 sm:p-5">
+          <section className="mx-auto w-full max-w-7xl rounded-[2rem] bg-white p-4 shadow-soft ring-1 ring-coal/5 sm:p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-xl font-extrabold text-coal">Lịch sử chấm công</h3>
                 <p className="mt-1 text-xs font-bold text-coal/45">
-                  {historySummary.totalShifts} ca - {historySummary.totalDuration}
+                  {monthDays.length} ngày · {historySummary.totalShifts} ca · {historySummary.totalDuration}
                 </p>
               </div>
               <label className="relative">
@@ -788,86 +1179,382 @@ export function AttendancePage() {
 
             {historyLoading ? (
               <Spinner label="Đang tải lịch sử..." />
-            ) : historyRecords.length === 0 ? (
-              <div className="mt-5">
-                <EmptyState
-                  description="Tháng này chưa có ca chấm công nào."
-                  icon={CalendarDays}
-                  title="Chưa có dữ liệu"
-                />
-              </div>
             ) : (
-              <div className="mt-5 overflow-hidden rounded-2xl border border-coal/10">
-                <div
-                  className={`grid ${historyGridColumns} bg-zinc-500 px-3 py-3 text-xs font-extrabold text-white sm:px-5`}
-                >
-                  <span>Ngày</span>
-                  <span>Vào ca</span>
-                  <span>Tan làm</span>
-                  <span>Thời gian</span>
-                  {canManageHistory ? <span className="text-right">Sửa/Xóa</span> : null}
+              <div className="mt-5 space-y-3">
+                <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-extrabold text-coal">{displayName}</p>
+                    <p className="mt-0.5 text-xs font-semibold text-coal/45">Tổng quan ca làm trong {formatMonthLabel(monthKey).toLocaleLowerCase("vi")}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-[11px] font-bold text-coal/60">
+                    <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-white ring-1 ring-slate-300" />Trong tuần</span>
+                    <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-sky-200" />Thứ 7</span>
+                    <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-rose-200" />Chủ nhật</span>
+                    <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Có ca</span>
+                  </div>
                 </div>
-                {historyRecords.map((record) => {
-                  const location = getClockInLocation(record);
 
-                  return (
-                    <div
-                      className={`grid ${historyGridColumns} items-center border-t border-coal/8 px-3 py-3 text-xs font-bold text-coal sm:px-5 sm:text-sm`}
-                      key={record.id}
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate">{formatShortDate(record.work_date)}</span>
-                        {location ? (
-                          <a
-                            className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-extrabold text-moss-700"
-                            href={getLocationUrl(location)}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            <LocateFixed className="h-3 w-3" />
-                            GPS
-                          </a>
-                        ) : null}
-                      </span>
-                      <span>{formatTime(record.clock_in_at)}</span>
-                      <span>{formatTime(record.clock_out_at)}</span>
-                      <span>{formatRecordDuration(record, now)}</span>
-                      {canManageHistory ? (
-                        <span className="flex justify-end gap-1">
-                          {canUpdateHistory ? (
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-200">
+                  <div className="grid grid-cols-7 gap-px text-center text-[10px] font-black uppercase sm:text-xs">
+                    {calendarWeekdayLabels.map((label, index) => (
+                      <div
+                        className={index === 5 ? "bg-sky-700 px-1 py-2.5 text-white" : index === 6 ? "bg-rose-700 px-1 py-2.5 text-white" : "bg-zinc-600 px-1 py-2.5 text-white"}
+                        key={label}
+                      >
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-px">
+                    {calendarSlots.map((workDate, index) => {
+                      if (!workDate) {
+                        return <div className="min-h-24 bg-slate-50 sm:min-h-32" key={`empty-${index}`} />;
+                      }
+
+                      const record = historyByDay.get(workDate) ?? null;
+                      const dayKind = getDayKind(workDate);
+                      const dayTone = dayKind === "saturday" ? "bg-sky-50" : dayKind === "sunday" ? "bg-rose-50" : "bg-white";
+
+                      return (
+                        <article className={`group relative min-h-24 p-1.5 sm:min-h-32 sm:p-2 ${dayTone}`} key={workDate}>
+                          <div className="flex items-center gap-1">
+                            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-black sm:h-7 sm:w-7 ${dayKind === "saturday" ? "bg-sky-200 text-sky-900" : dayKind === "sunday" ? "bg-rose-200 text-rose-900" : "bg-slate-100 text-slate-700"}`}>
+                              {getDayNumber(workDate)}
+                            </span>
+                          </div>
+
+                          {record ? (
                             <button
-                              aria-label="Sửa ca chấm công"
-                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-coal/5 text-white transition hover:bg-coal hover:text-white"
-                              onClick={() => openEditModal(record)}
+                              aria-label={`Xem ca ngày ${getDayNumber(workDate)}, vào ${formatTime(record.clock_in_at)}, tan ${formatTime(record.clock_out_at)}`}
+                              className={`mt-1.5 w-full rounded-lg px-0.5 py-1.5 text-center text-[10px] font-black leading-4 tabular-nums transition hover:-translate-y-0.5 hover:shadow-sm sm:px-1.5 sm:text-xs ${record.clock_out_at ? "bg-emerald-100 text-emerald-950 ring-1 ring-emerald-200" : "bg-amber-100 text-amber-950 ring-1 ring-amber-200"}`}
+                              onClick={() => openHistoryAttendanceDetail(record)}
                               type="button"
                             >
-                              <Edit3 className="h-4 w-4" />
+                              <span className="block whitespace-nowrap">{formatTime(record.clock_in_at)}</span>
+                              <span className="block whitespace-nowrap opacity-70">{formatTime(record.clock_out_at)}</span>
                             </button>
-                          ) : null}
-                          {canDeleteHistory ? (
-                            <button
-                              aria-label="Xóa ca chấm công"
-                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-red-50 text-red-700 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                              disabled={deletingId === record.id}
-                              onClick={() => void handleDeleteRecord(record)}
-                              type="button"
-                            >
-                              {deletingId === record.id ? (
-                                <RotateCcw className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                            </button>
-                          ) : null}
-                        </span>
-                      ) : null}
-                    </div>
-                  );
-                })}
+                          ) : (
+                            <p className="mt-4 text-center text-[9px] font-semibold text-coal/25 sm:text-[10px]">Không có ca</p>
+                          )}
+
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
           </section>
         ) : null}
+
+        {activeTab === "team-history" && canViewAllHistory ? (
+          <section className="mx-auto w-full rounded-2xl bg-white p-3 shadow-soft ring-1 ring-coal/5 sm:rounded-[2rem] sm:p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-lg font-extrabold text-coal sm:text-xl">Lịch sử toàn bộ nhân viên</h3>
+                <p className="mt-1 text-xs font-bold leading-5 text-coal/45">
+                  Đang hiện {allHistoryMatrix.length}/{allHistoryEmployees.length} nhân viên · {allHistoryRecords.length} ca · {monthDays.length} ngày
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <label className="relative block sm:w-64">
+                  <span className="sr-only">Tìm nhân viên</span>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
+                  <input
+                    className="h-10 w-full rounded-full border border-coal/20 bg-white pl-9 pr-4 text-xs font-bold text-coal outline-none transition placeholder:text-coal/35 focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
+                    onChange={(event) => setEmployeeSearch(event.target.value)}
+                    placeholder="Tìm theo tên nhân viên"
+                    type="search"
+                    value={employeeSearch}
+                  />
+                </label>
+                <label className="relative">
+                  <span className="sr-only">Chọn tháng toàn bộ nhân viên</span>
+                  <input
+                    className="h-10 w-full rounded-full border border-coal/20 bg-white px-3 text-xs font-extrabold text-coal outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100 sm:w-36"
+                    onChange={(event) => setMonthKey(event.target.value || getVietnamMonthKey())}
+                    type="month"
+                    value={monthKey}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {allHistoryLoading ? (
+              <Spinner label="Đang tải lịch sử toàn bộ nhân viên..." />
+            ) : (
+              <div className="mt-4 space-y-3 sm:mt-5">
+                <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-coal/60 sm:gap-3">
+                  <span>Chú giải:</span>
+                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-white ring-1 ring-slate-300" />Trong tuần</span>
+                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-sky-200" />Thứ 7</span>
+                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-rose-200" />Chủ nhật</span>
+                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Hoàn thành ca</span>
+                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-amber-400" />Đang trong ca</span>
+                </div>
+
+              <div className="max-h-[68dvh] overflow-auto rounded-xl border border-coal/10 sm:rounded-2xl">
+                <table className="w-max min-w-full border-separate border-spacing-0 text-center text-xs">
+                  <thead className="sticky top-0 z-20 font-extrabold text-white">
+                    <tr>
+                      <th className="sticky left-0 z-30 min-w-[132px] border-b border-r border-zinc-500 bg-zinc-700 px-3 py-3 text-left sm:min-w-48 sm:px-4">Nhân viên</th>
+                      {monthDays.map((workDate) => {
+                        const dayKind = getDayKind(workDate);
+                        return (
+                          <th
+                            className={`w-12 min-w-12 border-b border-r px-1 py-2 sm:w-[54px] sm:min-w-[54px] ${dayKind === "saturday" ? "border-sky-600 bg-sky-700" : dayKind === "sunday" ? "border-rose-600 bg-rose-700" : "border-zinc-500 bg-zinc-600"}`}
+                            key={workDate}
+                            title={formatShortDate(workDate)}
+                          >
+                            <span className="block text-[9px] opacity-80">{getShortWeekday(workDate)}</span>
+                            <span className="mt-0.5 block text-sm">{getDayNumber(workDate)}</span>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allHistoryMatrix.map((employee) => (
+                      <tr className="group" key={employee.employeeId}>
+                        <th className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-3 py-3 text-left shadow-[4px_0_8px_rgba(15,23,42,0.04)] group-hover:bg-moss-50 sm:px-4">
+                          <span className="block max-w-[108px] truncate text-sm font-extrabold text-coal sm:max-w-40" title={employee.employeeName}>{employee.employeeName}</span>
+                          <span className="mt-0.5 block text-[10px] font-bold text-coal/40">{employee.totalShifts} ca trong tháng</span>
+                        </th>
+                        {employee.records.map(({ record, workDate }) => {
+                          const dayKind = getDayKind(workDate);
+                          const cellTone = dayKind === "saturday" ? "bg-sky-50" : dayKind === "sunday" ? "bg-rose-50" : "bg-white";
+                          return (
+                            <td
+                              className={`h-[58px] w-12 min-w-12 border-b border-r border-slate-200 p-1 align-middle sm:h-[62px] sm:w-[54px] sm:min-w-[54px] ${cellTone}`}
+                              key={workDate}
+                              title={record ? `${employee.employeeName} · ${formatShortDate(workDate)} · ${formatTime(record.clock_in_at)}–${formatTime(record.clock_out_at)}` : `${employee.employeeName} · ${formatShortDate(workDate)} · Không có ca`}
+                            >
+                              {record ? (
+                                <button
+                                  aria-label={`Xem chi tiết ca của ${employee.employeeName} ngày ${getDayNumber(workDate)}`}
+                                  className={`w-full rounded-md px-0.5 py-1 text-[9px] font-black leading-3.5 transition hover:-translate-y-0.5 hover:shadow-md ${record.clock_out_at ? "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-200" : "bg-amber-100 text-amber-900 ring-1 ring-amber-200"}`}
+                                  onClick={() => openTeamAttendanceDetail(employee.employeeName, record)}
+                                  type="button"
+                                >
+                                  <span className="block">{formatTime(record.clock_in_at)}</span>
+                                  <span className="block opacity-70">{formatTime(record.clock_out_at)}</span>
+                                </button>
+                              ) : (
+                                <span className="text-coal/20">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    {!allHistoryMatrix.length ? (
+                      <tr>
+                        <td className="px-4 py-10 text-center font-semibold text-coal/50" colSpan={monthDays.length + 1}>
+                          {employeeSearch ? "Không tìm thấy nhân viên phù hợp." : "Chưa có nhân viên để hiển thị."}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+              </div>
+            )}
+          </section>
+        ) : null}
+      <Modal
+        footer={<Button onClick={closeAttendanceDetail} variant="secondary">Đóng</Button>}
+        onClose={closeAttendanceDetail}
+        open={Boolean(selectedHistoryAttendance)}
+        size="sm"
+        title="Chi tiết ca chấm công"
+      >
+        {selectedHistoryAttendance ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-50 px-4 py-4">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/40">Nhân viên</p>
+              <p className="mt-1 text-lg font-black text-coal">{displayName}</p>
+              <p className="mt-1 text-sm font-bold text-coal/55">{formatShortDate(selectedHistoryAttendance.work_date)}</p>
+            </div>
+            <dl className="grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-emerald-50 p-3">
+                <dt className="text-[11px] font-bold text-emerald-700">Vào ca</dt>
+                <dd className="mt-1 font-black text-emerald-950">{formatTime(selectedHistoryAttendance.clock_in_at)}</dd>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3">
+                <dt className="text-[11px] font-bold text-slate-500">Tan làm</dt>
+                <dd className="mt-1 font-black text-slate-950">{formatTime(selectedHistoryAttendance.clock_out_at)}</dd>
+              </div>
+              <div className="rounded-xl bg-blue-50 p-3">
+                <dt className="text-[11px] font-bold text-blue-700">Thời gian</dt>
+                <dd className="mt-1 font-black text-blue-950">{formatRecordDuration(selectedHistoryAttendance, now)}</dd>
+              </div>
+            </dl>
+            <AttendanceCashDetail cashCheck={detailCashCheck} loading={detailCashLoading} />
+          </div>
+        ) : null}
+      </Modal>
+      <Modal
+        footer={
+          selectedTeamAttendance ? (
+            <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
+              <Button onClick={closeAttendanceDetail} variant="secondary">Đóng</Button>
+              {canUpdateHistory ? (
+                <Button onClick={() => openEditModal(selectedTeamAttendance.record)}>
+                  <Edit3 className="h-4 w-4" /> Chỉnh sửa
+                </Button>
+              ) : null}
+              {canDeleteHistory ? (
+                <Button
+                  isLoading={deletingId === selectedTeamAttendance.record.id}
+                  onClick={() => void handleDeleteRecord(selectedTeamAttendance.record)}
+                  variant="danger"
+                >
+                  <Trash2 className="h-4 w-4" /> Xóa
+                </Button>
+              ) : null}
+            </div>
+          ) : null
+        }
+        onClose={closeAttendanceDetail}
+        open={Boolean(selectedTeamAttendance)}
+        size="sm"
+        title="Chi tiết chấm công nhân viên"
+      >
+        {selectedTeamAttendance ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-50 px-4 py-4">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/40">Nhân viên</p>
+              <p className="mt-1 text-lg font-black text-coal">{selectedTeamAttendance.employeeName}</p>
+              <p className="mt-1 text-sm font-bold text-coal/55">{formatShortDate(selectedTeamAttendance.record.work_date)}</p>
+            </div>
+            <dl className="grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-emerald-50 p-3">
+                <dt className="text-[11px] font-bold text-emerald-700">Vào ca</dt>
+                <dd className="mt-1 font-black text-emerald-950">{formatTime(selectedTeamAttendance.record.clock_in_at)}</dd>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3">
+                <dt className="text-[11px] font-bold text-slate-500">Kết thúc</dt>
+                <dd className="mt-1 font-black text-slate-950">{formatTime(selectedTeamAttendance.record.clock_out_at)}</dd>
+              </div>
+              <div className="rounded-xl bg-blue-50 p-3">
+                <dt className="text-[11px] font-bold text-blue-700">Thời gian</dt>
+                <dd className="mt-1 font-black text-blue-950">{formatRecordDuration(selectedTeamAttendance.record, now)}</dd>
+              </div>
+            </dl>
+            <AttendanceCashDetail cashCheck={detailCashCheck} loading={detailCashLoading} />
+            {getClockInLocation(selectedTeamAttendance.record) ? (
+              <a
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-moss-50 px-4 py-3 text-sm font-extrabold text-moss-800 ring-1 ring-moss-200 transition hover:bg-moss-100"
+                href={getLocationUrl(getClockInLocation(selectedTeamAttendance.record)!)}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <LocateFixed className="h-4 w-4" /> Xem vị trí chấm công
+              </a>
+            ) : (
+              <p className="rounded-xl bg-slate-50 px-4 py-3 text-center text-sm font-semibold text-slate-500">Ca này không có dữ liệu vị trí.</p>
+            )}
+          </div>
+        ) : null}
+      </Modal>
+      <Modal
+        footer={
+          cashMismatch ? (
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+              <Button
+                disabled={cashSaving}
+                onClick={() => {
+                  setCashMismatch(false);
+                  setCashCheckError("");
+                }}
+                variant="secondary"
+              >
+                Quay lại
+              </Button>
+              <Button isLoading={cashSaving} onClick={handleSubmitCashMismatch}>
+                <Save className="h-4 w-4" /> Lưu đối soát
+              </Button>
+            </div>
+          ) : (
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+              <Button
+                disabled={cashSaving}
+                onClick={() => {
+                  setCashMismatch(true);
+                  setCashCheckError("");
+                }}
+                variant="secondary"
+              >
+                Không đúng
+              </Button>
+              <Button isLoading={cashSaving} onClick={handleConfirmCashMatches}>
+                <CheckCircle2 className="h-4 w-4" /> Đúng
+              </Button>
+            </div>
+          )
+        }
+        onClose={() => {
+          if (!cashSaving) {
+            setCashModalOpen(false);
+          }
+        }}
+        open={Boolean(cashCheck && cashModalOpen)}
+        size="sm"
+        title="Xác nhận tiền trong két"
+      >
+        {cashCheck ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-moss-50 px-4 py-5 text-center ring-1 ring-moss-100">
+              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-moss-700 shadow-sm">
+                <Banknote className="h-6 w-6" />
+              </span>
+              <p className="mt-3 text-sm font-bold text-coal/60">Tiền mặt trong két hiện có phải là</p>
+              <p className="mt-1 text-3xl font-black tabular-nums text-coal">
+                {formatCurrency(Number(cashCheck.expected_cash))}
+              </p>
+              <p className="mt-2 text-xs font-semibold text-coal/45">
+                Chỉ đối chiếu tiền mặt, không bao gồm tiền chuyển khoản
+              </p>
+            </div>
+
+            {cashMismatch ? (
+              <div className="space-y-4">
+                <div className="flex gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  Nhập đúng số tiền đã đếm trong két và lý do chênh lệch.
+                </div>
+                <Input
+                  className="text-base font-extrabold tabular-nums"
+                  inputMode="numeric"
+                  label="Số tiền thực tế trong két"
+                  onChange={(event) =>
+                    setCashActual(normalizeIntegerInput(event.target.value))
+                  }
+                  placeholder="Nhập số tiền thực tế"
+                  value={formatIntegerInput(cashActual)}
+                />
+                <Textarea
+                  label="Lý do không khớp"
+                  onChange={(event) => setCashReason(event.target.value)}
+                  placeholder="Ví dụ: thiếu tiền lẻ bàn giao, chi phí chưa ghi nhận..."
+                  rows={3}
+                  value={cashReason}
+                />
+              </div>
+            ) : (
+              <p className="text-center text-sm font-semibold leading-6 text-coal/60">
+                Hãy đếm tiền mặt thực tế trong két rồi chọn câu trả lời bên dưới.
+              </p>
+            )}
+
+            {cashCheckError ? (
+              <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                {cashCheckError}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
       <Modal
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
@@ -1077,7 +1764,7 @@ export function AttendancePage() {
             >
               Hủy
             </Button>
-            <Button isLoading={submitting} onClick={() => void handleConfirmClockOut()} type="button">
+            <Button isLoading={submitting} onClick={() => void handleConfirmClockOut()} type="button" variant="danger">
               <CheckCircle2 className="h-4 w-4" />
               Xác nhận tan làm
             </Button>

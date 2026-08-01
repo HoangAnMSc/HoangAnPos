@@ -3,9 +3,10 @@ create extension if not exists pgcrypto;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text,
+  phone text,
   role text not null default 'staff',
   role_id uuid,
-  is_active boolean not null default true,
+  is_active boolean not null default false,
   last_seen_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -39,6 +40,13 @@ values
       'pos.payment-proof.upload',
       'orders',
       'orders.cancel',
+      'revenue',
+      'revenue.export',
+      'cash-management',
+      'cash-management.session.open',
+      'cash-management.session.close',
+      'cash-management.handover.override',
+      'cash-management.view-all',
       'customers',
       'customers.create',
       'customers.update',
@@ -62,6 +70,7 @@ values
       'attendance',
       'attendance.clock',
       'attendance.history.view',
+      'attendance.history.view-all',
       'attendance.history.update',
       'attendance.history.delete',
       'attendance.export',
@@ -91,6 +100,9 @@ values
       'pos.quick-customer.create',
       'pos.payment-proof.upload',
       'orders',
+      'cash-management',
+      'cash-management.session.open',
+      'cash-management.session.close',
       'customers',
       'customers.create',
       'customers.update',
@@ -120,11 +132,30 @@ set
   end,
   is_active = true;
 
+-- Existing custom cashier roles also need to open and close their own drawer.
+update public.app_roles
+set permissions = (
+  select array(
+    select distinct permission
+    from unnest(
+      public.app_roles.permissions || array[
+        'cash-management',
+        'cash-management.session.open',
+        'cash-management.session.close'
+      ]
+    ) as permission_key(permission)
+  )
+)
+where 'pos.checkout' = any(permissions);
+
 alter table public.profiles
 add column if not exists role_id uuid references public.app_roles(id) on delete set null;
 
 alter table public.profiles
 add column if not exists is_active boolean not null default true;
+
+alter table public.profiles
+alter column is_active set default false;
 
 alter table public.profiles
 add column if not exists last_seen_at timestamptz;
@@ -229,9 +260,20 @@ create table if not exists public.customers (
   email text,
   address text,
   note text,
+  points integer not null default 0 constraint customers_points_nonnegative_check check (points >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.profiles
+add column if not exists phone text;
+
+create unique index if not exists profiles_phone_unique_idx
+on public.profiles(phone)
+where phone is not null;
+
+alter table public.customers
+add column if not exists points integer not null default 0;
 
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
@@ -276,6 +318,108 @@ add column if not exists print_count integer not null default 0;
 
 alter table public.orders
 add column if not exists note text;
+
+alter table public.orders
+add column if not exists cancelled_at timestamptz;
+
+alter table public.orders
+add column if not exists cancelled_by uuid references auth.users(id) on delete set null;
+
+alter table public.orders
+add column if not exists cancel_reason text;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'customers_points_nonnegative_check'
+      and conrelid = 'public.customers'::regclass
+  ) then
+    alter table public.customers
+    add constraint customers_points_nonnegative_check check (points >= 0);
+  end if;
+end;
+$$;
+
+update public.customers customer
+set points = coalesce((
+  select sum(floor(orders.total / 100000))::integer
+  from public.orders
+  where orders.customer_id = customer.id
+    and orders.status = 'paid'
+), 0);
+
+create table if not exists public.cash_drawer_sessions (
+  id uuid primary key default gen_random_uuid(),
+  cashier_id uuid not null references auth.users(id) on delete restrict,
+  cashier_name text not null check (char_length(cashier_name) between 1 and 200),
+  expected_opening_cash numeric(12, 2) not null default 0 check (expected_opening_cash >= 0),
+  opening_cash numeric(12, 2) not null default 0 check (opening_cash >= 0),
+  opening_variance numeric(12, 2) not null default 0,
+  opening_note text,
+  cash_sales numeric(12, 2) not null default 0 check (cash_sales >= 0),
+  transfer_sales numeric(12, 2) not null default 0 check (transfer_sales >= 0),
+  expected_cash numeric(12, 2) not null default 0 check (expected_cash >= 0),
+  counted_cash numeric(12, 2) check (counted_cash >= 0),
+  variance numeric(12, 2),
+  status text not null default 'open' check (status in ('open', 'closed')),
+  opened_at timestamptz not null default now(),
+  closed_at timestamptz,
+  closed_by uuid references auth.users(id) on delete set null,
+  close_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint cash_drawer_sessions_close_state_check check (
+    (status = 'open' and closed_at is null and counted_cash is null and variance is null)
+    or
+    (status = 'closed' and closed_at is not null and counted_cash is not null and variance is not null)
+  )
+);
+
+alter table public.cash_drawer_sessions
+add column if not exists expected_opening_cash numeric(12, 2) not null default 0;
+
+alter table public.cash_drawer_sessions
+add column if not exists opening_variance numeric(12, 2) not null default 0;
+
+alter table public.cash_drawer_sessions
+add column if not exists opening_note text;
+
+-- Rows created before continuous handover was introduced start from their own declared opening balance.
+update public.cash_drawer_sessions
+set expected_opening_cash = opening_cash
+where expected_opening_cash = 0
+  and opening_cash > 0
+  and opening_variance = 0
+  and opening_note is null;
+
+alter table public.cash_drawer_sessions
+drop constraint if exists cash_drawer_sessions_expected_opening_cash_check;
+
+alter table public.cash_drawer_sessions
+add constraint cash_drawer_sessions_expected_opening_cash_check
+check (expected_opening_cash >= 0);
+
+alter table public.cash_drawer_sessions
+drop constraint if exists cash_drawer_sessions_opening_variance_check;
+
+alter table public.cash_drawer_sessions
+add constraint cash_drawer_sessions_opening_variance_check
+check (opening_variance = opening_cash - expected_opening_cash);
+
+alter table public.orders
+add column if not exists cash_session_id uuid references public.cash_drawer_sessions(id) on delete restrict;
+
+create table if not exists public.order_audit_events (
+  id bigint generated by default as identity primary key,
+  order_id uuid not null,
+  actor_id uuid references auth.users(id) on delete set null,
+  event_type text not null check (event_type in ('created', 'cancelled', 'printed', 'deleted')),
+  reason text,
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
 
 create table if not exists public.product_batches (
   id uuid primary key default gen_random_uuid(),
@@ -354,6 +498,35 @@ add column if not exists clock_out_longitude numeric(10, 7);
 alter table public.attendance_records
 add column if not exists clock_out_accuracy_m numeric(10, 2);
 
+create table if not exists public.cash_drawer_checks (
+  id uuid primary key default gen_random_uuid(),
+  attendance_record_id uuid not null unique references public.attendance_records(id) on delete cascade,
+  employee_id uuid not null references public.profiles(id) on delete cascade,
+  employee_name text not null check (char_length(employee_name) between 1 and 200),
+  cash_session_id uuid references public.cash_drawer_sessions(id) on delete set null,
+  expected_cash numeric(12, 2) not null default 0 check (expected_cash >= 0),
+  actual_cash numeric(12, 2) check (actual_cash >= 0),
+  is_match boolean,
+  reason text,
+  checked_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint cash_drawer_checks_result_check check (
+    (
+      checked_at is null
+      and actual_cash is null
+      and is_match is null
+      and reason is null
+    )
+    or
+    (
+      checked_at is not null
+      and actual_cash is not null
+      and is_match = (actual_cash = expected_cash)
+      and (is_match or nullif(btrim(reason), '') is not null)
+    )
+  )
+);
+
 insert into public.product_batches (product_id, quantity, import_date, expiry_date)
 select p.id, p.stock, p.import_date, p.expiry_date
 from public.products p
@@ -374,9 +547,32 @@ create index if not exists product_categories_name_idx on public.product_categor
 create index if not exists product_batches_product_id_idx on public.product_batches(product_id);
 create index if not exists customers_name_idx on public.customers using gin (to_tsvector('simple', name));
 create index if not exists orders_customer_id_idx on public.orders(customer_id);
+create index if not exists orders_cashier_id_created_at_idx on public.orders(cashier_id, created_at desc);
+create index if not exists orders_cash_session_id_idx on public.orders(cash_session_id);
 create index if not exists order_items_order_id_idx on public.order_items(order_id);
+create index if not exists cash_drawer_sessions_cashier_opened_idx
+on public.cash_drawer_sessions(cashier_id, opened_at desc);
+drop index if exists public.cash_drawer_sessions_one_open_per_cashier_idx;
+create unique index if not exists cash_drawer_sessions_one_open_global_idx
+on public.cash_drawer_sessions((1))
+where status = 'open';
+create index if not exists order_audit_events_order_created_idx
+on public.order_audit_events(order_id, created_at desc);
+
+-- Keep audit history even when a privileged user permanently deletes an order.
+alter table public.order_audit_events
+drop constraint if exists order_audit_events_order_id_fkey;
+
+alter table public.order_audit_events
+drop constraint if exists order_audit_events_event_type_check;
+
+alter table public.order_audit_events
+add constraint order_audit_events_event_type_check
+check (event_type in ('created', 'cancelled', 'printed', 'deleted'));
 create index if not exists attendance_records_user_work_date_idx
 on public.attendance_records(user_id, work_date desc);
+create index if not exists cash_drawer_checks_created_idx
+on public.cash_drawer_checks(created_at desc);
 create unique index if not exists attendance_records_one_open_shift_idx
 on public.attendance_records(user_id)
 where clock_out_at is null;
@@ -536,6 +732,11 @@ create trigger set_attendance_records_updated_at
 before update on public.attendance_records
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_cash_drawer_sessions_updated_at on public.cash_drawer_sessions;
+create trigger set_cash_drawer_sessions_updated_at
+before update on public.cash_drawer_sessions
+for each row execute function public.set_updated_at();
+
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -543,11 +744,13 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, full_name, role)
+  insert into public.profiles (id, full_name, phone, role, is_active)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data ->> 'full_name', new.email),
-    'staff'
+    coalesce(new.raw_user_meta_data ->> 'full_name', new.email, new.phone),
+    new.phone,
+    'staff',
+    false
   )
   on conflict (id) do nothing;
 
@@ -579,6 +782,7 @@ as $$
     from public.profiles p
     left join public.app_roles r on r.id = p.role_id
     where p.id = user_id
+      and user_id = auth.uid()
       and p.is_active = true
       and (
         p.role = 'admin'
@@ -607,6 +811,7 @@ as $$
     from public.profiles p
     left join public.app_roles r on r.id = p.role_id
     where p.id = user_id
+      and user_id = auth.uid()
       and p.is_active = true
       and (
         public.is_admin(user_id)
@@ -746,6 +951,9 @@ set search_path = public
 as $$
 declare
   attendance_record public.attendance_records;
+  drawer_session public.cash_drawer_sessions;
+  employee_name_value text;
+  expected_cash_value numeric := 0;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
@@ -768,36 +976,193 @@ begin
   limit 1;
 
   if found then
-    return attendance_record;
+    null;
+  else
+    select *
+    into attendance_record
+    from public.attendance_records
+    where user_id = auth.uid()
+      and work_date = ((now() at time zone 'Asia/Ho_Chi_Minh')::date)
+    order by clock_in_at desc
+    limit 1;
+
+    if found then
+      raise exception 'Attendance for today is already completed';
+    end if;
+
+    insert into public.attendance_records (
+      user_id,
+      clock_in_latitude,
+      clock_in_longitude,
+      clock_in_accuracy_m
+    )
+    values (
+      auth.uid(),
+      latitude_input,
+      longitude_input,
+      accuracy_input
+    )
+    returning * into attendance_record;
   end if;
 
   select *
-  into attendance_record
-  from public.attendance_records
-  where user_id = auth.uid()
-    and work_date = ((now() at time zone 'Asia/Ho_Chi_Minh')::date)
-  order by clock_in_at desc
+  into drawer_session
+  from public.cash_drawer_sessions
+  where status = 'open'
+  order by opened_at desc, id desc
   limit 1;
 
   if found then
-    raise exception 'Attendance for today is already completed';
+    expected_cash_value := drawer_session.opening_cash + coalesce((
+      select sum(pos_order.total)
+      from public.orders pos_order
+      where pos_order.cash_session_id = drawer_session.id
+        and pos_order.status = 'paid'
+        and pos_order.payment_method = 'cash'
+    ), 0);
+  else
+    select *
+    into drawer_session
+    from public.cash_drawer_sessions
+    where status = 'closed'
+    order by closed_at desc, id desc
+    limit 1;
+
+    if found then
+      expected_cash_value := coalesce(drawer_session.counted_cash, 0);
+    else
+      expected_cash_value := 0;
+    end if;
   end if;
 
-  insert into public.attendance_records (
-    user_id,
-    clock_in_latitude,
-    clock_in_longitude,
-    clock_in_accuracy_m
+  select coalesce(nullif(btrim(profile.full_name), ''), 'Nhân viên ' || left(profile.id::text, 8))
+  into employee_name_value
+  from public.profiles profile
+  where profile.id = auth.uid();
+
+  insert into public.cash_drawer_checks (
+    attendance_record_id,
+    employee_id,
+    employee_name,
+    cash_session_id,
+    expected_cash
   )
   values (
+    attendance_record.id,
     auth.uid(),
-    latitude_input,
-    longitude_input,
-    accuracy_input
+    coalesce(employee_name_value, 'Nhân viên'),
+    drawer_session.id,
+    expected_cash_value
   )
-  returning * into attendance_record;
+  on conflict (attendance_record_id) do nothing;
 
   return attendance_record;
+end;
+$$;
+
+create or replace function public.submit_attendance_cash_check(
+  attendance_record_id_input uuid,
+  actual_cash_input numeric,
+  reason_input text default null
+)
+returns public.cash_drawer_checks
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  check_record public.cash_drawer_checks;
+  normalized_reason text := nullif(btrim(reason_input), '');
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if not public.has_permission('attendance.clock') then
+    raise exception 'Permission denied';
+  end if;
+
+  if actual_cash_input is null or actual_cash_input < 0 then
+    raise exception 'Actual cash is required';
+  end if;
+
+  select *
+  into check_record
+  from public.cash_drawer_checks
+  where attendance_record_id = attendance_record_id_input
+    and employee_id = auth.uid()
+  for update;
+
+  if not found then
+    raise exception 'Cash drawer check is not available';
+  end if;
+
+  if actual_cash_input <> check_record.expected_cash and normalized_reason is null then
+    raise exception 'Reason is required when cash does not match';
+  end if;
+
+  update public.cash_drawer_checks
+  set
+    actual_cash = actual_cash_input,
+    is_match = (actual_cash_input = expected_cash),
+    reason = case when actual_cash_input = expected_cash then null else normalized_reason end,
+    checked_at = now()
+  where id = check_record.id
+  returning * into check_record;
+
+  return check_record;
+end;
+$$;
+
+create or replace function public.list_attendance_history(
+  month_start_input date
+)
+returns table (
+  id uuid,
+  user_id uuid,
+  employee_name text,
+  clock_in_at timestamptz,
+  clock_out_at timestamptz,
+  work_date date,
+  clock_in_latitude numeric,
+  clock_in_longitude numeric,
+  clock_in_accuracy_m numeric,
+  clock_out_latitude numeric,
+  clock_out_longitude numeric,
+  clock_out_accuracy_m numeric,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null or not public.has_permission('attendance.history.view-all') then
+    raise exception 'Permission denied';
+  end if;
+
+  return query
+  select
+    attendance.id,
+    attendance.user_id,
+    coalesce(nullif(btrim(profile.full_name), ''), 'Nhân viên ' || left(profile.id::text, 8)),
+    attendance.clock_in_at,
+    attendance.clock_out_at,
+    attendance.work_date,
+    attendance.clock_in_latitude,
+    attendance.clock_in_longitude,
+    attendance.clock_in_accuracy_m,
+    attendance.clock_out_latitude,
+    attendance.clock_out_longitude,
+    attendance.clock_out_accuracy_m,
+    attendance.created_at,
+    attendance.updated_at
+  from public.attendance_records attendance
+  join public.profiles profile on profile.id = attendance.user_id
+  where attendance.work_date >= date_trunc('month', month_start_input)::date
+    and attendance.work_date < (date_trunc('month', month_start_input) + interval '1 month')::date
+  order by profile.full_name nulls last, attendance.work_date;
 end;
 $$;
 
@@ -882,7 +1247,10 @@ begin
     clock_out_at = clock_out_at_input,
     work_date = ((clock_in_at_input at time zone 'Asia/Ho_Chi_Minh')::date)
   where id = record_id_input
-    and user_id = auth.uid()
+    and (
+      user_id = auth.uid()
+      or public.has_permission('attendance.history.view-all')
+    )
   returning * into attendance_record;
 
   if not found then
@@ -912,7 +1280,10 @@ begin
 
   delete from public.attendance_records
   where id = record_id_input
-    and user_id = auth.uid();
+    and (
+      user_id = auth.uid()
+      or public.has_permission('attendance.history.view-all')
+    );
 
   if not found then
     raise exception 'Attendance record is not available';
@@ -1004,6 +1375,364 @@ $$;
 
 drop function if exists public.create_pos_order(uuid, text, uuid, numeric, jsonb);
 drop function if exists public.create_pos_order(uuid, numeric, text, uuid, numeric, jsonb, text, text, text);
+drop function if exists public.list_cash_drawer_sessions(integer);
+
+create or replace function public.list_cash_drawer_sessions(limit_input integer default 100)
+returns table (
+  id uuid,
+  cashier_id uuid,
+  cashier_name text,
+  expected_opening_cash numeric,
+  opening_cash numeric,
+  opening_variance numeric,
+  opening_note text,
+  cash_sales numeric,
+  transfer_sales numeric,
+  expected_cash numeric,
+  counted_cash numeric,
+  variance numeric,
+  status text,
+  opened_at timestamptz,
+  closed_at timestamptz,
+  closed_by uuid,
+  close_note text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null or not public.has_permission('cash-management') then
+    raise exception 'Permission denied';
+  end if;
+
+  return query
+  select
+    session.id,
+    session.cashier_id,
+    session.cashier_name,
+    session.expected_opening_cash,
+    session.opening_cash,
+    session.opening_variance,
+    session.opening_note,
+    case when session.status = 'closed' then session.cash_sales else sales.cash_sales end,
+    case when session.status = 'closed' then session.transfer_sales else sales.transfer_sales end,
+    case
+      when session.status = 'closed' then session.expected_cash
+      else session.opening_cash + sales.cash_sales
+    end,
+    session.counted_cash,
+    session.variance,
+    session.status,
+    session.opened_at,
+    session.closed_at,
+    session.closed_by,
+    session.close_note
+  from public.cash_drawer_sessions session
+  cross join lateral (
+    select
+      coalesce(sum(o.total) filter (where o.status = 'paid' and o.payment_method = 'cash'), 0)::numeric as cash_sales,
+      coalesce(sum(o.total) filter (where o.status = 'paid' and o.payment_method = 'transfer'), 0)::numeric as transfer_sales
+    from public.orders o
+    where o.cash_session_id = session.id
+  ) sales
+  where session.cashier_id = auth.uid()
+    or public.has_permission('cash-management.view-all')
+  order by session.opened_at desc
+  limit least(greatest(coalesce(limit_input, 100), 1), 500);
+end;
+$$;
+
+create or replace function public.get_cash_drawer_handover()
+returns table (
+  expected_opening_cash numeric,
+  has_open_session boolean,
+  is_first_session boolean,
+  open_cashier_name text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null or not public.has_permission('cash-management') then
+    raise exception 'Permission denied';
+  end if;
+
+  return query
+  select
+    coalesce((
+      select closed_session.counted_cash
+      from public.cash_drawer_sessions closed_session
+      where closed_session.status = 'closed'
+      order by closed_session.closed_at desc, closed_session.id desc
+      limit 1
+    ), 0)::numeric as expected_opening_cash,
+    exists (
+      select 1
+      from public.cash_drawer_sessions open_session
+      where open_session.status = 'open'
+    ) as has_open_session,
+    not exists (
+      select 1
+      from public.cash_drawer_sessions any_session
+      where any_session.status = 'closed'
+    ) as is_first_session,
+    (
+      select open_session.cashier_name
+      from public.cash_drawer_sessions open_session
+      where open_session.status = 'open'
+      order by open_session.opened_at desc
+      limit 1
+    ) as open_cashier_name;
+end;
+$$;
+
+create or replace function public.set_product_active(product_id_input uuid, is_active_input boolean)
+returns public.products
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  product_record public.products;
+begin
+  if not public.has_permission('products.toggle-active') then
+    raise exception 'Permission denied';
+  end if;
+
+  update public.products
+  set is_active = is_active_input
+  where id = product_id_input
+    and deleted_at is null
+  returning * into product_record;
+
+  if not found then raise exception 'Product not found'; end if;
+  return product_record;
+end;
+$$;
+
+create or replace function public.soft_delete_product(product_id_input uuid)
+returns public.products
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  product_record public.products;
+begin
+  if not public.has_permission('products.delete') then
+    raise exception 'Permission denied';
+  end if;
+
+  update public.products
+  set is_active = false, deleted_at = now()
+  where id = product_id_input
+  returning * into product_record;
+
+  if not found then raise exception 'Product not found'; end if;
+  return product_record;
+end;
+$$;
+
+create or replace function public.clear_products_image_url(image_url_input text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_count integer;
+begin
+  if not public.has_permission('cloudinary-images.delete') then
+    raise exception 'Permission denied';
+  end if;
+
+  update public.products set image_url = null where image_url = image_url_input;
+  get diagnostics updated_count = row_count;
+  return updated_count;
+end;
+$$;
+
+drop function if exists public.open_cash_drawer(numeric);
+drop function if exists public.open_cash_drawer(numeric, text);
+
+create function public.open_cash_drawer(
+  opening_cash_input numeric,
+  opening_note_input text default null
+)
+returns public.cash_drawer_sessions
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cashier_name_value text;
+  expected_opening_cash_value numeric(12, 2);
+  is_first_session_value boolean;
+  opening_variance_value numeric(12, 2);
+  session_record public.cash_drawer_sessions;
+begin
+  if auth.uid() is null or not public.has_permission('cash-management.session.open') then
+    raise exception 'Permission denied';
+  end if;
+
+  if opening_cash_input is null or opening_cash_input < 0 then
+    raise exception 'Opening cash cannot be negative';
+  end if;
+
+  -- Serialize the handover so two cashiers cannot open the same physical drawer concurrently.
+  perform pg_advisory_xact_lock(417902113);
+
+  if exists (
+    select 1
+    from public.cash_drawer_sessions
+    where status = 'open'
+  ) then
+    raise exception 'Cash drawer is already open';
+  end if;
+
+  select closed_session.counted_cash
+  into expected_opening_cash_value
+  from public.cash_drawer_sessions closed_session
+  where closed_session.status = 'closed'
+  order by closed_session.closed_at desc, closed_session.id desc
+  limit 1;
+
+  is_first_session_value := expected_opening_cash_value is null;
+
+  if is_first_session_value then
+    if not public.has_permission('cash-management.handover.override') then
+      raise exception 'A manager must initialize the first drawer balance';
+    end if;
+
+    expected_opening_cash_value := opening_cash_input;
+    opening_variance_value := 0;
+  else
+    opening_variance_value := opening_cash_input - expected_opening_cash_value;
+
+    if opening_variance_value <> 0 then
+      if not public.has_permission('cash-management.handover.override') then
+        raise exception 'Opening cash does not match the previous handover balance';
+      end if;
+
+      if nullif(trim(opening_note_input), '') is null then
+        raise exception 'A handover note is required when opening cash has a variance';
+      end if;
+    end if;
+  end if;
+
+  select concat_ws(
+    ' - ',
+    coalesce(r.name, nullif(trim(p.role), ''), 'Nhân viên'),
+    nullif(trim(p.full_name), '')
+  )
+  into cashier_name_value
+  from public.profiles p
+  left join public.app_roles r on r.id = p.role_id
+  where p.id = auth.uid()
+    and p.is_active = true;
+
+  if not found then
+    raise exception 'Active cashier profile is required';
+  end if;
+
+  insert into public.cash_drawer_sessions (
+    cashier_id,
+    cashier_name,
+    expected_opening_cash,
+    opening_cash,
+    opening_variance,
+    opening_note
+  )
+  values (
+    auth.uid(),
+    coalesce(nullif(cashier_name_value, ''), 'Nhân viên'),
+    expected_opening_cash_value,
+    opening_cash_input,
+    opening_variance_value,
+    nullif(left(trim(opening_note_input), 1000), '')
+  )
+  returning * into session_record;
+
+  return session_record;
+exception
+  when unique_violation then
+    raise exception 'Cash drawer is already open';
+end;
+$$;
+
+create or replace function public.close_cash_drawer(
+  session_id_input uuid,
+  counted_cash_input numeric,
+  close_note_input text default null
+)
+returns public.cash_drawer_sessions
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cash_sales_value numeric(12, 2);
+  expected_cash_value numeric(12, 2);
+  session_record public.cash_drawer_sessions;
+  transfer_sales_value numeric(12, 2);
+  variance_value numeric(12, 2);
+begin
+  if auth.uid() is null or not public.has_permission('cash-management.session.close') then
+    raise exception 'Permission denied';
+  end if;
+
+  if counted_cash_input is null or counted_cash_input < 0 then
+    raise exception 'Counted cash cannot be negative';
+  end if;
+
+  select *
+  into session_record
+  from public.cash_drawer_sessions
+  where id = session_id_input
+    and status = 'open'
+    and (
+      cashier_id = auth.uid()
+      or public.has_permission('cash-management.view-all')
+    )
+  for update;
+
+  if not found then
+    raise exception 'Open cash drawer session was not found';
+  end if;
+
+  select
+    coalesce(sum(total) filter (where status = 'paid' and payment_method = 'cash'), 0),
+    coalesce(sum(total) filter (where status = 'paid' and payment_method = 'transfer'), 0)
+  into cash_sales_value, transfer_sales_value
+  from public.orders
+  where cash_session_id = session_record.id;
+
+  expected_cash_value := session_record.opening_cash + cash_sales_value;
+  variance_value := counted_cash_input - expected_cash_value;
+
+  if variance_value <> 0 and nullif(trim(close_note_input), '') is null then
+    raise exception 'A close note is required when cash has a variance';
+  end if;
+
+  update public.cash_drawer_sessions
+  set
+    cash_sales = cash_sales_value,
+    transfer_sales = transfer_sales_value,
+    expected_cash = expected_cash_value,
+    counted_cash = counted_cash_input,
+    variance = variance_value,
+    status = 'closed',
+    closed_at = now(),
+    closed_by = auth.uid(),
+    close_note = nullif(left(trim(close_note_input), 1000), '')
+  where public.cash_drawer_sessions.id = session_record.id
+  returning * into session_record;
+
+  return session_record;
+end;
+$$;
 
 create or replace function public.create_pos_order(
   cashier_id_input uuid,
@@ -1034,9 +1763,25 @@ declare
   total_value numeric(12, 2);
   payment_method_value text := coalesce(nullif(payment_method_input, ''), 'cash');
   cash_received_value numeric(12, 2) := greatest(coalesce(cash_received_input, 0), 0);
+  cash_session_id_value uuid;
 begin
-  if not public.has_permission('pos.checkout') then
+  if auth.uid() is null or not public.has_permission('pos.checkout') then
     raise exception 'Only admins can create orders';
+  end if;
+
+  if cashier_id_input is not null and cashier_id_input <> auth.uid() then
+    raise exception 'Cashier identity does not match the signed-in user';
+  end if;
+
+  select id
+  into cash_session_id_value
+  from public.cash_drawer_sessions
+  where cashier_id = auth.uid()
+    and status = 'open'
+  for update;
+
+  if not found then
+    raise exception 'Open a cash drawer session before checkout';
   end if;
 
   if items_input is null
@@ -1090,6 +1835,10 @@ begin
   discount_value := least(discount_value, subtotal_value);
   total_value := subtotal_value - discount_value;
 
+  if discount_value > 0 and not public.has_permission('pos.discount') then
+    raise exception 'Permission denied for order discount';
+  end if;
+
   if payment_method_value not in ('cash', 'transfer') then
     raise exception 'Invalid payment method';
   end if;
@@ -1107,6 +1856,7 @@ begin
   insert into public.orders (
     code,
     customer_id,
+    cash_session_id,
     cashier_id,
     cashier_name,
     subtotal,
@@ -1123,7 +1873,8 @@ begin
   values (
     code_input,
     customer_id_input,
-    coalesce(cashier_id_input, auth.uid()),
+    cash_session_id_value,
+    auth.uid(),
     coalesce(
       (
         select concat_ws(
@@ -1133,7 +1884,7 @@ begin
         )
         from public.profiles p
         left join public.app_roles r on r.id = p.role_id
-        where p.id = coalesce(cashier_id_input, auth.uid())
+        where p.id = auth.uid()
       ),
       'Nhân viên'
     ),
@@ -1149,6 +1900,18 @@ begin
     'paid'
   )
   returning * into order_record;
+
+  insert into public.order_audit_events (order_id, actor_id, event_type, details)
+  values (
+    order_record.id,
+    auth.uid(),
+    'created',
+    jsonb_build_object(
+      'cash_session_id', cash_session_id_value,
+      'payment_method', payment_method_value,
+      'total', total_value
+    )
+  );
 
   for item in select value from jsonb_array_elements(items_input) as value loop
     line_quantity := (item ->> 'quantity')::integer;
@@ -1204,11 +1967,19 @@ begin
     );
   end loop;
 
+  if customer_id_input is not null then
+    update public.customers
+    set points = points + floor(total_value / 100000)::integer
+    where id = customer_id_input;
+  end if;
+
   return order_record;
 end;
 $$;
 
-create or replace function public.cancel_pos_order(order_id_input uuid)
+drop function if exists public.cancel_pos_order(uuid);
+
+create or replace function public.cancel_pos_order(order_id_input uuid, reason_input text)
 returns public.orders
 language plpgsql
 security definer
@@ -1220,6 +1991,10 @@ declare
 begin
   if not public.has_permission('orders.cancel') then
     raise exception 'Permission denied';
+  end if;
+
+  if nullif(trim(reason_input), '') is null then
+    raise exception 'Cancellation reason is required';
   end if;
 
   select *
@@ -1234,6 +2009,13 @@ begin
 
   if order_record.status = 'cancelled' then
     return order_record;
+  end if;
+
+  if order_record.cash_session_id is not null then
+    perform 1
+    from public.cash_drawer_sessions
+    where id = order_record.cash_session_id
+    for update;
   end if;
 
   for item_record in
@@ -1254,9 +2036,34 @@ begin
   end loop;
 
   update public.orders
-  set status = 'cancelled'
+  set
+    status = 'cancelled',
+    cancelled_at = now(),
+    cancelled_by = auth.uid(),
+    cancel_reason = left(trim(reason_input), 1000)
   where id = order_record.id
   returning * into order_record;
+
+  if order_record.customer_id is not null then
+    update public.customers
+    set points = greatest(points - floor(order_record.total / 100000)::integer, 0)
+    where id = order_record.customer_id;
+  end if;
+
+  insert into public.order_audit_events (order_id, actor_id, event_type, reason, details)
+  values (
+    order_record.id,
+    auth.uid(),
+    'cancelled',
+    order_record.cancel_reason,
+    jsonb_build_object(
+      'code', order_record.code,
+      'actor_name', coalesce((select p.full_name from public.profiles p where p.id = auth.uid()), auth.uid()::text),
+      'cash_session_id', order_record.cash_session_id,
+      'payment_method', order_record.payment_method,
+      'total', order_record.total
+    )
+  );
 
   return order_record;
 end;
@@ -1292,11 +2099,21 @@ begin
     raise exception 'Order not found or permission denied';
   end if;
 
+  insert into public.order_audit_events (order_id, actor_id, event_type, details)
+  values (
+    order_record.id,
+    auth.uid(),
+    'printed',
+    jsonb_build_object('print_count', order_record.print_count)
+  );
+
   return order_record;
 end;
 $$;
 
-create or replace function public.delete_pos_orders(order_ids_input uuid[])
+drop function if exists public.delete_pos_orders(uuid[]);
+
+create or replace function public.delete_pos_orders(order_ids_input uuid[], reason_input text)
 returns integer
 language plpgsql
 security definer
@@ -1311,6 +2128,14 @@ begin
     raise exception 'Permission denied';
   end if;
 
+  if nullif(trim(reason_input), '') is null then
+    raise exception 'Deletion reason is required';
+  end if;
+
+  if order_ids_input is null or cardinality(order_ids_input) = 0 then
+    return 0;
+  end if;
+
   for order_record in
     select orders.*
     from public.orders
@@ -1318,7 +2143,52 @@ begin
     order by id
     for update
   loop
+    if order_record.cash_session_id is not null then
+      perform 1
+      from public.cash_drawer_sessions
+      where id = order_record.cash_session_id
+      for update;
+    end if;
+
+    insert into public.order_audit_events (order_id, actor_id, event_type, reason, details)
+    values (
+      order_record.id,
+      auth.uid(),
+      'deleted',
+      left(trim(reason_input), 1000),
+      jsonb_build_object(
+        'code', order_record.code,
+        'actor_name', coalesce((select p.full_name from public.profiles p where p.id = auth.uid()), auth.uid()::text),
+        'status', order_record.status,
+        'cashier_id', order_record.cashier_id,
+        'cashier_name', order_record.cashier_name,
+        'cash_session_id', order_record.cash_session_id,
+        'payment_method', order_record.payment_method,
+        'subtotal', order_record.subtotal,
+        'discount', order_record.discount,
+        'total', order_record.total,
+        'created_at', order_record.created_at,
+        'items', (
+          select coalesce(jsonb_agg(jsonb_build_object(
+            'product_id', item.product_id,
+            'product_name', item.product_name,
+            'quantity', item.quantity,
+            'unit_price', item.unit_price,
+            'line_total', item.line_total
+          ) order by item.created_at, item.id), '[]'::jsonb)
+          from public.order_items item
+          where item.order_id = order_record.id
+        )
+      )
+    );
+
     if order_record.status = 'paid' then
+      if order_record.customer_id is not null then
+        update public.customers
+        set points = greatest(points - floor(order_record.total / 100000)::integer, 0)
+        where id = order_record.customer_id;
+      end if;
+
       for item_record in
         select *
         from public.order_items
@@ -1358,6 +2228,9 @@ alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 alter table public.payment_settings enable row level security;
 alter table public.attendance_records enable row level security;
+alter table public.cash_drawer_sessions enable row level security;
+alter table public.cash_drawer_checks enable row level security;
+alter table public.order_audit_events enable row level security;
 
 drop policy if exists "Users can read own profile" on public.profiles;
 create policy "Users can read own profile"
@@ -1371,14 +2244,11 @@ on public.profiles for select
 using (
   public.has_permission('users')
   or public.has_permission('attendance.export')
+  or public.has_permission('attendance.history.view-all')
 );
 
 drop policy if exists "Admins can update profiles" on public.profiles;
 drop policy if exists "Users page can update profiles" on public.profiles;
-create policy "Users page can update profiles"
-on public.profiles for update
-using (public.has_permission('users.update'))
-with check (public.has_permission('users.update'));
 
 drop policy if exists "Admins manage app roles" on public.app_roles;
 drop policy if exists "Users can read active roles" on public.app_roles;
@@ -1398,13 +2268,22 @@ with check (public.has_permission('roles.create'));
 drop policy if exists "Role managers can update roles" on public.app_roles;
 create policy "Role managers can update roles"
 on public.app_roles for update
-using (public.has_permission('roles.update'))
-with check (public.has_permission('roles.update'));
+using (
+  public.has_permission('roles.update')
+  and (code <> 'admin' or public.is_admin())
+)
+with check (
+  public.has_permission('roles.update')
+  and (code <> 'admin' or public.is_admin())
+);
 
 drop policy if exists "Role managers can delete roles" on public.app_roles;
 create policy "Role managers can delete roles"
 on public.app_roles for delete
-using (public.has_permission('roles.delete'));
+using (
+  public.has_permission('roles.delete')
+  and code not in ('admin', 'staff')
+);
 
 drop policy if exists "Admins manage products" on public.products;
 drop policy if exists "Permitted users can read products" on public.products;
@@ -1462,18 +2341,8 @@ with check (public.has_permission('products.create'));
 drop policy if exists "Product editors can update products" on public.products;
 create policy "Product editors can update products"
 on public.products for update
-using (
-  public.has_permission('products.update')
-  or public.has_permission('products.toggle-active')
-  or public.has_permission('products.receive-stock')
-  or public.has_permission('cloudinary-images.delete')
-)
-with check (
-  public.has_permission('products.update')
-  or public.has_permission('products.toggle-active')
-  or public.has_permission('products.receive-stock')
-  or public.has_permission('cloudinary-images.delete')
-);
+using (public.has_permission('products.update'))
+with check (public.has_permission('products.update'));
 
 drop policy if exists "Product deleters can delete products" on public.products;
 create policy "Product deleters can delete products"
@@ -1554,16 +2423,6 @@ with check (
 );
 
 drop policy if exists "Product stock managers can update batches" on public.product_batches;
-create policy "Product stock managers can update batches"
-on public.product_batches for update
-using (
-  public.has_permission('products.receive-stock')
-  or public.has_permission('pos.checkout')
-)
-with check (
-  public.has_permission('products.receive-stock')
-  or public.has_permission('pos.checkout')
-);
 
 drop policy if exists "Admins manage payment settings" on public.payment_settings;
 drop policy if exists "Permitted users can read payment settings" on public.payment_settings;
@@ -1611,29 +2470,46 @@ drop policy if exists "Admins manage orders" on public.orders;
 drop policy if exists "Order viewers can read orders" on public.orders;
 create policy "Order viewers can read orders"
 on public.orders for select
-using (public.has_permission('orders'));
+using (
+  public.has_permission('orders')
+  or public.has_permission('revenue')
+);
 
 drop policy if exists "POS can insert orders" on public.orders;
-create policy "POS can insert orders"
-on public.orders for insert
-with check (public.has_permission('pos.checkout'));
 
 drop policy if exists "Admins manage order items" on public.order_items;
 drop policy if exists "Order viewers can read order items" on public.order_items;
 create policy "Order viewers can read order items"
 on public.order_items for select
-using (public.has_permission('orders'));
+using (
+  public.has_permission('orders')
+  or public.has_permission('revenue')
+);
 
 drop policy if exists "POS can insert order items" on public.order_items;
-create policy "POS can insert order items"
-on public.order_items for insert
-with check (public.has_permission('pos.checkout'));
+
+drop policy if exists "Cashiers can read cash drawer sessions" on public.cash_drawer_sessions;
+create policy "Cashiers can read cash drawer sessions"
+on public.cash_drawer_sessions for select
+using (
+  cashier_id = auth.uid()
+  or public.has_permission('cash-management.view-all')
+);
+
+drop policy if exists "Managers can read order audit events" on public.order_audit_events;
+create policy "Managers can read order audit events"
+on public.order_audit_events for select
+using (
+  public.has_permission('orders')
+  or public.has_permission('cash-management.view-all')
+);
 
 drop policy if exists "Attendance users can read own records" on public.attendance_records;
 create policy "Attendance users can read own records"
 on public.attendance_records for select
 using (
   public.has_permission('attendance.export')
+  or public.has_permission('attendance.history.view-all')
   or (
     auth.uid() = user_id
     and (
@@ -1648,11 +2524,17 @@ drop policy if exists "Attendance users can update own records" on public.attend
 create policy "Attendance users can update own records"
 on public.attendance_records for update
 using (
-  auth.uid() = user_id
+  (
+    auth.uid() = user_id
+    or public.has_permission('attendance.history.view-all')
+  )
   and public.has_permission('attendance.history.update')
 )
 with check (
-  auth.uid() = user_id
+  (
+    auth.uid() = user_id
+    or public.has_permission('attendance.history.view-all')
+  )
   and public.has_permission('attendance.history.update')
 );
 
@@ -1660,6 +2542,54 @@ drop policy if exists "Attendance users can delete own records" on public.attend
 create policy "Attendance users can delete own records"
 on public.attendance_records for delete
 using (
-  auth.uid() = user_id
+  (
+    auth.uid() = user_id
+    or public.has_permission('attendance.history.view-all')
+  )
   and public.has_permission('attendance.history.delete')
 );
+
+drop policy if exists "Attendance and cash managers can read drawer checks" on public.cash_drawer_checks;
+create policy "Attendance and cash managers can read drawer checks"
+on public.cash_drawer_checks for select
+using (
+  (
+    employee_id = auth.uid()
+    and public.has_permission('attendance.clock')
+  )
+  or public.has_permission('attendance.history.view-all')
+  or public.has_permission('cash-management')
+);
+
+-- Security-definer RPCs are callable only by signed-in application users.
+revoke all on function public.is_admin(uuid) from public, anon;
+revoke all on function public.has_permission(text, uuid) from public, anon;
+revoke all on function public.list_cash_drawer_sessions(integer) from public, anon;
+revoke all on function public.get_cash_drawer_handover() from public, anon;
+revoke all on function public.open_cash_drawer(numeric, text) from public, anon;
+revoke all on function public.close_cash_drawer(uuid, numeric, text) from public, anon;
+revoke all on function public.submit_attendance_cash_check(uuid, numeric, text) from public, anon;
+revoke all on function public.list_attendance_history(date) from public, anon;
+revoke all on function public.create_pos_order(uuid, numeric, text, uuid, numeric, jsonb, text, text, text, text) from public, anon;
+revoke all on function public.cancel_pos_order(uuid, text) from public, anon;
+revoke all on function public.record_order_print(uuid) from public, anon;
+revoke all on function public.delete_pos_orders(uuid[], text) from public, anon;
+revoke all on function public.set_product_active(uuid, boolean) from public, anon;
+revoke all on function public.soft_delete_product(uuid) from public, anon;
+revoke all on function public.clear_products_image_url(text) from public, anon;
+
+grant execute on function public.is_admin(uuid) to authenticated;
+grant execute on function public.has_permission(text, uuid) to authenticated;
+grant execute on function public.list_cash_drawer_sessions(integer) to authenticated;
+grant execute on function public.get_cash_drawer_handover() to authenticated;
+grant execute on function public.open_cash_drawer(numeric, text) to authenticated;
+grant execute on function public.close_cash_drawer(uuid, numeric, text) to authenticated;
+grant execute on function public.submit_attendance_cash_check(uuid, numeric, text) to authenticated;
+grant execute on function public.list_attendance_history(date) to authenticated;
+grant execute on function public.create_pos_order(uuid, numeric, text, uuid, numeric, jsonb, text, text, text, text) to authenticated;
+grant execute on function public.cancel_pos_order(uuid, text) to authenticated;
+grant execute on function public.record_order_print(uuid) to authenticated;
+grant execute on function public.delete_pos_orders(uuid[], text) to authenticated;
+grant execute on function public.set_product_active(uuid, boolean) to authenticated;
+grant execute on function public.soft_delete_product(uuid) to authenticated;
+grant execute on function public.clear_products_image_url(text) to authenticated;

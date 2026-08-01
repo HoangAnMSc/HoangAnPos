@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import WebSocket from "ws";
 
 function getSupabaseConfig() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -23,9 +22,6 @@ export function getAdminClient() {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
-    },
-    realtime: {
-      transport: WebSocket,
     },
   });
 }
@@ -73,6 +69,22 @@ export async function userHasAnyPermission(admin, user, permissions) {
   }
 
   return permissions.some((permission) => role.permissions?.includes(permission));
+}
+
+export async function userIsSuperAdmin(admin, user) {
+  if (user.app_metadata?.role === "admin") return true;
+
+  const { data: profile, error } = await admin
+    .from("profiles")
+    .select("role, is_active, app_roles(code, is_active)")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error || !profile || profile.is_active === false) return false;
+  const role = Array.isArray(profile.app_roles)
+    ? profile.app_roles[0] ?? null
+    : profile.app_roles ?? null;
+  return profile.role === "admin" || (role?.code === "admin" && role.is_active !== false);
 }
 
 export async function authorizeApiRequest(request, permissions) {

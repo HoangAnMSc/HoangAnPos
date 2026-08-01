@@ -86,7 +86,7 @@ type QuickCustomerFormState = {
   note: string;
 };
 
-const posWorkspaceStorageKey = "hoang-an-pos:pos-workspace:v1";
+const posWorkspaceStorageKey = (userId: string) => `hoang-an-pos:pos-workspace:v2:${userId}`;
 
 const emptyCustomerForm: QuickCustomerFormState = {
   name: "",
@@ -143,13 +143,13 @@ function createInitialWorkspace(): PosWorkspace {
   };
 }
 
-function loadPosWorkspace(): PosWorkspace {
-  if (typeof window === "undefined") {
+function loadPosWorkspace(userId?: string): PosWorkspace {
+  if (typeof window === "undefined" || !userId) {
     return createInitialWorkspace();
   }
 
   try {
-    const rawValue = window.localStorage.getItem(posWorkspaceStorageKey);
+    const rawValue = window.localStorage.getItem(posWorkspaceStorageKey(userId));
     if (!rawValue) {
       return createInitialWorkspace();
     }
@@ -158,8 +158,10 @@ function loadPosWorkspace(): PosWorkspace {
     const loadedBills = Array.isArray(parsed.bills)
       ? parsed.bills.map((bill, index) => normalizeBill(bill, index + 1))
       : [];
-    const bills = loadedBills.length > 0 ? loadedBills : createInitialWorkspace().bills;
-    const activeBillId = bills.some((bill) => bill.id === parsed.activeBillId)
+    const bills = Array.isArray(parsed.bills) ? loadedBills : createInitialWorkspace().bills;
+    const activeBillId = bills.length === 0
+      ? 0
+      : bills.some((bill) => bill.id === parsed.activeBillId)
       ? Number(parsed.activeBillId)
       : bills[0].id;
 
@@ -287,13 +289,14 @@ export function PosPage() {
   const [submittingCustomer, setSubmittingCustomer] = useState(false);
   const [submittingSale, setSubmittingSale] = useState(false);
   const [success, setSuccess] = useState("");
-  const [workspace, setWorkspace] = useState<PosWorkspace>(() => loadPosWorkspace());
+  const [workspace, setWorkspace] = useState<PosWorkspace>(() => loadPosWorkspace(user?.id));
   const { clearErrorNotice, errorNotice, showErrorNotice } = useErrorNotice(setError);
 
   const activeBill =
     workspace.bills.find((bill) => bill.id === workspace.activeBillId) ??
     workspace.bills[0] ??
     createEmptyBill(1);
+  const hasActiveBill = workspace.bills.some((bill) => bill.id === workspace.activeBillId);
   const cart = activeBill?.cart ?? [];
   const cashReceived = activeBill?.cashReceived ?? "";
   const customerQuery = activeBill?.customerQuery ?? "";
@@ -337,12 +340,13 @@ export function PosPage() {
   }, [loadPosData]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined" || !user?.id) {
       return;
     }
 
-    window.localStorage.setItem(posWorkspaceStorageKey, JSON.stringify(workspace));
-  }, [workspace]);
+    window.localStorage.removeItem("hoang-an-pos:pos-workspace:v1");
+    window.localStorage.setItem(posWorkspaceStorageKey(user.id), JSON.stringify(workspace));
+  }, [user?.id, workspace]);
 
   useEffect(() => {
     if (products.length === 0) {
@@ -536,19 +540,18 @@ export function PosPage() {
     }
 
     setWorkspace((current) => {
-      if (current.bills.length === 1) {
-        return {
-          activeBillId: billId,
-          bills: [createEmptyBill(billId)],
-        };
-      }
-
       const nextBills = current.bills.filter((bill) => bill.id !== billId);
       const activeBillId =
-        current.activeBillId === billId ? nextBills[nextBills.length - 1].id : current.activeBillId;
+        current.activeBillId === billId
+          ? nextBills[nextBills.length - 1]?.id ?? 0
+          : current.activeBillId;
 
       return { activeBillId, bills: nextBills };
     });
+    setPaymentModalOpen(false);
+    setProductQuery("");
+    setError("");
+    setSuccess("");
   }
 
   function addToCart(
@@ -882,7 +885,12 @@ export function PosPage() {
       setPaymentProofFile(null);
       setPaymentProofNote("");
       setPaymentProofPreview("");
-      setSuccess(`Đã tạo hóa đơn ${order.code} với tổng tiền ${formatCurrency(order.total)}.`);
+      const earnedPoints = completedCustomer ? Math.floor(Number(order.total) / 100000) : 0;
+      setSuccess(
+        `Đã tạo hóa đơn ${order.code} với tổng tiền ${formatCurrency(order.total)}.${
+          completedCustomer ? ` Khách hàng được cộng ${earnedPoints} điểm.` : ""
+        }`
+      );
       setCompletedSale({
         customer: completedCustomer,
         items: completedItems,
@@ -944,14 +952,15 @@ export function PosPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-clip bg-[#f7f8f5]">
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-2 py-1.5 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:px-3 sm:py-2 xl:px-4">
+    <div className="min-h-screen overflow-x-clip bg-[linear-gradient(135deg,#f8faf7_0%,#f1f5ee_55%,#f8fafc_100%)]">
+      <header className="sticky top-0 z-40 border-b border-moss-100 bg-white/95 px-2 py-1.5 shadow-[0_8px_28px_rgba(57,67,46,0.10)] backdrop-blur-xl sm:px-3 sm:py-2 xl:px-4">
         <div className="flex flex-col gap-1.5 lg:gap-2 xl:flex-row xl:items-center">
           <div className="flex min-w-0 flex-1 gap-1.5 pl-12 lg:gap-2 lg:pl-0">
             {canCheckout ? (
               <button
                 aria-label="Quét EAN-13"
-                className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-coal text-white shadow-sm transition hover:bg-coal/90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-moss-200 lg:h-12 lg:w-12 lg:rounded-xl xl:h-14 xl:w-14"
+                className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-moss-700 text-white shadow-[0_8px_18px_rgba(72,84,54,0.24)] transition hover:bg-moss-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-moss-200 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none lg:h-12 lg:w-12 lg:rounded-xl xl:h-14 xl:w-14"
+                disabled={!hasActiveBill}
                 onClick={() => setEan13ScannerOpen(true)}
                 type="button"
               >
@@ -965,14 +974,15 @@ export function PosPage() {
               />
               <input
                 aria-label="Tìm sản phẩm"
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-10 text-sm font-semibold text-slate-900 outline-none transition placeholder:font-medium placeholder:text-slate-500 focus:border-moss-400 focus:ring-4 focus:ring-moss-100 lg:h-12 lg:rounded-xl lg:pl-11 lg:pr-12 lg:text-base xl:h-14 xl:pl-12 xl:pr-20 xl:text-lg"
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-10 text-sm font-semibold text-slate-900 shadow-sm outline-none transition placeholder:font-medium placeholder:text-slate-500 focus:border-moss-400 focus:ring-4 focus:ring-moss-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 lg:h-12 lg:rounded-xl lg:pl-11 lg:pr-12 lg:text-base xl:h-14 xl:pl-12 xl:pr-20 xl:text-lg"
+                disabled={!hasActiveBill}
                 onChange={(event) => setProductQuery(event.target.value)}
                 onKeyDown={handleProductSearchKeyDown}
-                placeholder="Tìm sản phẩm hoặc EAN-13"
+                placeholder={hasActiveBill ? "Tìm sản phẩm hoặc EAN-13" : "Tạo đơn mới để bắt đầu bán hàng"}
                 ref={productSearchRef}
                 value={productQuery}
               />
-              {productQuery ? (
+              {productQuery && hasActiveBill ? (
                 <button
                   aria-label="Xóa nội dung tìm kiếm"
                   className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 lg:right-2 lg:h-9 lg:w-9 xl:right-3"
@@ -984,11 +994,11 @@ export function PosPage() {
                 >
                   <X className="h-4 w-4 lg:h-5 lg:w-5" />
                 </button>
-              ) : (
+              ) : hasActiveBill ? (
                 <span className="absolute right-4 top-1/2 hidden -translate-y-1/2 lg:block">
                   <ShortcutTag>F3</ShortcutTag>
                 </span>
-              )}
+              ) : null}
 
               {productQuery ? (
                 <div
@@ -1059,7 +1069,7 @@ export function PosPage() {
                               </p>
                             </div>
                             {canCheckout ? (
-                              <span className="flex h-11 items-center rounded-xl bg-coal px-3 text-sm font-extrabold text-white shadow-sm">
+                              <span className="flex h-11 items-center rounded-xl bg-moss-700 px-3 text-sm font-extrabold text-white shadow-sm">
                                 Thêm
                               </span>
                             ) : null}
@@ -1077,6 +1087,11 @@ export function PosPage() {
             aria-label="Danh sách đơn đang bán"
             className="scrollbar-none flex min-w-0 items-center gap-1 overflow-x-auto lg:gap-1.5 xl:max-w-[46%] xl:flex-none"
           >
+            {workspace.bills.length === 0 ? (
+              <span className="inline-flex h-9 flex-none items-center rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs font-extrabold text-slate-500 lg:h-11 lg:rounded-xl lg:text-sm">
+                Chưa có đơn
+              </span>
+            ) : null}
             {workspace.bills.map((bill) => {
               const isActive = activeBill.id === bill.id;
               const billItemCount = bill.cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -1085,8 +1100,8 @@ export function PosPage() {
                 <div
                   className={`flex h-9 flex-none items-stretch overflow-hidden rounded-lg border transition lg:h-11 lg:rounded-xl ${
                     isActive
-                      ? "border-coal bg-coal text-white shadow-sm"
-                      : "border-slate-200 bg-white text-slate-600"
+                      ? "border-moss-700 bg-gradient-to-r from-moss-800 to-moss-600 text-white shadow-[0_8px_18px_rgba(72,84,54,0.22)]"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-moss-200 hover:bg-moss-50"
                   }`}
                   key={bill.id}
                 >
@@ -1135,7 +1150,7 @@ export function PosPage() {
             {canCheckout ? (
               <button
                 aria-label="Thêm đơn mới"
-                className="flex h-9 min-w-9 flex-none items-center justify-center rounded-lg border border-dashed border-moss-400 bg-moss-50 text-moss-700 transition hover:bg-moss-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 lg:h-11 lg:min-w-11 lg:rounded-xl"
+                className="flex h-9 min-w-9 flex-none items-center justify-center rounded-lg border border-moss-600 bg-moss-600 text-white shadow-sm transition hover:bg-moss-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 lg:h-11 lg:min-w-11 lg:rounded-xl"
                 onClick={addBill}
                 type="button"
               >
@@ -1146,7 +1161,11 @@ export function PosPage() {
         </div>
       </header>
 
-      <main className="w-full max-w-[100vw] px-2 pb-[calc(7.5rem+env(safe-area-inset-bottom))] pt-3 sm:px-3 xl:pb-4 xl:px-4">
+      <main
+        className={`w-full max-w-[100vw] px-2 pt-3 sm:px-3 xl:pb-4 xl:px-4 ${
+          hasActiveBill ? "pb-[calc(7.5rem+env(safe-area-inset-bottom))]" : "pb-5"
+        }`}
+      >
         <div className="mx-auto w-full max-w-none space-y-4">
           <ConfigNotice />
 
@@ -1161,13 +1180,39 @@ export function PosPage() {
             </div>
           ) : null}
 
+          {!hasActiveBill ? (
+            <section className="mx-auto flex min-h-[min(68dvh,620px)] max-w-3xl flex-col items-center justify-center rounded-3xl border border-moss-200 bg-white px-5 py-12 text-center shadow-[0_20px_60px_rgba(57,67,46,0.10)] sm:px-10">
+              <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-moss-100 to-moss-200 text-moss-700 shadow-[0_12px_30px_rgba(72,84,54,0.16)]">
+                <ShoppingBag className="h-10 w-10 stroke-[1.8]" />
+              </div>
+              <span className="mt-6 rounded-full bg-moss-50 px-3 py-1 text-xs font-extrabold uppercase tracking-[0.12em] text-moss-700">
+                Khu vực bán hàng
+              </span>
+              <h1 className="mt-3 text-2xl font-black text-slate-950 sm:text-3xl">
+                Chưa có đơn đang bán
+              </h1>
+              <p className="mt-2 max-w-lg text-sm font-semibold leading-6 text-slate-500 sm:text-base">
+                Hiện không còn đơn trong phiên bán hàng. Hãy tạo đơn mới khi bạn sẵn sàng phục vụ khách tiếp theo.
+              </p>
+              {canCheckout ? (
+                <button
+                  className="mt-7 flex h-14 items-center justify-center gap-2 rounded-2xl bg-moss-700 px-6 text-base font-extrabold text-white shadow-[0_14px_28px_rgba(72,84,54,0.28)] transition hover:-translate-y-0.5 hover:bg-moss-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-moss-200"
+                  onClick={addBill}
+                  type="button"
+                >
+                  <Plus className="h-5 w-5" />
+                  Tạo đơn mới
+                </button>
+              ) : null}
+            </section>
+          ) : (
           <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_clamp(380px,27vw,480px)]">
             <div className="min-w-0 space-y-3">
               {!loading && quickProducts.length > 0 ? (
-                <section className="overflow-hidden rounded-2xl bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/70">
+                <section className="overflow-hidden rounded-2xl bg-white shadow-[0_10px_28px_rgba(57,67,46,0.07)] ring-1 ring-moss-100">
                   <div
-                    className={`grid grid-cols-1 gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
-                      quickProductsExpanded ? "border-b border-slate-100" : ""
+                    className={`grid grid-cols-1 gap-2 bg-gradient-to-r from-moss-50/90 to-white px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
+                      quickProductsExpanded ? "border-b border-moss-100" : ""
                     }`}
                   >
                     <button
@@ -1211,7 +1256,11 @@ export function PosPage() {
                         return (
                           <button
                             aria-label={`Thêm ${product.name} vào đơn`}
-                            className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 text-left transition hover:border-moss-300 hover:bg-moss-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 disabled:cursor-not-allowed disabled:opacity-55 sm:p-2"
+                            className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border p-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 disabled:cursor-not-allowed disabled:opacity-55 sm:p-2 ${
+                              quantityInCart > 0
+                                ? "border-moss-300 bg-moss-50 shadow-[0_6px_16px_rgba(72,84,54,0.10)]"
+                                : "border-slate-200 bg-white hover:border-moss-300 hover:bg-moss-50"
+                            }`}
                             disabled={disabled}
                             key={product.id}
                             onClick={() => addToCart(product, undefined, false)}
@@ -1229,6 +1278,11 @@ export function PosPage() {
                                   <ShoppingBag className="h-5 w-5" />
                                 </div>
                               )}
+                              {quantityInCart > 0 ? (
+                                <span className="absolute right-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-moss-700 px-1.5 text-[10px] font-black text-white shadow-sm">
+                                  {quantityInCart}
+                                </span>
+                              ) : null}
                             </div>
                             <div className="flex min-w-0 flex-1 flex-col px-0.5 pb-0.5 pt-1.5">
                               <span
@@ -1256,9 +1310,9 @@ export function PosPage() {
                 </section>
               ) : null}
 
-              <section className="overflow-hidden rounded-2xl bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
+              <section className="overflow-hidden rounded-2xl bg-white shadow-[0_10px_28px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/80">
                 <div
-                  className={`grid grid-cols-1 gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
+                  className={`grid grid-cols-1 gap-2 bg-slate-50/80 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
                     cartExpanded ? "border-b border-slate-100" : ""
                   }`}
                 >
@@ -1326,7 +1380,7 @@ export function PosPage() {
                           Tìm sản phẩm phía trên hoặc chọn từ danh sách sản phẩm nhanh.
                         </p>
                         <button
-                          className="mt-4 rounded-xl bg-coal px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-coal/90"
+                          className="mt-4 rounded-xl bg-moss-700 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-moss-800"
                           onClick={() => productSearchRef.current?.focus()}
                           type="button"
                         >
@@ -1340,7 +1394,7 @@ export function PosPage() {
 
                           return (
                             <article
-                              className="grid grid-cols-[56px_minmax(0,1fr)_40px] gap-x-3 gap-y-3 p-3 sm:grid-cols-[64px_minmax(0,1fr)_132px_130px_40px] sm:items-center sm:px-4 sm:py-3"
+                              className="grid grid-cols-[56px_minmax(0,1fr)_40px] gap-x-3 gap-y-3 p-3 transition hover:bg-moss-50/45 sm:grid-cols-[64px_minmax(0,1fr)_132px_130px_40px] sm:items-center sm:px-4 sm:py-3"
                               key={item.lineId}
                             >
                               <div className="h-14 w-14 overflow-hidden rounded-xl bg-slate-100 sm:h-16 sm:w-16">
@@ -1388,7 +1442,7 @@ export function PosPage() {
                                     </span>
                                     <button
                                       aria-label={`Tăng số lượng ${item.product.name}`}
-                                      className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:w-10"
+                                      className="flex h-9 w-9 items-center justify-center rounded-lg bg-moss-700 text-white shadow-sm transition hover:bg-moss-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60 sm:h-10 sm:w-10"
                                       disabled={quantityInProduct >= item.product.stock}
                                       onClick={() => changeQuantity(item.lineId, item.quantity + 1)}
                                       type="button"
@@ -1441,7 +1495,7 @@ export function PosPage() {
                 />
                 {canCheckout ? (
                   <button
-                    className="flex h-12 items-center justify-center gap-2 rounded-xl border border-moss-300 bg-moss-50 px-4 text-base font-extrabold text-moss-700 transition hover:bg-moss-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-12 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 text-base font-extrabold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={cart.length === 0 && !selectedCustomerId && !orderNote.trim()}
                     onClick={handleSaveBill}
                     type="button"
@@ -1454,7 +1508,7 @@ export function PosPage() {
             </div>
 
             <aside className="order-first min-w-0 space-y-3 xl:order-none xl:sticky xl:top-[4.75rem] xl:flex xl:max-h-[calc(100dvh-5.25rem)] xl:flex-col xl:self-start xl:overflow-hidden">
-              <section className="min-h-0 rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 xl:flex-1 xl:overflow-y-auto xl:overscroll-contain">
+              <section className="min-h-0 rounded-2xl bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/80 sm:p-4 xl:flex-1 xl:overflow-y-auto xl:overscroll-contain">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-base font-extrabold text-slate-900">Khách hàng</h2>
@@ -1504,7 +1558,7 @@ export function PosPage() {
                   {canCreateQuickCustomer ? (
                     <button
                       aria-label="Thêm khách hàng"
-                      className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-coal text-white shadow-sm transition hover:bg-coal/90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-moss-200"
+                      className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm transition hover:bg-sky-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sky-200"
                       onClick={() => setCustomerModalOpen(true)}
                       type="button"
                     >
@@ -1512,6 +1566,15 @@ export function PosPage() {
                     </button>
                   ) : null}
                 </div>
+
+                {selectedCustomer ? (
+                  <div className="mt-2 flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 text-sm">
+                    <span className="font-bold text-amber-800">Điểm tích lũy hiện có</span>
+                    <span className="font-extrabold tabular-nums text-amber-900">
+                      {(selectedCustomer.points ?? 0).toLocaleString("vi-VN")} điểm
+                    </span>
+                  </div>
+                ) : null}
 
                 {customerResults.length > 0 ? (
                   <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -1526,8 +1589,13 @@ export function PosPage() {
                           <span className="truncate text-sm font-extrabold text-slate-900">
                             {customer.name}
                           </span>
-                          <span className="mt-0.5 truncate text-xs font-semibold text-slate-500">
-                            {customer.phone || "Chưa có số điện thoại"}
+                          <span className="mt-0.5 flex w-full items-center justify-between gap-3 text-xs font-semibold text-slate-500">
+                            <span className="truncate">
+                              {customer.phone || "Chưa có số điện thoại"}
+                            </span>
+                            <span className="shrink-0 font-extrabold text-amber-700">
+                              {(customer.points ?? 0).toLocaleString("vi-VN")} điểm
+                            </span>
                           </span>
                         </button>
                       ))}
@@ -1545,12 +1613,15 @@ export function PosPage() {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="shrink-0 text-sm font-extrabold text-moss-700">
+                      Giảm giá
+                    </span>
                     {canApplyDiscount ? (
-                      <label className="flex min-w-0 items-center gap-1 text-sm font-extrabold text-moss-600">
-                        <span>Giảm giá:</span>
+                      <label className="relative min-w-0 max-w-40 flex-1">
                         <input
-                          className="h-9 w-28 rounded-lg border border-slate-100 bg-white px-2 text-right text-sm font-extrabold text-moss-600 outline-none focus:border-moss-300 focus:ring-4 focus:ring-moss-100"
+                          aria-label="Số tiền giảm giá"
+                          className="h-10 w-full rounded-xl border border-moss-200 bg-white px-3 pr-8 text-right text-sm font-extrabold tabular-nums text-moss-700 outline-none transition focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
                           inputMode="numeric"
                           onChange={(event) =>
                             updateActiveBillField(
@@ -1562,14 +1633,15 @@ export function PosPage() {
                           type="text"
                           value={formatIntegerInput(discount)}
                         />
-                        <ShortcutTag>F6</ShortcutTag>
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                          đ
+                        </span>
                       </label>
                     ) : (
-                      <span className="text-sm font-extrabold text-moss-600">Giảm giá</span>
+                      <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
+                        {formatCurrency(safeDiscount)}
+                      </span>
                     )}
-                    <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
-                      {formatCurrency(safeDiscount)}
-                    </span>
                   </div>
 
                   <div className="flex items-center justify-between gap-4">
@@ -1602,10 +1674,10 @@ export function PosPage() {
                 </div>
               </section>
 
-              <section className="hidden rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 xl:block xl:flex-none">
+              <section className="hidden rounded-2xl bg-white p-3 shadow-[0_10px_28px_rgba(57,67,46,0.08)] ring-1 ring-moss-100 xl:block xl:flex-none">
                 {canCheckout ? (
                   <button
-                    className="hidden h-14 w-full items-center justify-center gap-2 rounded-xl bg-coal text-base font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-coal/90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-moss-200 disabled:cursor-not-allowed disabled:opacity-60 xl:flex"
+                    className="hidden h-14 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(5,150,105,0.24)] transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 xl:flex"
                     disabled={cart.length === 0 || submittingSale}
                     onClick={openPaymentModal}
                     type="button"
@@ -1617,10 +1689,12 @@ export function PosPage() {
               </section>
             </aside>
           </div>
+          )}
         </div>
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-14px_36px_rgba(15,23,42,0.14)] backdrop-blur-xl lg:left-72 xl:hidden">
+      {hasActiveBill ? (
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-moss-100 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-14px_36px_rgba(57,67,46,0.16)] backdrop-blur-xl lg:left-72 xl:hidden">
         <div className="mx-auto flex max-w-3xl items-center gap-3">
           <div className="min-w-0 flex-1" aria-live="polite">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -1632,7 +1706,7 @@ export function PosPage() {
           </div>
           {canCheckout ? (
             <button
-              className="flex h-14 min-w-[8.5rem] items-center justify-center gap-2 rounded-xl bg-coal px-4 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-40"
+              className="flex h-14 min-w-[8.5rem] items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(5,150,105,0.25)] transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-40"
               disabled={cart.length === 0 || submittingSale}
               onClick={openPaymentModal}
               type="button"
@@ -1647,6 +1721,7 @@ export function PosPage() {
           ) : null}
         </div>
       </div>
+      ) : null}
 
       {canCreateQuickCustomer ? (
         <Modal

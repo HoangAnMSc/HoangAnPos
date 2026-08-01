@@ -178,7 +178,7 @@ export function WarehousePage() {
   }
 
   return (
-    <PageContainer maxWidth="none">
+    <PageContainer className="!space-y-3 sm:!space-y-4" maxWidth="none">
       <ConfigNotice />
       <PageToolbar
         action={
@@ -190,61 +190,64 @@ export function WarehousePage() {
         description="Theo dõi số lượng hiện có và đối chiếu với các phiên kiểm kê do nhân viên gửi."
         eyebrow="Quản lý hàng hóa"
         title="Kho"
-      />
+      >
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+          {[
+            {
+              icon: Boxes,
+              label: "Tổng số lượng",
+              tone: "bg-moss-100 text-moss-700",
+              value: warehouseStats.totalStock,
+            },
+            {
+              icon: PackageCheck,
+              label: "Đang bán",
+              tone: "bg-sky-100 text-sky-700",
+              value: warehouseStats.activeProducts,
+            },
+            {
+              icon: TriangleAlert,
+              label: "Sắp hết",
+              tone: "bg-amber-100 text-amber-700",
+              value: warehouseStats.lowStock,
+            },
+            {
+              icon: PackageMinus,
+              label: "Hết hàng",
+              tone: "bg-red-100 text-red-700",
+              value: warehouseStats.outOfStock,
+            },
+          ].map((item) => (
+            <div
+              className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5"
+              key={item.label}
+            >
+              <span className={`flex h-9 w-9 flex-none items-center justify-center rounded-lg ${item.tone}`}>
+                <item.icon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[10px] font-extrabold uppercase tracking-wide text-slate-500 sm:text-xs">
+                  {item.label}
+                </p>
+                <p className="text-xl font-black tabular-nums text-slate-950">
+                  {loading ? "—" : item.value}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </PageToolbar>
 
       {error ? <StateNotice message={error} tone="error" /> : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            icon: Boxes,
-            label: "Tổng số lượng",
-            tone: "bg-moss-100 text-moss-700",
-            value: warehouseStats.totalStock,
-          },
-          {
-            icon: PackageCheck,
-            label: "Sản phẩm đang bán",
-            tone: "bg-sky-100 text-sky-700",
-            value: warehouseStats.activeProducts,
-          },
-          {
-            icon: TriangleAlert,
-            label: "Sắp hết hàng",
-            tone: "bg-amber-100 text-amber-700",
-            value: warehouseStats.lowStock,
-          },
-          {
-            icon: PackageMinus,
-            label: "Hết hàng",
-            tone: "bg-red-100 text-red-700",
-            value: warehouseStats.outOfStock,
-          },
-        ].map((item) => (
-          <Card className="flex items-center gap-4 p-4" key={item.label}>
-            <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.tone}`}>
-              <item.icon className="h-5 w-5" />
-            </span>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                {item.label}
-              </p>
-              <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-950">
-                {loading ? "—" : item.value}
-              </p>
-            </div>
-          </Card>
-        ))}
-      </section>
-
-      <Card className="p-4 sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <Card className="border border-moss-100 p-3 shadow-[0_10px_28px_rgba(57,67,46,0.07)] sm:p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <Scale className="h-5 w-5 text-moss-700" />
-              <h3 className="text-lg font-extrabold text-slate-950">So sánh tồn kho</h3>
+              <h3 className="text-base font-extrabold text-slate-950 sm:text-lg">So sánh tồn kho</h3>
             </div>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-0.5 text-xs font-semibold text-slate-500 sm:text-sm">
               Số nhân viên đếm được được đối chiếu với số kho hiện tại.
             </p>
           </div>
@@ -252,7 +255,7 @@ export function WarehousePage() {
             <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
               <Select
                 aria-label="Chọn phiên kiểm kê"
-                className="h-11 min-w-72 py-2"
+                className="h-10 w-full py-1.5 sm:min-w-72"
                 onChange={(event) => setSelectedAuditId(event.target.value)}
                 value={selectedAudit?.id ?? ""}
               >
@@ -282,23 +285,29 @@ export function WarehousePage() {
           </div>
         ) : (
           <>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Badge tone="neutral">{comparisonRows.length} sản phẩm đã kiểm</Badge>
-              <Badge tone="green">{comparisonStats.matched} khớp</Badge>
-              <Badge tone="red">{comparisonStats.short} thiếu</Badge>
-              <Badge tone="amber">{comparisonStats.over} thừa</Badge>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <Badge className="px-2.5 py-1" tone="neutral">{comparisonRows.length} đã kiểm</Badge>
+              <Badge className="px-2.5 py-1" tone="green">{comparisonStats.matched} khớp</Badge>
+              <Badge className="px-2.5 py-1" tone="red">{comparisonStats.short} thiếu</Badge>
+              <Badge className="px-2.5 py-1" tone="amber">{comparisonStats.over} thừa</Badge>
             </div>
-            <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-              <div className="hidden grid-cols-[minmax(220px,1fr)_110px_110px_110px] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 md:grid">
+            <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="hidden grid-cols-[minmax(220px,1fr)_100px_100px_105px] gap-3 bg-slate-100 px-3 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
                 <span>Sản phẩm</span>
                 <span className="text-right">Kho hiện tại</span>
                 <span className="text-right">Đã đếm</span>
                 <span className="text-right">Chênh lệch</span>
               </div>
-              <div className="divide-y divide-slate-100">
+              <div className="max-h-[46dvh] divide-y divide-slate-100 overflow-y-auto overscroll-contain">
                 {comparisonRows.map((row) => (
                   <article
-                    className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(220px,1fr)_110px_110px_110px] md:items-center"
+                    className={`grid gap-2.5 px-3 py-2.5 transition md:grid-cols-[minmax(220px,1fr)_100px_100px_105px] md:items-center ${
+                      row.difference < 0
+                        ? "bg-red-50/35 hover:bg-red-50/70"
+                        : row.difference > 0
+                          ? "bg-amber-50/35 hover:bg-amber-50/70"
+                          : "hover:bg-moss-50/60"
+                    }`}
                     key={row.productId ?? `${selectedAudit.id}-${row.ean13}`}
                   >
                     <div className="min-w-0">
@@ -338,11 +347,11 @@ export function WarehousePage() {
         )}
       </Card>
 
-      <Card className="p-4 sm:p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <Card className="border border-slate-200 p-3 shadow-[0_10px_28px_rgba(15,23,42,0.06)] sm:p-4">
+        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h3 className="text-lg font-extrabold text-slate-950">Kho hiện tại</h3>
-            <p className="mt-1 text-sm text-slate-500">
+            <h3 className="text-base font-extrabold text-slate-950 sm:text-lg">Kho hiện tại</h3>
+            <p className="mt-0.5 text-xs font-semibold text-slate-500 sm:text-sm">
               Toàn bộ số lượng đang được hệ thống ghi nhận.
             </p>
           </div>
@@ -367,35 +376,56 @@ export function WarehousePage() {
             />
           </div>
         ) : (
-          <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-            <div className="hidden grid-cols-[minmax(240px,1fr)_160px_120px_120px] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 md:grid">
+          <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="hidden grid-cols-[minmax(240px,1fr)_150px_110px_100px] gap-3 bg-slate-100 px-3 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
               <span>Sản phẩm</span>
               <span>Nhóm hàng</span>
               <span>Trạng thái</span>
               <span className="text-right">Số lượng</span>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="max-h-[60dvh] divide-y divide-slate-100 overflow-y-auto overscroll-contain">
               {visibleProducts.map((product) => (
                 <article
-                  className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(240px,1fr)_160px_120px_120px] md:items-center"
+                  className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 px-3 py-2.5 transition md:grid-cols-[minmax(240px,1fr)_150px_110px_100px] md:items-center md:gap-3 ${
+                    product.stock <= 0
+                      ? "bg-red-50/35 hover:bg-red-50/70"
+                      : product.stock <= 5
+                        ? "bg-amber-50/35 hover:bg-amber-50/70"
+                        : "hover:bg-moss-50/60"
+                  }`}
                   key={product.id}
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-extrabold text-slate-950">{product.name}</p>
-                    <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+                    <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500 sm:text-xs">
                       EAN-13 {getProductEan13Value(product)}
                     </p>
                   </div>
-                  <p className="truncate text-sm font-semibold text-slate-600">
-                    {product.category || "Chưa phân nhóm"}
-                  </p>
-                  <Badge className="w-fit" tone={product.is_active ? "green" : "neutral"}>
-                    {product.is_active ? "Đang bán" : "Đang ẩn"}
-                  </Badge>
-                  <div className="flex items-center justify-between md:block md:text-right">
-                    <span className="text-xs font-bold text-slate-400 md:hidden">Số lượng</span>
+                  <div className="col-start-1 row-start-2 flex min-w-0 items-center gap-2 md:contents">
+                    <p className="min-w-0 truncate text-xs font-semibold text-slate-600 md:text-sm">
+                      {product.category || "Chưa phân nhóm"}
+                    </p>
+                    <Badge
+                      className="w-fit flex-none px-2 py-0.5 text-[10px] md:px-3 md:py-1 md:text-xs"
+                      tone={product.is_active ? "green" : "neutral"}
+                    >
+                      {product.is_active ? "Đang bán" : "Đang ẩn"}
+                    </Badge>
+                  </div>
+                  <div
+                    className={`col-start-2 row-span-2 row-start-1 flex min-w-[58px] flex-col items-end justify-center self-stretch rounded-xl px-2.5 py-1.5 md:col-start-auto md:row-span-1 md:row-start-auto md:block md:min-w-0 md:self-auto md:bg-transparent md:p-0 md:text-right ${
+                      product.stock <= 0
+                        ? "bg-red-100/70"
+                        : product.stock <= 5
+                          ? "bg-amber-100/70"
+                          : "bg-slate-100"
+                    }`}
+                  >
+                    <span className="text-[9px] font-extrabold uppercase tracking-wide text-slate-400 md:hidden">
+                      Số lượng
+                    </span>
                     <span
-                      className={`text-xl font-extrabold tabular-nums ${
+                      className={`text-lg font-black tabular-nums md:text-xl ${
                         product.stock <= 0
                           ? "text-red-600"
                           : product.stock <= 5

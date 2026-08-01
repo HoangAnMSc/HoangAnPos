@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -58,10 +59,10 @@ export function Modal({
     return null;
   }
 
-  return (
+  return createPortal(
     <div
       aria-modal="true"
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed left-0 top-0 z-[100] m-0 flex h-dvh w-screen items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
     >
       <div
@@ -96,6 +97,7 @@ export function Modal({
           </footer>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

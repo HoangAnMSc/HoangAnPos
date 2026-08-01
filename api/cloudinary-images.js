@@ -1,16 +1,43 @@
 import { createHash } from "node:crypto";
-import { authorizeApiRequest } from "./_auth.js";
+import { authorizeApiRequest, userHasAnyPermission } from "./_auth.js";
 
 function sendJson(response, statusCode, body) {
   response.statusCode = statusCode;
+  response.setHeader("Cache-Control", "no-store");
   response.setHeader("Content-Type", "application/json");
   response.end(JSON.stringify(body));
 }
 
-function createSignature(publicId, timestamp, apiSecret) {
+function createSignature(parameters, apiSecret) {
+  const payload = Object.entries(parameters)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+
   return createHash("sha1")
-    .update(`invalidate=true&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`)
+    .update(`${payload}${apiSecret}`)
     .digest("hex");
+}
+
+async function readJsonBody(request) {
+  if (request.body && typeof request.body === "object") return request.body;
+
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += String(chunk ?? "");
+      if (body.length > 1_000_000) reject(new Error("Request body is too large."));
+    });
+    request.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.on("error", reject);
+  });
 }
 
 function getCloudinaryConfig() {
@@ -30,9 +57,31 @@ function createBasicAuthHeader(apiKey, apiSecret) {
 }
 
 export default async function handler(request, response) {
+  let body = {};
+  if (request.method === "POST") {
+    try {
+      body = await readJsonBody(request);
+    } catch (error) {
+      sendJson(response, 400, {
+        message: error instanceof Error ? error.message : "Invalid JSON body.",
+        ok: false,
+      });
+      return;
+    }
+  }
+
+  const signingUpload = request.method === "POST" && body.action === "sign-upload";
   const auth = await authorizeApiRequest(
     request,
-    request.method === "POST"
+    signingUpload
+      ? [
+          "cloudinary-images.upload",
+          "products.create",
+          "products.update",
+          "pos.payment-proof.upload",
+          "payment-settings.update",
+        ]
+      : request.method === "POST"
       ? ["cloudinary-images.delete"]
       : ["cloudinary-images", "products.create", "products.update"]
   );
@@ -53,7 +102,47 @@ export default async function handler(request, response) {
   }
 
   if (request.method === "GET") {
-    await listCloudinaryImages(response, config);
+    const canBrowseAll = await userHasAnyPermission(auth.admin, auth.user, ["cloudinary-images"]);
+    await listCloudinaryImages(
+      response,
+      config,
+      canBrowseAll ? null : "hoang-an-pos/products/"
+    );
+    return;
+  }
+
+  if (signingUpload) {
+    const folderPermissions = {
+      "hoang-an-pos/payment-proofs": ["pos.payment-proof.upload"],
+      "hoang-an-pos/payment-qr": ["payment-settings.update"],
+      "hoang-an-pos/products": [
+        "cloudinary-images.upload",
+        "products.create",
+        "products.update",
+      ],
+    };
+    const folder = typeof body.folder === "string" ? body.folder.trim() : "";
+    const allowedPermissions = folderPermissions[folder];
+
+    if (!allowedPermissions) {
+      sendJson(response, 400, { message: "Upload folder is not allowed.", ok: false });
+      return;
+    }
+
+    if (!(await userHasAnyPermission(auth.admin, auth.user, allowedPermissions))) {
+      sendJson(response, 403, { message: "Permission denied for this upload folder.", ok: false });
+      return;
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    sendJson(response, 200, {
+      apiKey: config.apiKey,
+      cloudName: config.cloudName,
+      folder,
+      ok: true,
+      signature: createSignature({ folder, timestamp }, config.apiSecret),
+      timestamp,
+    });
     return;
   }
 
@@ -62,8 +151,7 @@ export default async function handler(request, response) {
     return;
   }
 
-  const publicId =
-    typeof request.body?.publicId === "string" ? request.body.publicId.trim() : "";
+  const publicId = typeof body.publicId === "string" ? body.publicId.trim() : "";
 
   if (!publicId) {
     sendJson(response, 400, { message: "Missing publicId.", ok: false });
@@ -73,7 +161,7 @@ export default async function handler(request, response) {
   await deleteCloudinaryImage(response, config, publicId);
 }
 
-async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }) {
+async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }, allowedPrefix) {
   const resources = [];
   let nextCursor = "";
 
@@ -106,7 +194,11 @@ async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }) 
         return;
       }
 
-      resources.push(...(data.resources ?? []));
+      resources.push(
+        ...(data.resources ?? []).filter(
+          (resource) => !allowedPrefix || resource.public_id?.startsWith(allowedPrefix)
+        )
+      );
       nextCursor = data.next_cursor ?? "";
     } while (nextCursor);
 
@@ -121,7 +213,7 @@ async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }) 
 
 async function deleteCloudinaryImage(response, { apiKey, apiSecret, cloudName }, publicId) {
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const signature = createSignature(publicId, timestamp, apiSecret);
+  const signature = createSignature({ invalidate: true, public_id: publicId, timestamp }, apiSecret);
   const formData = new FormData();
   formData.append("api_key", apiKey);
   formData.append("invalidate", "true");

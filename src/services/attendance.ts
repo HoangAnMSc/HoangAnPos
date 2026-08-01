@@ -1,5 +1,12 @@
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { AttendanceRecord } from "../types";
+import type { Database } from "../types/database";
+
+export type AttendanceCashCheck = Database["public"]["Tables"]["cash_drawer_checks"]["Row"];
+
+export type AttendanceHistoryRecord = AttendanceRecord & {
+  employee_name: string;
+};
 
 export type AttendanceLocationInput = {
   accuracy: number | null;
@@ -33,7 +40,7 @@ function createAttendanceError(error: SupabaseErrorLike) {
 
   if (
     error.code === "PGRST202" ||
-    message.includes("Could not find thể function") ||
+    message.includes("Could not find the function") ||
     message.includes("clock_in_attendance")
   ) {
     return new Error(
@@ -123,6 +130,57 @@ export async function fetchAttendanceRecords(userId: string, monthKey: string) {
   }
 
   return data ?? [];
+}
+
+export async function fetchAllAttendanceRecords(monthKey: string) {
+  requireSupabaseConfig();
+
+  const range = getMonthRange(monthKey);
+  const { data, error } = await supabase.rpc("list_attendance_history", {
+    month_start_input: range.start,
+  });
+
+  if (error) {
+    throw createAttendanceError(error);
+  }
+
+  return (data ?? []) as AttendanceHistoryRecord[];
+}
+
+export async function fetchAttendanceCashCheck(attendanceRecordId: string) {
+  requireSupabaseConfig();
+
+  const { data, error } = await supabase
+    .from("cash_drawer_checks")
+    .select("*")
+    .eq("attendance_record_id", attendanceRecordId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as AttendanceCashCheck | null;
+}
+
+export async function submitAttendanceCashCheck(
+  attendanceRecordId: string,
+  actualCash: number,
+  reason: string | null
+) {
+  requireSupabaseConfig();
+
+  const { data, error } = await supabase.rpc("submit_attendance_cash_check", {
+    actual_cash_input: Math.max(actualCash, 0),
+    attendance_record_id_input: attendanceRecordId,
+    reason_input: reason,
+  });
+
+  if (error) {
+    throw createAttendanceError(error);
+  }
+
+  return data as AttendanceCashCheck;
 }
 
 export async function fetchAttendanceEmployees(): Promise<AttendanceEmployee[]> {

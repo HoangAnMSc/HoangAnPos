@@ -11,6 +11,7 @@ import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
 import { getErrorMessage } from "../lib/errors";
 import { formatDateTime } from "../lib/format";
+import { formatPhoneNumber, normalizePhoneNumber } from "../lib/phone";
 import {
   createManagedUser,
   deleteManagedUser,
@@ -29,6 +30,7 @@ const emptyUserForm: UserFormState = {
   full_name: "",
   is_active: true,
   password: "",
+  phone: "",
   role_id: "",
 };
 
@@ -45,6 +47,7 @@ function userToForm(user: ManagedUser | null, roles: AppRole[]): UserFormState {
     full_name: user.full_name ?? "",
     is_active: user.is_active,
     password: "",
+    phone: formatPhoneNumber(user.phone),
     role_id: user.role_id ?? roles[0]?.id ?? "",
   };
 }
@@ -122,8 +125,8 @@ function UserEditorModal({
     event.preventDefault();
     setError("");
 
-    if (!form.email.trim() || !form.role_id) {
-      setError("Nhập email và chọn vai trò.");
+    if (!form.phone.trim() || !form.role_id) {
+      setError("Nhập số điện thoại và chọn vai trò.");
       return;
     }
 
@@ -138,6 +141,7 @@ function UserEditorModal({
         email: form.email.trim(),
         full_name: form.full_name.trim(),
         password: form.password || undefined,
+        phone: normalizePhoneNumber(form.phone),
       });
     } catch (requestError) {
       setError(getErrorMessage(requestError, "Lưu nhân viên thất bại."));
@@ -180,13 +184,31 @@ function UserEditorModal({
       <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
-            label="Email"
+            autoComplete="tel"
+            label="Số điện thoại *"
+            onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
+            placeholder="0901234567"
+            required
+            type="tel"
+            value={form.phone}
+          />
+          <Input
+            autoComplete="email"
+            label="Email (không bắt buộc)"
             onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+            placeholder="nhanvien@example.com"
             type="email"
             value={form.email}
           />
           <Input
+            label="Tên hiển thị"
+            onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))}
+            value={form.full_name}
+          />
+          <Input
+            autoComplete="new-password"
             label={user ? "Mật khẩu mới (bỏ trống nếu không đổi)" : "Mật khẩu"}
+            minLength={6}
             onChange={(event) =>
               setForm((current) => ({ ...current, password: event.target.value }))
             }
@@ -194,12 +216,6 @@ function UserEditorModal({
             value={form.password}
           />
         </div>
-
-        <Input
-          label="Tên hiển thị"
-          onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))}
-          value={form.full_name}
-        />
 
         <label className="block">
           <span className="mb-2 block text-sm font-extrabold text-slate-950">Vai trò</span>
@@ -340,6 +356,7 @@ export function UsersPage() {
         email: user.email,
         full_name: user.full_name ?? "",
         is_active: !user.is_active,
+        phone: user.phone,
         role_id: user.role_id ?? roles[0]?.id ?? "",
       });
       setModalOpen(false);
@@ -359,7 +376,7 @@ export function UsersPage() {
       return;
     }
 
-    if (!window.confirm(`Xóa nhân viên "${user.email}"?`)) {
+    if (!window.confirm(`Xóa nhân viên "${user.full_name || formatPhoneNumber(user.phone) || user.email}"?`)) {
       return;
     }
 
@@ -380,7 +397,7 @@ export function UsersPage() {
   const normalizedQuery = query.trim().toLowerCase();
   const filteredUsers = users.filter((user) => {
     const online = getOnlineState(user.last_seen_at);
-    return [user.email, user.full_name, user.role?.name, user.is_active ? "hoạt động" : "vô hiệu hóa", online.label]
+    return [user.phone, formatPhoneNumber(user.phone), user.email, user.full_name, user.role?.name, user.is_active ? "hoạt động" : "vô hiệu hóa", online.label]
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedQuery));
   });
@@ -394,7 +411,7 @@ export function UsersPage() {
               <Input
                 className="h-10 rounded-xl py-2 pl-11"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Tìm email, tên, vai trò hoặc trạng thái..."
+                placeholder="Tìm số điện thoại, email, tên hoặc vai trò..."
                 value={query}
               />
             </div>
@@ -438,8 +455,17 @@ export function UsersPage() {
                     type="button"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-base font-extrabold text-coal">{user.full_name || user.email}</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-coal/45">{user.email}</p>
+                      <p className="truncate text-base font-extrabold text-coal">
+                        {user.full_name || formatPhoneNumber(user.phone) || user.email}
+                      </p>
+                      <p className="mt-1 truncate text-sm font-semibold text-coal/55">
+                        {formatPhoneNumber(user.phone)}
+                      </p>
+                      {user.email ? (
+                        <p className="mt-0.5 truncate text-xs font-semibold text-coal/40">
+                          {user.email}
+                        </p>
+                      ) : null}
                       <div className="mt-2 flex flex-wrap gap-1.5 lg:hidden">
                         <Badge tone="neutral">{user.role?.name ?? "Chưa gán vai trò"}</Badge>
                         <Badge tone={user.is_active ? "green" : "red"}>
@@ -496,14 +522,21 @@ export function UsersPage() {
       >
         {viewingUser ? (
           <div className="space-y-6">
-            <div className="flex justify-between rounded-xl bg-slate-50 p-4">
-              <h3 className="truncate text-lg font-extrabold text-slate-950">
-                {viewingUser.full_name || viewingUser.email}
-              </h3>
-              <p className="mt-1 truncate text-sm font-semibold text-slate-500">
-                {viewingUser.email}
-              </p>
-              <div>
+            <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-4">
+              <div className="min-w-0">
+                <h3 className="truncate text-lg font-extrabold text-slate-950">
+                  {viewingUser.full_name || formatPhoneNumber(viewingUser.phone) || viewingUser.email}
+                </h3>
+                <p className="mt-1 truncate text-sm font-semibold text-slate-600">
+                  {formatPhoneNumber(viewingUser.phone)}
+                </p>
+                {viewingUser.email ? (
+                  <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">
+                    {viewingUser.email}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
                 <Badge tone="neutral">{viewingUser.role?.name ?? "Chưa gán vai trò"}</Badge>
                 <Badge tone={viewingUser.is_active ? "green" : "red"}>
                   {viewingUser.is_active ? "Hoạt động" : "Vô hiệu hóa"}

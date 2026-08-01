@@ -4,7 +4,7 @@ import {
   type CloudinaryImageUpload,
 } from "../lib/cloudinary";
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
-import type { CloudinaryImage, Product } from "../types";
+import type { CloudinaryImage } from "../types";
 
 function isMissingCloudinaryImagesTable(error: unknown) {
   return (
@@ -142,15 +142,13 @@ export async function deleteCloudinaryImageRecord(imageUrl: string) {
 export async function clearProductsImageUrl(imageUrl: string) {
   requireSupabaseConfig();
 
-  const { data, error } = await supabase
-    .from("products")
-    .update({ image_url: null })
-    .eq("image_url", imageUrl)
-    .select("*");
+  const { data, error } = await supabase.rpc("clear_products_image_url", {
+    image_url_input: imageUrl,
+  });
 
   if (error) {
     throw error;
   }
 
-  return (data ?? []) as Product[];
+  return Number(data ?? 0);
 }

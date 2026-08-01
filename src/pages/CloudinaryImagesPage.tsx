@@ -1,11 +1,11 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Image as ImageIcon, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Image as ImageIcon, Trash2, Upload } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
-import { Input } from "../components/ui/Input";
+import { Modal } from "../components/ui/Modal";
 import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
@@ -129,7 +129,7 @@ export function CloudinaryImagesPage() {
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [images, setImages] = useState<ImageLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState("");
+  const [previewImage, setPreviewImage] = useState<ImageLibraryItem | null>(null);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(() => new Set());
   const [uploading, setUploading] = useState(false);
   const canUploadImage = canAccess("cloudinary-images.upload");
@@ -174,26 +174,12 @@ export function CloudinaryImagesPage() {
     void loadImages();
   }, [loadImages]);
 
-  const filteredImages = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return images;
-    }
-
-    return images.filter((item) =>
-      [item.url, item.publicId, item.format, ...item.products.map((product) => product.name)]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(normalizedQuery))
-    );
-  }, [images, query]);
-
   const selectedItems = useMemo(
-    () => filteredImages.filter((item) => selectedUrls.has(item.url)),
-    [filteredImages, selectedUrls]
+    () => images.filter((item) => selectedUrls.has(item.url)),
+    [images, selectedUrls]
   );
   const allFilteredSelected =
-    filteredImages.length > 0 && filteredImages.every((item) => selectedUrls.has(item.url));
+    images.length > 0 && images.every((item) => selectedUrls.has(item.url));
   const deleting = deletingUrls.length > 0;
 
   function toggleImageSelection(imageUrl: string) {
@@ -223,9 +209,9 @@ export function CloudinaryImagesPage() {
       const nextSelected = new Set(current);
 
       if (allFilteredSelected) {
-        filteredImages.forEach((item) => nextSelected.delete(item.url));
+        images.forEach((item) => nextSelected.delete(item.url));
       } else {
-        filteredImages.forEach((item) => nextSelected.add(item.url));
+        images.forEach((item) => nextSelected.add(item.url));
       }
 
       return nextSelected;
@@ -289,6 +275,7 @@ export function CloudinaryImagesPage() {
         urls.forEach((url) => nextSelected.delete(url));
         return nextSelected;
       });
+      setPreviewImage((current) => (current && urls.includes(current.url) ? null : current));
       await loadImages();
     } catch (requestError) {
       setErrorNotice({
@@ -314,55 +301,36 @@ export function CloudinaryImagesPage() {
   const cloudinaryCount = images.filter((item) => item.cloudinary).length;
 
   return (
-    <PageContainer>
+    <PageContainer className={selectedItems.length > 0 ? "!pb-28" : undefined}>
         <ConfigNotice />
 
-        <section className="rounded-3xl bg-white p-5 shadow-soft ring-1 ring-coal/5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <section className="rounded-2xl bg-white p-3 shadow-soft ring-1 ring-coal/5 sm:p-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <div className="flex flex-wrap gap-2">
-                <Badge tone="neutral">{images.length} ảnh</Badge>
-                <Badge tone="neutral">{cloudinaryCount} Cloudinary</Badge>
-                <Badge tone="green">{usedCount} đang dùng</Badge>
-                {unusedCount > 0 ? <Badge tone="amber">{unusedCount} chưa gắn</Badge> : null}
+              <div className="flex flex-wrap gap-1.5">
+                <Badge className="px-2.5 py-1" tone="neutral">{images.length} ảnh</Badge>
+                <Badge className="px-2.5 py-1" tone="neutral">{cloudinaryCount} Cloudinary</Badge>
+                <Badge className="px-2.5 py-1" tone="green">{usedCount} đang dùng</Badge>
+                {unusedCount > 0 ? (
+                  <Badge className="px-2.5 py-1" tone="amber">{unusedCount} chưa gắn</Badge>
+                ) : null}
               </div>
             </div>
 
-            <div className="grid gap-2 sm:flex sm:w-auto">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
               {canDeleteImage ? (
-                <>
-                  <Button
-                    className="w-full sm:w-auto"
-                    disabled={filteredImages.length === 0 || deleting}
-                    onClick={toggleFilteredSelection}
-                    variant="secondary"
-                  >
-                    {allFilteredSelected ? "Bỏ chọn" : "Chọn tất cả"}
-                  </Button>
-                  <Button
-                    className="w-full sm:w-auto"
-                    disabled={selectedItems.length === 0 || deleting}
-                    isLoading={deleting}
-                    onClick={() => void handleDeleteSelected()}
-                    variant="danger"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Xóa đã chọn ({selectedItems.length})
-                  </Button>
-                </>
+                <Button
+                  className="!min-h-9 w-full !rounded-lg !px-3 !py-1.5 !text-xs sm:w-auto"
+                  disabled={images.length === 0 || deleting}
+                  onClick={toggleFilteredSelection}
+                  variant="secondary"
+                >
+                  {allFilteredSelected ? "Bỏ chọn" : "Chọn tất cả"}
+                </Button>
               ) : null}
-              <Button
-                className="w-full sm:w-auto"
-                disabled={loading || deleting}
-                onClick={() => void loadImages()}
-                variant="secondary"
-              >
-                <RefreshCw className="h-4 w-4" />
-                Tải lại
-              </Button>
               {canUploadImage ? (
                 <label
-                  className={`inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-coal px-4 py-2.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:shadow-lift ${
+                  className={`inline-flex min-h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-coal px-3 py-1.5 text-xs font-bold text-white transition hover:bg-ink ${
                     uploading || deleting ? "pointer-events-none opacity-60" : ""
                   }`}
                 >
@@ -373,47 +341,37 @@ export function CloudinaryImagesPage() {
               ) : null}
             </div>
           </div>
-
-          <div className="relative mt-4 w-full xl:max-w-[42vw]">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
-            <Input
-              className="pl-11"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm theo tên sản phẩm, public_id..."
-              value={query}
-            />
-          </div>
         </section>
 
         {loading ? (
           <div className="rounded-3xl bg-white p-8 shadow-soft">
             <Spinner label="Đang tải ảnh..." />
           </div>
-        ) : filteredImages.length === 0 ? (
+        ) : images.length === 0 ? (
           <EmptyState
             description="Ảnh tải lên Cloudinary sẽ hiển thị tại đây."
             icon={ImageIcon}
-            title="Chưa có ảnh phù hợp"
+            title="Chưa có ảnh"
           />
         ) : (
-          <div className="grid gap-4 xl:grid-cols-[repeat(auto-fit,minmax(200px,1fr))] grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
-            {filteredImages.map((item) => {
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))] sm:gap-4">
+            {images.map((item) => {
               const busy = deletingUrls.includes(item.url);
               const selected = selectedUrls.has(item.url);
 
               return (
                 <article
-                  className={`relative overflow-hidden rounded-2xl border bg-white shadow-soft transition ${
+                  className={`relative overflow-hidden rounded-2xl border bg-white shadow-soft transition hover:-translate-y-0.5 hover:shadow-lift ${
                     selected ? "border-red-300 ring-4 ring-red-50" : "border-slate-100"
                   }`}
                   key={item.url}
                 >
                   {canDeleteImage ? (
-                    <label className="absolute left-3 top-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl bg-white/95 shadow-sm ring-1 ring-slate-200">
+                    <label className="absolute left-2 top-2 z-10 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-white/95 shadow-sm ring-1 ring-slate-200">
                       <input
                         aria-label={`Chọn ảnh ${item.publicId ?? item.url}`}
                         checked={selected}
-                        className="h-5 w-5 accent-red-600"
+                        className="h-4 w-4 accent-red-600"
                         disabled={busy || deleting}
                         onChange={() => toggleImageSelection(item.url)}
                         type="checkbox"
@@ -421,14 +379,68 @@ export function CloudinaryImagesPage() {
                     </label>
                   ) : null}
 
-                  <div className="aspect-square bg-slate-100">
-                    <img alt={item.publicId ?? "Cloudinary"} className="h-full w-full object-cover" src={item.url} />
-                  </div>
+                  <button
+                    aria-label={`Xem ảnh ${item.publicId ?? item.url}`}
+                    className="group relative block aspect-square w-full overflow-hidden bg-slate-100 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-moss-300"
+                    onClick={() => setPreviewImage(item)}
+                    type="button"
+                  >
+                    <img
+                      alt={item.publicId ?? "Cloudinary"}
+                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      src={item.url}
+                    />
+                  </button>
                 </article>
               );
             })}
           </div>
         )}
+
+      {canDeleteImage && selectedItems.length > 0 ? (
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-red-100 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-14px_36px_rgba(15,23,42,0.14)] backdrop-blur-xl lg:left-72">
+          <div className="mx-auto flex w-full max-w-3xl items-center gap-2 sm:justify-end">
+            <p className="mr-auto min-w-0 truncate text-sm font-extrabold text-slate-700">
+              Đã chọn {selectedItems.length} ảnh
+            </p>
+            <Button
+              className="!min-h-10 !rounded-lg !px-3 !py-2 !text-xs"
+              disabled={deleting}
+              onClick={() => setSelectedUrls(new Set())}
+              variant="secondary"
+            >
+              Bỏ chọn
+            </Button>
+            <Button
+              className="!min-h-10 !rounded-lg !px-3 !py-2 !text-xs"
+              isLoading={deleting}
+              onClick={() => void handleDeleteSelected()}
+              variant="danger"
+            >
+              <Trash2 className="h-4 w-4" />
+              Xóa ảnh
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <Modal
+        bodyClassName="!p-3 sm:!p-4"
+        onClose={() => setPreviewImage(null)}
+        open={Boolean(previewImage)}
+        size="wide"
+        title="Xem ảnh"
+      >
+        {previewImage ? (
+          <div className="flex min-h-64 items-center justify-center overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#f1f5f9,#e2e8f0)] p-2 sm:min-h-[560px]">
+            <img
+              alt="Ảnh xem trước"
+              className="max-h-[68dvh] w-full object-contain"
+              src={previewImage.url}
+            />
+          </div>
+        ) : null}
+      </Modal>
 
       <ErrorNoticeModal notice={errorNotice} onClose={() => setErrorNotice(null)} />
     </PageContainer>

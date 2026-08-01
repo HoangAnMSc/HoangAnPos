@@ -7,6 +7,7 @@ import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNotice
 import { Modal } from "../components/ui/Modal";
 import { PageContainer, PageToolbar, SearchInput } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
+import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import { formatCurrency, formatDateTime } from "../lib/format";
 import { getErrorMessage } from "../lib/errors";
@@ -55,6 +56,7 @@ export function OrdersPage() {
   const { canAccess } = useAuth();
   const [activeList, setActiveList] = useState<"paid" | "cancelled">("paid");
   const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
@@ -167,10 +169,15 @@ export function OrdersPage() {
     const paidSelected = selected.filter((order) => order.status === "paid").length;
     const stockNotice = paidSelected > 0 ? ` ${paidSelected} hóa đơn thành công sẽ được hoàn hàng vào kho.` : "";
     if (!window.confirm(`Xóa vĩnh viễn ${selected.length} hóa đơn đã chọn?${stockNotice} Thao tác này không thể hoàn tác.`)) return;
+    const deleteReason = window.prompt("Nhập lý do xóa để lưu nhật ký kiểm toán:")?.trim();
+    if (!deleteReason) {
+      setErrorNotice({ message: "Cần nhập lý do trước khi xóa hóa đơn.", title: "Thiếu lý do xóa" });
+      return;
+    }
 
     setDeleting(true);
     try {
-      await deleteOrders(selected.map((order) => order.id));
+      await deleteOrders(selected.map((order) => order.id), deleteReason);
       setOrders((current) => current.filter((order) => !selectedOrderIds.has(order.id)));
       if (selectedOrder && selectedOrderIds.has(selectedOrder.id)) setSelectedOrder(null);
       setSelectedOrderIds(new Set());
@@ -186,6 +193,14 @@ export function OrdersPage() {
       return;
     }
 
+    if (!cancelReason.trim()) {
+      setErrorNotice({
+        message: "Nhập lý do để lưu dấu vết kiểm toán trước khi hủy hóa đơn.",
+        title: "Thiếu lý do hủy",
+      });
+      return;
+    }
+
     const confirmed = window.confirm(
       `Hủy hóa đơn ${selectedOrder.code}? Số lượng sản phẩm sẽ được hoàn lại vào kho.`
     );
@@ -196,7 +211,8 @@ export function OrdersPage() {
 
     setCancelling(true);
     try {
-      await cancelOrder(selectedOrder.id);
+      await cancelOrder(selectedOrder.id, cancelReason);
+      setCancelReason("");
       setSelectedOrder(null);
       setActiveList("cancelled");
       await loadOrders();
@@ -413,12 +429,12 @@ export function OrdersPage() {
                 Hủy hóa đơn
               </Button>
             ) : null}
-            <Button onClick={() => setSelectedOrder(null)} type="button" variant="secondary">
+            <Button onClick={() => { setSelectedOrder(null); setCancelReason(""); }} type="button" variant="secondary">
               Đóng
             </Button>
           </div>
         }
-        onClose={() => setSelectedOrder(null)}
+        onClose={() => { setSelectedOrder(null); setCancelReason(""); }}
         open={Boolean(selectedOrder)}
         size="xl"
         title={selectedOrder ? `Hóa đơn ${selectedOrder.code}` : "Hóa đơn"}
@@ -506,6 +522,23 @@ export function OrdersPage() {
                 </p>
                 <p className="mt-2 whitespace-pre-line font-bold text-slate-900">
                   {selectedOrder.payment_proof_note}
+                </p>
+              </div>
+            ) : null}
+            {selectedOrder.status === "paid" && canCancelOrder ? (
+              <Textarea
+                label="Lý do hủy hóa đơn"
+                onChange={(event) => setCancelReason(event.target.value)}
+                placeholder="Bắt buộc để phục vụ kiểm toán và đối soát"
+                rows={3}
+                value={cancelReason}
+              />
+            ) : null}
+            {selectedOrder.status === "cancelled" && selectedOrder.cancel_reason ? (
+              <div className="rounded-2xl bg-red-50 px-4 py-3">
+                <p className="text-sm font-extrabold uppercase text-red-700">Lý do hủy</p>
+                <p className="mt-2 whitespace-pre-line font-bold text-red-950">
+                  {selectedOrder.cancel_reason}
                 </p>
               </div>
             ) : null}

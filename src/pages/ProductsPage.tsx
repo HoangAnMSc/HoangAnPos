@@ -85,8 +85,8 @@ const emptyForm: ProductFormState = {
 };
 
 const fieldClassName =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-moss-400 focus:ring-4 focus:ring-moss-100 sm:px-5 sm:py-4 sm:text-base";
-const labelClassName = "mb-2 block text-sm font-extrabold text-slate-950";
+  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-moss-400 focus:ring-4 focus:ring-moss-100";
+const labelClassName = "mb-1.5 block text-xs font-extrabold text-slate-700";
 
 function productToForm(product?: Product | null, initialEan13 = ""): ProductFormState {
   if (!product) {
@@ -653,13 +653,13 @@ function ProductForm({
     <>
       <form id={formId} onSubmit={handleSubmit}>
         <section className="space-y-3">
-          <h3 className="text-sm font-extrabold text-slate-950">Media</h3>
+          <h3 className="text-sm font-extrabold text-slate-950">Hình ảnh</h3>
           <button
-            className="flex w-full items-center gap-4 rounded-2xl bg-white px-4 py-3 text-left transition hover:bg-slate-50 sm:max-w-sm"
+            className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-moss-300 hover:bg-moss-50 sm:max-w-sm"
             onClick={() => setMediaOpen(true)}
             type="button"
           >
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-50 text-slate-950">
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-50 text-slate-950">
               {previewUrl ? (
                 <img alt="Product" className="h-full w-full rounded-xl object-cover" src={previewUrl} />
               ) : (
@@ -667,10 +667,10 @@ function ProductForm({
               )}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-base font-extrabold text-slate-950">Thêm ảnh</span>
+              <span className="block text-sm font-extrabold text-slate-950">Thêm ảnh</span>
               {previewUrl ? (
                 <span className="block truncate text-xs font-semibold text-slate-500">
-                  Media selected
+                  Đã chọn hình ảnh
                 </span>
               ) : null}
             </span>
@@ -683,7 +683,7 @@ function ProductForm({
           <input
             className={fieldClassName}
             onChange={(event) => updateField("name", event.target.value)}
-            placeholder="Enter product title"
+            placeholder="Nhập tên sản phẩm"
             required
             value={form.name}
           />
@@ -691,10 +691,10 @@ function ProductForm({
 
         {canSetVisibility ? (
           <section className="space-y-3">
-            <h3 className="text-sm font-extrabold text-slate-950">Status</h3>
-            <div className="grid gap-3 sm:grid-cols-2 sm:gap-40">
+            <h3 className="text-sm font-extrabold text-slate-950">Hiển thị sản phẩm</h3>
+            <div className="grid grid-cols-2 gap-2">
               <button
-                className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
+                className={`flex h-12 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition ${
                   form.is_active
                     ? "border-moss-500 bg-moss-50 text-moss-700"
                     : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
@@ -702,13 +702,13 @@ function ProductForm({
                 onClick={() => updateField("is_active", true)}
                 type="button"
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-moss-700 shadow-sm">
-                  <Eye className="h-5 w-5" />
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-moss-700 shadow-sm">
+                  <Eye className="h-4 w-4" />
                 </span>
-                Hien thi
+                Hiển thị
               </button>
               <button
-                className={`flex h-16 items-center gap-3 rounded-2xl border px-5 text-base font-bold transition ${
+                className={`flex h-12 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition ${
                   !form.is_active
                     ? "border-red-500 bg-red-50 text-red-700"
                     : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
@@ -716,10 +716,10 @@ function ProductForm({
                 onClick={() => updateField("is_active", false)}
                 type="button"
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-700 shadow-sm">
-                  <EyeOff className="h-5 w-5" />
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-red-700 shadow-sm">
+                  <EyeOff className="h-4 w-4" />
                 </span>
-                An
+                Ẩn
               </button>
             </div>
           </section>
@@ -728,9 +728,9 @@ function ProductForm({
         <label className="block">
           <span className={labelClassName}>Mô tả</span>
           <textarea
-            className={`${fieldClassName} min-h-32 resize-none sm:min-h-36`}
+            className={`${fieldClassName} min-h-24 resize-none`}
             onChange={(event) => updateField("description", event.target.value)}
-            placeholder="Product description"
+            placeholder="Nhập mô tả ngắn"
             value={form.description}
           />
         </label>
@@ -752,18 +752,18 @@ function ProductForm({
             </select>
             {canCreateCategory ? (
               <button
-                className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:h-[58px] sm:px-5"
+                className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-moss-200 bg-moss-50 px-3 text-sm font-extrabold text-moss-700 transition hover:bg-moss-100"
                 onClick={openCategoryModal}
                 type="button"
               >
                 <Plus className="h-4 w-4" />
-                Add
+                Thêm
               </button>
             ) : null}
           </div>
         </label>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className={labelClassName}>Ngày nhập</span>
             <input
@@ -784,7 +784,7 @@ function ProductForm({
           </label>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className={labelClassName}>Giá vốn</span>
             <input
@@ -813,7 +813,7 @@ function ProductForm({
           </label>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className={labelClassName}>Số lượng</span>
             <input
@@ -846,13 +846,13 @@ function ProductForm({
                 value={form.ean13}
               />
               {ean13Locked ? (
-                <span className="inline-flex h-[46px] shrink-0 items-center justify-center rounded-2xl bg-moss-50 px-4 text-sm font-extrabold text-moss-700 sm:h-[58px]">
+                <span className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-moss-50 px-3 text-xs font-extrabold text-moss-700">
                   Đã chọn
                 </span>
               ) : (
                 <Button
                   aria-label="Quét EAN-13"
-                  className="h-[46px] shrink-0 px-4 sm:h-[58px]"
+                  className="h-10 min-h-10 shrink-0 bg-blue-50 px-3 text-blue-700 ring-blue-200 hover:bg-blue-100"
                   onClick={() => setEan13ScannerOpen(true)}
                   variant="secondary"
                 >
@@ -865,7 +865,7 @@ function ProductForm({
         </div>
 
         {error ? (
-          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          <div className="rounded-xl bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-700">
             {error}
           </div>
         ) : null}
@@ -992,12 +992,12 @@ function ProductEditorModal({
 
   return (
     <Modal
-      bodyClassName="sm:px-8 sm:py-7"
+      bodyClassName="sm:px-5 sm:py-4"
       footer={
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           {product && canDeleteProduct ? (
             <button
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-6 py-3 text-sm font-extrabold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-32"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-2.5 text-sm font-extrabold text-red-700 ring-1 ring-red-200 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-28"
               disabled={submitting}
               onClick={() => void onDelete(product)}
               type="button"
@@ -1010,15 +1010,15 @@ function ProductEditorModal({
           )}
           <div className="grid grid-cols-2 gap-2 sm:flex sm:w-auto">
             <button
-              className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:min-w-32"
+              className="min-h-10 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 transition hover:bg-slate-50 sm:min-w-28"
               onClick={onCancel}
               type="button"
             >
-              Cancel
+              Hủy
             </button>
             {canSubmit ? (
               <button
-                className="rounded-2xl bg-coal px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-coal/15 transition hover:bg-coal/90 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-44"
+                className="min-h-10 rounded-xl bg-moss-700 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-moss-800 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-40"
                 disabled={submitting}
                 form={formId}
                 type="submit"
@@ -1094,7 +1094,7 @@ function ProductDetailModal({
       footer={
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
           <button
-            className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-slate-50 sm:min-w-28"
+            className="min-h-10 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 transition hover:bg-slate-50 sm:min-w-24"
             onClick={onClose}
             type="button"
           >
@@ -1102,7 +1102,7 @@ function ProductDetailModal({
           </button>
           {canEditProduct ? (
             <button
-              className="rounded-2xl bg-coal px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-coal/15 transition hover:-translate-y-0.5 sm:min-w-32"
+              className="min-h-10 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-blue-700 sm:min-w-28"
               onClick={() => onEdit(product)}
               type="button"
             >
@@ -1116,9 +1116,9 @@ function ProductDetailModal({
       size="lg"
       title="Chi tiết sản phẩm"
     >
-      <div className="space-y-5">
-        <div className="flex flex-col gap-4 sm:flex-row">
-          <div className="h-28 w-28 shrink-0 overflow-hidden rounded-3xl bg-slate-100">
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-slate-100">
             {product.image_url ? (
               <img alt={product.name} className="h-full w-full object-cover" src={product.image_url} />
             ) : (
@@ -1135,16 +1135,16 @@ function ProductDetailModal({
               </Badge>
               <Badge tone={getExpiryTone(expiryStatus)}>{getExpiryLabel(expiryStatus)}</Badge>
             </div>
-            <h3 className="mt-3 font-display text-2xl font-bold text-coal">{product.name}</h3>
-            <p className="mt-2 text-sm leading-6 text-coal/60">
+            <h3 className="mt-2 font-display text-xl font-bold text-coal sm:text-2xl">{product.name}</h3>
+            <p className="mt-1.5 text-sm leading-5 text-coal/60">
               {product.description || "Chưa có mô tả sản phẩm."}
             </p>
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2">
           {detailItems.map((item) => (
-            <div className="rounded-2xl bg-slate-50 px-4 py-3" key={item.label}>
+            <div className="rounded-xl bg-slate-50 px-3 py-2.5" key={item.label}>
               <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
                 {item.label}
               </p>
@@ -1162,11 +1162,11 @@ function ProductDetailModal({
           </div>
 
           {activeBatches.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-bold text-slate-500">
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-sm font-bold text-slate-500">
               Chưa có lô nhập kho nào còn hàng.
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-slate-100">
+            <div className="overflow-hidden rounded-xl border border-slate-100">
               <div className="hidden grid-cols-[1fr_1fr_110px_120px] gap-3 bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500 sm:grid">
                 <span>Ngày nhập</span>
                 <span>Hạn sử dụng</span>
@@ -1676,13 +1676,13 @@ export function ProductsPage() {
   const hiddenCount = products.filter((product) => !product.is_active).length;
 
   return (
-    <div className="w-full max-w-[100vw] px-2 sm:px-3">
+    <div className="w-full max-w-[100vw] px-0 sm:px-2">
       <ConfigNotice />
 
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-coal/10 p-3 sm:p-5">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-            <div className="min-w-0 space-y-3">
+        <div className="border-b border-coal/10 p-2.5 sm:p-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="min-w-0 space-y-2.5">
               <div className="flex flex-wrap gap-2">
                 <Badge tone="neutral">{products.length} mặt hàng</Badge>
                 {expiringSoonCount > 0 ? <Badge tone="amber">{expiringSoonCount} gần hết hạn</Badge> : null}
@@ -1691,45 +1691,48 @@ export function ProductsPage() {
               </div>
 
               <div className="relative w-full lg:max-w-2xl">
-                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
                 <Input
-                  className="pl-11"
+                  className="h-10 rounded-xl py-2 pl-9"
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Tìm theo tên, EAN-13, nhóm hàng..."
                   value={query}
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:w-auto lg:justify-end">
+            <div className="grid auto-cols-fr grid-flow-col gap-1.5 sm:flex sm:w-auto sm:gap-2 lg:justify-end">
               {canCreateProduct ? (
                 <Button
-                  className="order-first col-span-2 w-full sm:order-none sm:w-auto"
+                  className="w-full !bg-moss-700 px-2 !text-white hover:!bg-moss-800 sm:w-auto sm:px-4"
                   onClick={openCreateModal}
                 >
                   <PackagePlus className="h-4 w-4" />
-                  Thêm sản phẩm
+                  <span className="sm:hidden">Thêm</span>
+                  <span className="hidden sm:inline">Thêm sản phẩm</span>
                 </Button>
               ) : null}
               {canReceiveStock ? (
                 <Button
-                  className="w-full sm:w-auto"
+                  className="w-full !bg-blue-50 px-2 !text-blue-700 !ring-blue-200 hover:!bg-blue-100 sm:w-auto sm:px-4"
                   disabled={products.length === 0}
                   onClick={() => openReceiveModal()}
                   variant="secondary"
                 >
                   <PackagePlus className="h-4 w-4" />
-                  Nhập kho
+                  <span className="sm:hidden">Nhập</span>
+                  <span className="hidden sm:inline">Nhập kho</span>
                 </Button>
               ) : null}
               {canPrintEan13 ? (
                 <Button
-                  className="w-full sm:w-auto"
+                  className="w-full !bg-amber-50 px-2 !text-amber-700 !ring-amber-200 hover:!bg-amber-100 sm:w-auto sm:px-4"
                   disabled={products.length === 0}
                   onClick={() => setEan13LabelsOpen(true)}
                   variant="secondary"
                 >
                   <Barcode className="h-4 w-4" />
-                  Tạo EAN-13
+                  <span className="sm:hidden">EAN-13</span>
+                  <span className="hidden sm:inline">Tạo EAN-13</span>
                 </Button>
               ) : null}
             </div>
@@ -1737,17 +1740,17 @@ export function ProductsPage() {
         </div>
 
         {error && !modalOpen ? (
-          <div className="m-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 sm:m-5">
+          <div className="m-2.5 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-700 sm:m-4">
             {error}
           </div>
         ) : null}
 
         {loading ? (
-          <div className="p-6">
+          <div className="p-4">
             <Spinner />
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="p-5">
+          <div className="p-3">
             <EmptyState
               description="Thêm sản phẩm đầu tiên để POS có dữ liệu bán hàng."
               icon={Boxes}
@@ -1755,8 +1758,8 @@ export function ProductsPage() {
             />
           </div>
         ) : (
-          <div className="max-h-[62dvh] overflow-y-auto overscroll-contain p-2.5 sm:p-4">
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          <div className="max-h-[68dvh] overflow-y-auto overscroll-contain p-1.5 sm:p-3">
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {filteredProducts.map((product) => (
                 <ProductCard
                   compact

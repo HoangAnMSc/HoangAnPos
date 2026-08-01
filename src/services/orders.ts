@@ -1,5 +1,6 @@
 import { createOrderCode } from "../lib/format";
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
+import { ensureCashDrawerSessionForCheckout } from "./cashManagement";
 import type { CartItem } from "../types";
 
 export type PaymentMethod = "cash" | "transfer";
@@ -15,6 +16,40 @@ export type CreateSaleInput = {
   paymentProofNote?: string | null;
   paymentProofUrl?: string | null;
 };
+
+function readOrderErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  if (error && typeof error === "object" && "message" in error) {
+    const message = String(error.message ?? "").trim();
+    if (message) {
+      return message;
+    }
+  }
+
+  return "Tạo hóa đơn thất bại.";
+}
+
+function toOrderError(error: unknown) {
+  const message = readOrderErrorMessage(error);
+  const translations: Array<[RegExp, string]> = [
+    [
+      /open a cash drawer session before checkout/i,
+      "Chưa có phiên tiền két đang mở. Hãy chấm công và xác nhận tiền két trước khi thanh toán.",
+    ],
+    [/cash drawer is already open/i, "Tiền két đang thuộc ca khác. Cần kết thúc ca trước khi mở ca bán hàng mới."],
+    [/manager must initialize the first drawer balance/i, "Cần tài khoản quản lý xác nhận số tiền két đầu tiên."],
+    [/opening cash does not match the previous handover balance/i, "Tiền két đã xác nhận không khớp số bàn giao của ca trước."],
+    [/permission denied for order discount/i, "Tài khoản không có quyền áp dụng giảm giá."],
+    [/insufficient stock for selected date/i, "Số lượng trong lô đã chọn không còn đủ."],
+    [/insufficient stock for product/i, "Tồn kho sản phẩm không còn đủ để thanh toán."],
+    [/cash received is lower than total/i, "Số tiền khách đưa chưa đủ để thanh toán."],
+  ];
+  const translated = translations.find(([pattern]) => pattern.test(message))?.[1] ?? message;
+  return new Error(translated);
+}
 
 export async function createSale({
   cart,
@@ -36,7 +71,7 @@ export async function createSale({
   const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const safeDiscount = Math.min(Math.max(discount, 0), subtotal);
 
-  const { data: order, error } = await supabase.rpc("create_pos_order", {
+  const rpcInput = {
     cashier_id_input: cashierId,
     cash_received_input: Math.max(cashReceived, 0),
     code_input: createOrderCode(),
@@ -51,17 +86,28 @@ export async function createSale({
     payment_method_input: paymentMethod,
     payment_proof_note_input: paymentProofNote ?? null,
     payment_proof_url_input: paymentProofUrl ?? null,
-  });
+  };
 
-  if (error) {
-    throw error;
+  let result = await supabase.rpc("create_pos_order", rpcInput);
+
+  if (result.error && /open a cash drawer session before checkout/i.test(readOrderErrorMessage(result.error))) {
+    try {
+      await ensureCashDrawerSessionForCheckout();
+      result = await supabase.rpc("create_pos_order", rpcInput);
+    } catch (drawerError) {
+      throw toOrderError(drawerError);
+    }
   }
 
-  if (!order) {
+  if (result.error) {
+    throw toOrderError(result.error);
+  }
+
+  if (!result.data) {
     throw new Error("Supabase không trả về hóa đơn sau khi thanh toán.");
   }
 
-  return order;
+  return result.data;
 }
 
 export async function fetchOrders() {
@@ -81,11 +127,12 @@ export async function fetchOrders() {
   return data ?? [];
 }
 
-export async function cancelOrder(orderId: string) {
+export async function cancelOrder(orderId: string, reason: string) {
   requireSupabaseConfig();
 
   const { data, error } = await supabase.rpc("cancel_pos_order", {
     order_id_input: orderId,
+    reason_input: reason.trim(),
   });
 
   if (error) {
@@ -99,7 +146,7 @@ export async function cancelOrder(orderId: string) {
   return data;
 }
 
-export async function deleteOrders(orderIds: string[]) {
+export async function deleteOrders(orderIds: string[], reason: string) {
   requireSupabaseConfig();
 
   if (orderIds.length === 0) {
@@ -108,6 +155,7 @@ export async function deleteOrders(orderIds: string[]) {
 
   const { data, error } = await supabase.rpc("delete_pos_orders", {
     order_ids_input: orderIds,
+    reason_input: reason.trim(),
   });
 
   if (error) {

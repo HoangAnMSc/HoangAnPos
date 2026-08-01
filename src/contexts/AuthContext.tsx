@@ -10,6 +10,7 @@ import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { AppRole, Profile } from "../types";
 import { allRolePermissionKeys, type AppPermissionKey } from "../lib/permissions";
+import { isEmailIdentifier, normalizePhoneNumber } from "../lib/phone";
 
 type ProfileWithRole = Profile & {
   app_roles?: AppRole | null;
@@ -23,7 +24,10 @@ type AuthContextValue = {
   loading: boolean;
   isAdmin: boolean;
   canAccess: (permission: AppPermissionKey | string) => boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string) => Promise<void>;
+  requestPasswordResetOtp: (identifier: string) => Promise<void>;
+  verifyPasswordResetOtp: (identifier: string, token: string) => Promise<void>;
+  updatePasswordAfterOtp: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 };
@@ -160,20 +164,86 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [authLoading, user]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
+  const signIn = useCallback(async (identifier: string, password: string) => {
     requireSupabaseConfig();
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const normalizedIdentifier = identifier.trim();
+    const result = isEmailIdentifier(normalizedIdentifier)
+      ? await supabase.auth.signInWithPassword({
+          email: normalizedIdentifier.toLowerCase(),
+          password,
+        })
+      : await supabase.auth.signInWithPassword({
+          password,
+          phone: normalizePhoneNumber(normalizedIdentifier),
+        });
 
+    if (result.error) {
+      throw result.error;
+    }
+
+    setProfileLoading(true);
+    setUser(result.data.user);
+  }, []);
+
+  const requestPasswordResetOtp = useCallback(async (identifier: string) => {
+    requireSupabaseConfig();
+
+    const normalizedIdentifier = identifier.trim();
+    const result = isEmailIdentifier(normalizedIdentifier)
+      ? await supabase.auth.signInWithOtp({
+          email: normalizedIdentifier.toLowerCase(),
+          options: { shouldCreateUser: false },
+        })
+      : await supabase.auth.signInWithOtp({
+          phone: normalizePhoneNumber(normalizedIdentifier),
+          options: { shouldCreateUser: false },
+        });
+
+    if (result.error) {
+      throw result.error;
+    }
+  }, []);
+
+  const verifyPasswordResetOtp = useCallback(async (identifier: string, token: string) => {
+    requireSupabaseConfig();
+
+    const normalizedIdentifier = identifier.trim();
+    const result = isEmailIdentifier(normalizedIdentifier)
+      ? await supabase.auth.verifyOtp({
+          email: normalizedIdentifier.toLowerCase(),
+          token,
+          type: "email",
+        })
+      : await supabase.auth.verifyOtp({
+          phone: normalizePhoneNumber(normalizedIdentifier),
+          token,
+          type: "sms",
+        });
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    if (!result.data.session || !result.data.user) {
+      throw new Error("Không tạo được phiên xác thực từ mã OTP.");
+    }
+
+    setProfileLoading(true);
+    setUser(result.data.user);
+  }, []);
+
+  const updatePasswordAfterOtp = useCallback(async (password: string) => {
+    requireSupabaseConfig();
+
+    const { error } = await supabase.auth.updateUser({ password });
     if (error) {
       throw error;
     }
 
-    setProfileLoading(true);
-    setUser(data.user);
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -252,10 +322,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAdmin,
       canAccess,
       signIn,
+      requestPasswordResetOtp,
       signOut,
+      updatePasswordAfterOtp,
+      verifyPasswordResetOtp,
       refreshProfile,
     }),
-    [canAccess, isAdmin, loading, profile, refreshProfile, role, rolePermissions, signIn, signOut, user]
+    [canAccess, isAdmin, loading, profile, refreshProfile, requestPasswordResetOtp, role, rolePermissions, signIn, signOut, updatePasswordAfterOtp, user, verifyPasswordResetOtp]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

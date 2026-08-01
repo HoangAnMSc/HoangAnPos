@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -8,7 +9,7 @@ const corsHeaders = {
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" },
     status,
   });
 }
@@ -34,8 +35,10 @@ serve(async (request) => {
   const cloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME");
   const apiKey = Deno.env.get("CLOUDINARY_API_KEY");
   const apiSecret = Deno.env.get("CLOUDINARY_API_SECRET");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
 
-  if (!cloudName || !apiKey || !apiSecret) {
+  if (!cloudName || !apiKey || !apiSecret || !supabaseUrl || !supabaseAnonKey) {
     return jsonResponse(
       {
         message:
@@ -47,6 +50,28 @@ serve(async (request) => {
   }
 
   try {
+    const authorization = request.headers.get("Authorization") ?? "";
+    if (!authorization.startsWith("Bearer ")) {
+      return jsonResponse({ message: "Authentication required.", ok: false }, 401);
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false },
+    });
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) {
+      return jsonResponse({ message: "Invalid session.", ok: false }, 401);
+    }
+
+    const { data: allowed, error: permissionError } = await supabase.rpc("has_permission", {
+      permission_key: "cloudinary-images.delete",
+      user_id: userData.user.id,
+    });
+    if (permissionError || !allowed) {
+      return jsonResponse({ message: "Permission denied.", ok: false }, 403);
+    }
+
     const body = (await request.json()) as { publicId?: string };
     const publicId = body.publicId?.trim();
 
