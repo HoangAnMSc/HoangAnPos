@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { Edit3, Plus, Power, Search, Trash2, UserCog } from "lucide-react";
+import { Edit3, Eye, EyeOff, Plus, Power, Search, Trash2, UserCog } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -69,20 +69,20 @@ function getOnlineState(lastSeenAt: string | null) {
 
   if (totalMinutes < 60) {
     return {
-      label: `Ngoại tuyến ${minutes} phút`,
+      label: `${minutes} phút`,
       online: false,
     };
   }
 
   if (days === 0) {
     return {
-      label: `Ngoại tuyến ${hours} giờ ${minutes} phút`,
+      label: `${hours} giờ ${minutes} phút`,
       online: false,
     };
   }
 
   return {
-    label: `Ngoại tuyến ${days} ngày ${hours} giờ ${minutes} phút`,
+    label: `${days} ngày ${hours} giờ ${minutes} phút`,
     online: false,
   };
 }
@@ -423,7 +423,7 @@ export function UsersPage() {
             ) : null}
           </div>
           <div className="mt-2 w-full flex justify-start gap-2">
-            <Badge tone="green">{onlineCount} trực tuyến</Badge>
+            <Badge tone="blue">{onlineCount} trực tuyến</Badge>
             <Badge tone="red">{offlineCount} ngoại tuyến</Badge>
           </div>
         </section>
@@ -468,9 +468,10 @@ export function UsersPage() {
                       ) : null}
                       <div className="mt-2 flex flex-wrap gap-1.5 lg:hidden">
                         <Badge tone="neutral">{user.role?.name ?? "Chưa gán vai trò"}</Badge>
-                        <Badge tone={user.is_active ? "green" : "red"}>
-                          {user.is_active ? "Hoạt động" : "Vô hiệu hóa"}
+                        <Badge aria-label={user.is_active ? "Công khai" : "Ẩn"} title={user.is_active ? "Công khai" : "Ẩn"} tone={user.is_active ? "green" : "red"}>
+                          {user.is_active ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                         </Badge>
+                        <Badge tone={online.online ? "blue" : "red"}>{online.label}</Badge>
                       </div>
                       <p className="mt-1 hidden text-xs font-semibold text-coal/35 lg:block">
                         Tạo {user.created_at ? formatDateTime(user.created_at) : "không rõ"}
@@ -480,12 +481,12 @@ export function UsersPage() {
                       <Badge tone="neutral">{user.role?.name ?? "Chưa gán vai trò"}</Badge>
                     </div>
                     <div className="hidden lg:block">
-                      <Badge tone={user.is_active ? "green" : "red"}>
-                        {user.is_active ? "Hoạt động" : "Vô hiệu hóa"}
+                      <Badge aria-label={user.is_active ? "Công khai" : "Ẩn"} title={user.is_active ? "Công khai" : "Ẩn"} tone={user.is_active ? "green" : "red"}>
+                        {user.is_active ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                       </Badge>
                     </div>
                     <div className="hidden lg:block">
-                      <Badge tone={online.online ? "green" : "neutral"}>{online.label}</Badge>
+                      <Badge tone={online.online ? "blue" : "red"}>{online.label}</Badge>
                       {user.last_seen_at ? (
                         <p className="mt-1 truncate text-xs font-semibold text-coal/40">
                           {formatDateTime(user.last_seen_at)}
@@ -538,8 +539,8 @@ export function UsersPage() {
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1.5">
                 <Badge tone="neutral">{viewingUser.role?.name ?? "Chưa gán vai trò"}</Badge>
-                <Badge tone={viewingUser.is_active ? "green" : "red"}>
-                  {viewingUser.is_active ? "Hoạt động" : "Vô hiệu hóa"}
+                <Badge aria-label={viewingUser.is_active ? "Công khai" : "Ẩn"} title={viewingUser.is_active ? "Công khai" : "Ẩn"} tone={viewingUser.is_active ? "green" : "red"}>
+                  {viewingUser.is_active ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                 </Badge>
               </div>
             </div>

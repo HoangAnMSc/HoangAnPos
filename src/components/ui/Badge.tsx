@@ -1,11 +1,12 @@
 import { clsx } from "clsx";
 
 type BadgeProps = React.HTMLAttributes<HTMLSpanElement> & {
-  tone?: "green" | "amber" | "red" | "neutral";
+  tone?: "green" | "blue" | "amber" | "red" | "neutral";
 };
 
 const tones = {
   green: "bg-moss-100 text-moss-700",
+  blue: "bg-sky-100 text-sky-700",
   amber: "bg-amber-100 text-amber-800",
   red: "bg-red-100 text-red-700",
   neutral: "bg-slate-100 text-slate-700",

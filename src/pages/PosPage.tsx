@@ -23,6 +23,7 @@ import {
   Search,
   ShoppingBag,
   Trash2,
+  UserRound,
   Wallet,
   X,
 } from "lucide-react";
@@ -263,6 +264,7 @@ export function PosPage() {
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [ean13ScannerOpen, setEan13ScannerOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState("");
   const [cartExpanded, setCartExpanded] = useState(true);
@@ -279,6 +281,7 @@ export function PosPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [productBatches, setProductBatches] = useState<ProductBatch[]>([]);
   const [quickProductsExpanded, setQuickProductsExpanded] = useState(true);
+  const [selectedProductCategory, setSelectedProductCategory] = useState("all");
   const [productQuery, setProductQuery] = useState("");
   const [productToBatchSelect, setProductToBatchSelect] = useState<Product | null>(null);
   const [printingCompletedSale, setPrintingCompletedSale] = useState(false);
@@ -414,6 +417,22 @@ export function PosPage() {
   }, [canCheckout]);
 
   const activeProducts = useMemo(() => getActiveProducts(products), [products]);
+  const productCategories = useMemo(() => {
+    const counts = new Map<string, number>();
+    activeProducts.filter((product) => product.stock > 0).forEach((product) => {
+      const category = product.category?.trim() || "Khác";
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    });
+    return Array.from(counts, ([name, count]) => ({ name, count })).sort(
+      (a, b) => b.count - a.count || a.name.localeCompare(b.name, "vi")
+    );
+  }, [activeProducts]);
+  const matchesSelectedCategory = useCallback(
+    (product: Product) =>
+      selectedProductCategory === "all" ||
+      (product.category?.trim() || "Khác") === selectedProductCategory,
+    [selectedProductCategory]
+  );
   const normalizedProductQuery = productQuery.trim().toLowerCase();
   const productResults = useMemo(() => {
     if (!normalizedProductQuery) {
@@ -421,16 +440,17 @@ export function PosPage() {
     }
 
     return activeProducts
+      .filter(matchesSelectedCategory)
       .filter((product) =>
         [product.name, product.sku, product.category, getProductEan13Value(product)]
           .filter(Boolean)
           .some((value) => value!.toLowerCase().includes(normalizedProductQuery))
       )
       .slice(0, 8);
-  }, [activeProducts, normalizedProductQuery]);
+  }, [activeProducts, matchesSelectedCategory, normalizedProductQuery]);
   const quickProducts = useMemo(
-    () => activeProducts.filter((product) => product.stock > 0).slice(0, 8),
-    [activeProducts]
+    () => activeProducts.filter((product) => product.stock > 0).filter(matchesSelectedCategory).slice(0, 24),
+    [activeProducts, matchesSelectedCategory]
   );
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId) ?? null;
@@ -448,6 +468,9 @@ export function PosPage() {
       )
       .slice(0, 6);
   }, [customers, normalizedCustomerQuery, selectedCustomer]);
+  const customerPickerResults = normalizedCustomerQuery && !selectedCustomer
+    ? customerResults
+    : customers.slice(0, 10);
 
   const regularSubtotal = cart.reduce(
     (sum, item) => sum + (item.product.is_reward ? 0 : item.product.price * item.quantity),
@@ -688,6 +711,7 @@ export function PosPage() {
       savedAt: null,
       selectedCustomerId: customer.id,
     }));
+    setCustomerPickerOpen(false);
   }
 
   function clearSelectedCustomer() {
@@ -1237,6 +1261,33 @@ export function PosPage() {
                     </button>
                   </div>
                   {quickProductsExpanded ? (
+                    <div className="border-b border-moss-100 bg-white px-2.5 py-2 sm:px-3">
+                      <div className="scrollbar-none flex gap-2 overflow-x-auto pb-0.5" role="tablist" aria-label="Lọc nhanh theo nhóm hàng">
+                        <button
+                          aria-selected={selectedProductCategory === "all"}
+                          className={`h-9 shrink-0 rounded-full px-3 text-xs font-extrabold transition ${selectedProductCategory === "all" ? "bg-moss-700 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                          onClick={() => setSelectedProductCategory("all")}
+                          role="tab"
+                          type="button"
+                        >
+                          Tất cả · {availableProductCount}
+                        </button>
+                        {productCategories.map((category) => (
+                          <button
+                            aria-selected={selectedProductCategory === category.name}
+                            className={`h-9 shrink-0 rounded-full px-3 text-xs font-extrabold transition ${selectedProductCategory === category.name ? "bg-moss-700 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                            key={category.name}
+                            onClick={() => setSelectedProductCategory(category.name)}
+                            role="tab"
+                            type="button"
+                          >
+                            {category.name} · {category.count}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {quickProductsExpanded ? (
                     <div
                       className="grid max-h-[min(48dvh,520px)] grid-cols-3 gap-2 overflow-y-auto overscroll-contain p-2.5 sm:grid-cols-4 sm:p-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-4 2xl:grid-cols-6"
                       id="pos-quick-products"
@@ -1273,6 +1324,11 @@ export function PosPage() {
                               {quantityInCart > 0 ? (
                                 <span className="absolute right-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-moss-700 px-1.5 text-[10px] font-black text-white shadow-sm">
                                   {quantityInCart}
+                                </span>
+                              ) : null}
+                              {product.is_reward ? (
+                                <span className="absolute bottom-1.5 left-1.5 rounded-md bg-amber-100/95 px-1.5 py-1 text-[9px] font-black text-amber-800 shadow-sm sm:text-[10px]">
+                                  {product.reward_points_cost.toLocaleString("vi-VN")} điểm
                                 </span>
                               ) : null}
                             </div>
@@ -1501,6 +1557,27 @@ export function PosPage() {
 
             <aside className="order-first min-w-0 space-y-3 xl:order-none xl:sticky xl:top-[4.75rem] xl:flex xl:max-h-[calc(100dvh-5.25rem)] xl:flex-col xl:self-start xl:overflow-hidden">
               <section className="min-h-0 rounded-2xl bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/80 sm:p-4 xl:flex-1 xl:overflow-y-auto xl:overscroll-contain">
+                <button
+                  className="flex w-full items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-left xl:hidden"
+                  onClick={() => setCustomerPickerOpen(true)}
+                  type="button"
+                >
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selectedCustomer ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}>
+                    <UserRound className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-extrabold text-slate-900">
+                      {selectedCustomer?.name ?? "Chọn khách hàng"}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">
+                      {selectedCustomer
+                        ? `${selectedCustomer.phone || "Không có SĐT"} · ${selectedCustomer.points.toLocaleString("vi-VN")} điểm`
+                        : "Tìm theo tên hoặc số điện thoại · không bắt buộc"}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs font-extrabold text-sky-700">Thay đổi</span>
+                </button>
+                <div className="hidden xl:block">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-base font-extrabold text-slate-900">Khách hàng</h2>
@@ -1633,6 +1710,7 @@ export function PosPage() {
                     </div>
                   </div>
                 </div>
+                </div>
               </section>
 
               <section className="hidden rounded-2xl bg-white p-3 shadow-[0_10px_28px_rgba(57,67,46,0.08)] ring-1 ring-moss-100 xl:block xl:flex-none">
@@ -1683,6 +1761,66 @@ export function PosPage() {
         </div>
       </div>
       ) : null}
+
+      <Modal
+        footer={
+          <div className="flex w-full items-center justify-between gap-2">
+            {selectedCustomer ? (
+              <Button onClick={() => { clearSelectedCustomer(); setCustomerPickerOpen(false); }} type="button" variant="secondary">
+                Bỏ chọn khách
+              </Button>
+            ) : <span />}
+            <Button onClick={() => setCustomerPickerOpen(false)} type="button">Xong</Button>
+          </div>
+        }
+        onClose={() => setCustomerPickerOpen(false)}
+        open={customerPickerOpen}
+        size="md"
+        title="Chọn khách hàng"
+      >
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <label className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+              <input
+                autoFocus
+                className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-base outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
+                onChange={(event) => updateActiveBill((bill) => ({ ...bill, customerQuery: event.target.value, selectedCustomerId: "", savedAt: null }))}
+                placeholder="Tên hoặc số điện thoại"
+                value={selectedCustomer ? "" : customerQuery}
+              />
+            </label>
+            {canCreateQuickCustomer ? (
+              <button
+                aria-label="Thêm khách hàng mới"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white"
+                onClick={() => { setCustomerPickerOpen(false); setCustomerModalOpen(true); }}
+                type="button"
+              >
+                <Plus className="h-6 w-6" />
+              </button>
+            ) : null}
+          </div>
+
+          {selectedCustomer ? (
+            <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <UserRound className="h-5 w-5 shrink-0 text-amber-700" />
+              <div className="min-w-0 flex-1"><p className="truncate font-extrabold text-amber-950">{selectedCustomer.name}</p><p className="text-xs font-semibold text-amber-700">{selectedCustomer.phone || "Không có số điện thoại"}</p></div>
+              <span className="shrink-0 text-sm font-black text-amber-800">{selectedCustomer.points.toLocaleString("vi-VN")} điểm</span>
+            </div>
+          ) : (
+            <div className="max-h-[52dvh] divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200">
+              {customerPickerResults.length > 0 ? customerPickerResults.map((customer) => (
+                <button className="flex w-full items-center gap-3 px-3 py-3 text-left hover:bg-slate-50" key={customer.id} onClick={() => selectCustomer(customer)} type="button">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-black text-sky-700">{customer.name.trim().charAt(0).toUpperCase() || "K"}</span>
+                  <span className="min-w-0 flex-1"><span className="block truncate text-sm font-extrabold text-slate-900">{customer.name}</span><span className="block truncate text-xs font-semibold text-slate-500">{customer.phone || "Không có số điện thoại"}</span></span>
+                  <span className="shrink-0 text-xs font-extrabold text-amber-700">{customer.points.toLocaleString("vi-VN")} điểm</span>
+                </button>
+              )) : <p className="p-6 text-center text-sm font-semibold text-slate-500">Không tìm thấy khách hàng.</p>}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {canCreateQuickCustomer ? (
         <Modal
