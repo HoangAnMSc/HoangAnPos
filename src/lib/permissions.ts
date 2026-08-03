@@ -99,6 +99,11 @@ export const permissionGroups = [
         description: "Khai báo số tiền đầu ca trước khi bắt đầu bán hàng.",
       },
       {
+        key: "cash-management.reconciliation.required",
+        label: "Bắt buộc đối soát két trước khi bán",
+        description: "Vai trò được gán quyền này phải vào ca và xác nhận tiền két trước khi tạo hóa đơn. Không gán cho Chủ hoặc người chỉ bán phụ.",
+      },
+      {
         key: "cash-management.session.close",
         label: "Chốt ca / kiểm đếm két",
         description: "Nhập tiền mặt thực đếm và ghi nhận chênh lệch cuối ca.",
@@ -109,9 +114,14 @@ export const permissionGroups = [
         description: "Cho phép quản lý mở ca khi tiền thực nhận khác số tiền ca trước bàn giao; bắt buộc ghi lý do.",
       },
       {
+        key: "cash-management.history.view",
+        label: "Xem lịch sử đối soát",
+        description: "Mở lịch sử xác nhận tiền két của bản thân từ nút chuông trên header.",
+      },
+      {
         key: "cash-management.view-all",
         label: "Xem đối soát toàn bộ nhân viên",
-        description: "Xem doanh thu, tiền két và chênh lệch của tất cả nhân viên.",
+        description: "Mở rộng lịch sử và dữ liệu đối soát sang toàn bộ nhân viên.",
       },
     ],
   },
@@ -366,6 +376,10 @@ export const allRolePermissionKeys = permissionGroups.flatMap((group) => [
   ...group.actions.map((action) => action.key),
 ]);
 
+export const superAdminPermissionKeys = allRolePermissionKeys.filter(
+  (permission) => permission !== "cash-management.reconciliation.required"
+);
+
 export const permissionLabelByKey = new Map<string, string>(
   permissionGroups.flatMap((group) => [
     [group.key, group.label],
@@ -379,6 +393,22 @@ export function getPermissionGroupKeys(group: PermissionGroup) {
 
 export function normalizeRolePermissions(permissions: string[]) {
   const selected = new Set(permissions);
+
+  if (selected.has("cash-management.view-all")) {
+    selected.add("cash-management.history.view");
+  }
+
+  if (selected.has("cash-management.reconciliation.required")) {
+    [
+      "pos",
+      "pos.checkout",
+      "attendance",
+      "attendance.clock",
+      "cash-management",
+      "cash-management.session.open",
+      "cash-management.session.close",
+    ].forEach((permission) => selected.add(permission));
+  }
 
   permissionGroups.forEach((group) => {
     const hasAction = group.actions.some((action) => selected.has(action.key));

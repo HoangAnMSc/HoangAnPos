@@ -73,6 +73,14 @@ De trang quan ly user tao/sua/xoa duoc tai khoan Auth, can them `SUPABASE_SERVIC
 
 Nếu đã có database trước đó, hãy chạy lại `supabase/schema.sql` để cập nhật bảng quỹ, nhật ký kiểm toán, danh sách quyền và các policy bảo mật. Sau cập nhật, mỗi nhân viên phải mở ca tại trang **Quỹ & đối soát** trước khi tạo hóa đơn mới. Tiền thực đếm đầu ca phải khớp số cuối ca trước; chỉ người có quyền **Xác nhận lệch bàn giao** mới được chấp nhận chênh lệch kèm lý do.
 
+### Phân quyền đối soát két trước khi bán
+
+- Gán quyền **Bắt buộc đối soát két trước khi bán** cho vai trò nhân viên phải vào ca, xác nhận tiền đầu ca và chốt két.
+- Không gán quyền này cho vai trò Chủ hoặc người chỉ bán phụ. Các vai trò đó vẫn cần quyền **Bán hàng / tạo hóa đơn**, nhưng không bị POS yêu cầu mở ca két.
+- Tài khoản Admin luôn được miễn bước đối soát. Nếu đang có két của nhân viên mở, hóa đơn bán phụ của Chủ/Admin vẫn được cộng vào két đang mở để đối soát đúng doanh thu.
+- Sau khi cập nhật mã nguồn, chạy lại `supabase/schema.sql` trong Supabase SQL Editor để áp dụng ràng buộc ở database.
+- Quyền **Xem lịch sử đối soát** hiển thị nút chuông lịch sử trên trang Quỹ & đối soát. Kết hợp thêm **Xem đối soát toàn bộ nhân viên** nếu vai trò được phép xem lịch sử của cả đội.
+
 ## Cloudinary
 
 Ảnh được upload bằng chữ ký ngắn hạn do API đã xác thực tạo ra; không dùng unsigned upload preset. Ảnh sản phẩm được lưu trong folder `hoang-an-pos/products`.

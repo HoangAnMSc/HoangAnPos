@@ -33,6 +33,7 @@ export type CashDrawerHandover = {
 export type CheckoutShiftStatus = {
   hasActiveAttendance: boolean;
   hasOpenCashDrawer: boolean;
+  requiresCashReconciliation: boolean;
   ready: boolean;
 };
 
@@ -44,7 +45,8 @@ export async function fetchCheckoutShiftStatus(): Promise<CheckoutShiftStatus> {
     throw authError ?? new Error("Phiên đăng nhập đã hết hạn.");
   }
 
-  const [attendanceResult, drawerResult] = await Promise.all([
+  const [requirementResult, attendanceResult, drawerResult] = await Promise.all([
+    supabase.rpc("requires_cash_reconciliation", { user_id: authData.user.id }),
     supabase
       .from("attendance_records")
       .select("id")
@@ -59,15 +61,18 @@ export async function fetchCheckoutShiftStatus(): Promise<CheckoutShiftStatus> {
       .limit(1),
   ]);
 
+  if (requirementResult.error) throw requirementResult.error;
   if (attendanceResult.error) throw attendanceResult.error;
   if (drawerResult.error) throw drawerResult.error;
 
+  const requiresCashReconciliation = requirementResult.data === true;
   const hasActiveAttendance = Boolean(attendanceResult.data?.length);
   const hasOpenCashDrawer = Boolean(drawerResult.data?.length);
   return {
     hasActiveAttendance,
     hasOpenCashDrawer,
-    ready: hasActiveAttendance && hasOpenCashDrawer,
+    requiresCashReconciliation,
+    ready: !requiresCashReconciliation || (hasActiveAttendance && hasOpenCashDrawer),
   };
 }
 
@@ -89,6 +94,25 @@ export async function fetchCashDrawerSessions(limit = 500) {
 
   if (error) throw error;
   return (data ?? []) as CashDrawerSession[];
+}
+
+export async function fetchOwnOpenCashDrawerSession() {
+  requireSupabaseConfig();
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !authData.user) {
+    throw authError ?? new Error("Phiên đăng nhập đã hết hạn.");
+  }
+
+  const { data, error } = await supabase
+    .from("cash_drawer_sessions")
+    .select("*")
+    .eq("cashier_id", authData.user.id)
+    .eq("status", "open")
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as CashDrawerSession | null;
 }
 
 export async function fetchCashDrawerHandover() {

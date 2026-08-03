@@ -328,6 +328,7 @@ export function PosPage() {
 
   const loadCheckoutShiftStatus = useCallback(async () => {
     if (!canCheckout) {
+      setCheckoutShiftStatus(null);
       setShiftStatusLoading(false);
       return;
     }

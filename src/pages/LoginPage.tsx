@@ -21,6 +21,7 @@ function getRequestError(error: unknown, fallback: string) {
     [/invalid login credentials/i, "Email/số điện thoại hoặc mật khẩu không đúng."],
     [/phone provider.*disabled|unsupported phone provider/i, "Đăng nhập bằng số điện thoại chưa được bật trong Supabase."],
     [/email address not authorized/i, "Email này chưa được Supabase cho phép gửi. Hãy cấu hình Custom SMTP trong Supabase."],
+    [/error sending magic link email|failed to send.*email|smtp/i, "Không gửi được email OTP do cấu hình SMTP. Hãy kiểm tra domain đã Verified, máy chủ SMTP, tài khoản và API key trong Supabase."],
     [/email rate limit|rate limit/i, "Bạn vừa yêu cầu OTP. Vui lòng chờ một lúc trước khi gửi lại."],
     [/token.*expired|otp.*expired/i, "Mã OTP đã hết hạn. Hãy yêu cầu mã mới."],
     [/token.*invalid|invalid.*otp/i, "Mã OTP không đúng."],

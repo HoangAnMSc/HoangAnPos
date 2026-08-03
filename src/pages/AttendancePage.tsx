@@ -36,7 +36,7 @@ import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../li
 import { normalizeNullableText } from "../lib/text";
 import {
   closeCashDrawer,
-  fetchCashDrawerSessions,
+  fetchOwnOpenCashDrawerSession,
   type CashDrawerSession,
 } from "../services/cashManagement";
 import {
@@ -408,7 +408,7 @@ async function getCurrentAttendanceLocation(): Promise<AttendanceLocationInput> 
 }
 
 export function AttendancePage() {
-  const { canAccess, profile, user } = useAuth();
+  const { canAccess, profile, requiresCashReconciliation, user } = useAuth();
   const [activeTab, setActiveTab] = useState<AttendanceTab>("clock");
   const [allHistoryEmployees, setAllHistoryEmployees] = useState<AttendanceEmployee[]>([]);
   const [allHistoryLoading, setAllHistoryLoading] = useState(false);
@@ -453,6 +453,7 @@ export function AttendancePage() {
   const [openRecord, setOpenRecord] = useState<AttendanceRecord | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState("");
+  const canOpenAttendancePage = canAccess("attendance");
   const canClock = canAccess("attendance.clock");
   const canViewHistory = canAccess("attendance.history.view");
   const canViewAllHistory = canAccess("attendance.history.view-all");
@@ -468,7 +469,7 @@ export function AttendancePage() {
     exportEmployees.every((employee) => selectedExportEmployeeIds.has(employee.id));
 
   const loadOpenRecord = useCallback(async () => {
-    if (!user?.id || !canClock) {
+    if (!user?.id || !canOpenAttendancePage) {
       setOpenRecord(null);
       setOpenLoading(false);
       return;
@@ -480,7 +481,7 @@ export function AttendancePage() {
       const record = await fetchOpenAttendanceRecord(user.id);
       setOpenRecord(record);
 
-      if (record) {
+      if (record && requiresCashReconciliation) {
         const nextCashCheck = await fetchAttendanceCashCheck(record.id);
         setCashCheck(nextCashCheck);
         if (nextCashCheck && !nextCashCheck.checked_at) {
@@ -494,7 +495,7 @@ export function AttendancePage() {
     } finally {
       setOpenLoading(false);
     }
-  }, [canClock, user?.id]);
+  }, [canOpenAttendancePage, requiresCashReconciliation, user?.id]);
 
   const loadHistory = useCallback(async () => {
     if (!user?.id || !canViewHistory) {
@@ -556,14 +557,14 @@ export function AttendancePage() {
   }, [activeTab, loadAllHistory, loadHistory]);
 
   useEffect(() => {
-    if (activeTab === "clock" && !canClock) {
+    if (activeTab === "clock" && !canClock && !openLoading && !isClockedIn) {
       if (canViewHistory) {
         setActiveTab("history");
       } else if (canViewAllHistory) {
         setActiveTab("team-history");
       }
     }
-  }, [activeTab, canClock, canViewAllHistory, canViewHistory]);
+  }, [activeTab, canClock, canViewAllHistory, canViewHistory, isClockedIn, openLoading]);
 
   const historySummary = useMemo(() => {
     const totalMs = historyRecords.reduce((total, record) => {
@@ -634,22 +635,26 @@ export function AttendancePage() {
       const location = await getCurrentAttendanceLocation();
       const record = await clockInAttendance({ location });
       setOpenRecord(record);
-      try {
-        const nextCashCheck = await fetchAttendanceCashCheck(record.id);
-        setCashCheck(nextCashCheck);
-        if (nextCashCheck && !nextCashCheck.checked_at) {
-          setCashModalOpen(true);
-          setCashMismatch(false);
-          setCashActual("");
-          setCashReason("");
+      if (requiresCashReconciliation) {
+        try {
+          const nextCashCheck = await fetchAttendanceCashCheck(record.id);
+          setCashCheck(nextCashCheck);
+          if (nextCashCheck && !nextCashCheck.checked_at) {
+            setCashModalOpen(true);
+            setCashMismatch(false);
+            setCashActual("");
+            setCashReason("");
+          }
+        } catch (cashCheckRequestError) {
+          setError(
+            getErrorMessage(
+              cashCheckRequestError,
+              "Đã chấm công nhưng chưa tải được bước xác nhận tiền két."
+            )
+          );
         }
-      } catch (cashCheckRequestError) {
-        setError(
-          getErrorMessage(
-            cashCheckRequestError,
-            "Đã chấm công nhưng chưa tải được bước xác nhận tiền két."
-          )
-        );
+      } else {
+        setCashCheck(null);
       }
       setSuccess(`Đã chấm công lúc ${formatDateTime(record.clock_in_at)}.`);
 
@@ -668,10 +673,16 @@ export function AttendancePage() {
     setClockOutCashActual("");
     setClockOutCashNote("");
     setClockOutCashSession(null);
+
+    if (!requiresCashReconciliation) {
+      setClockOutCashLoading(false);
+      return;
+    }
+
     setClockOutCashLoading(true);
+
     try {
-      const sessions = await fetchCashDrawerSessions(20);
-      setClockOutCashSession(sessions.find((session) => session.status === "open") ?? null);
+      setClockOutCashSession(await fetchOwnOpenCashDrawerSession());
     } catch (requestError) {
       setError(getErrorMessage(requestError, "Không tải được số tiền két để chốt ca."));
       setConfirmClockOutOpen(false);
@@ -691,7 +702,7 @@ export function AttendancePage() {
   }
 
   function handleClockButton() {
-    if (!canClock || openLoading || submitting || isTodayCompleted) {
+    if ((!canClock && !isClockedIn) || openLoading || submitting || isTodayCompleted) {
       return;
     }
 
@@ -707,7 +718,7 @@ export function AttendancePage() {
   }
 
   async function handleConfirmClockOut() {
-    if (!openRecord || !canClock) {
+    if (!openRecord || openRecord.clock_out_at) {
       return;
     }
 
@@ -727,7 +738,7 @@ export function AttendancePage() {
     setSuccess("");
 
     try {
-      if (clockOutCashSession) {
+      if (requiresCashReconciliation && clockOutCashSession) {
         await closeCashDrawer(
           clockOutCashSession.id,
           actualCash,
@@ -837,7 +848,7 @@ export function AttendancePage() {
       setEditingRecord(null);
       setSuccess(
         !clockOutAt && editingRecord.clock_out_at
-          ? "Đã khôi phục ca đang chạy. Nhân viên cần xác nhận lại tiền két trước khi thanh toán tại POS."
+          ? "Đã khôi phục ca đang chạy."
           : "Đã cập nhật lịch sử chấm công."
       );
       await Promise.all([loadOpenRecord(), loadHistory(), loadAllHistory()]);
@@ -1038,7 +1049,7 @@ export function AttendancePage() {
               className={`flex min-w-0 items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-xs font-extrabold transition sm:gap-2 sm:px-4 sm:text-sm ${
                 activeTab === "clock" ? "bg-coal text-white" : "text-coal/60 hover:bg-coal/5"
               }`}
-              disabled={!canClock}
+              disabled={!canClock && !isClockedIn}
               onClick={() => setActiveTab("clock")}
               role="tab"
               type="button"
@@ -1117,7 +1128,7 @@ export function AttendancePage() {
                         ? "bg-gradient-to-b from-red-500 to-red-800 shadow-[0_0_0_12px_rgba(239,68,68,0.16),0_22px_45px_rgba(127,29,29,0.24)]"
                         : "bg-gradient-to-b from-moss-400 to-moss-800 shadow-[0_0_0_12px_rgba(111,129,85,0.18),0_22px_45px_rgba(16,32,24,0.20)]"
                     }`}
-                    disabled={!canClock || submitting || isTodayCompleted}
+                    disabled={(!canClock && !isClockedIn) || submitting || isTodayCompleted}
                     onClick={handleClockButton}
                     type="button"
                   >
@@ -1894,7 +1905,7 @@ export function AttendancePage() {
             </div>
           </dl>
           {clockOutCashLoading ? (
-            <Spinner label="Đang đối chiếu tiền két..." />
+            <Spinner label="Đang kiểm tra phiên két..." />
           ) : clockOutCashSession ? (
             <section className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
               <div className="flex items-center justify-between gap-3">
@@ -1931,8 +1942,12 @@ export function AttendancePage() {
                 <Textarea label="Lý do chênh lệch" onChange={(event) => setClockOutCashNote(event.target.value)} placeholder="Bắt buộc khi tiền thực tế không khớp hệ thống" value={clockOutCashNote} />
               ) : null}
             </section>
-          ) : (
+          ) : requiresCashReconciliation ? (
             <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500">Ca này không có phiên két đang mở.</p>
+          ) : (
+            <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold leading-5 text-emerald-800">
+              Vai trò của bạn không bắt buộc đối soát két. Tan làm chỉ kết thúc chấm công và không ảnh hưởng đến két của nhân viên đang bán chính.
+            </p>
           )}
         </div>
       </Modal>

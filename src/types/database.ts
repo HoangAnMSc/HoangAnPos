@@ -795,6 +795,10 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      requires_cash_reconciliation: {
+        Args: { user_id?: string };
+        Returns: boolean;
+      };
       list_cash_drawer_sessions: {
         Args: { limit_input?: number };
         Returns: {

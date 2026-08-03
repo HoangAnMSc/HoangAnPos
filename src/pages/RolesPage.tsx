@@ -15,6 +15,7 @@ import {
   getPermissionGroupKeys,
   normalizeRolePermissions,
   permissionGroups,
+  superAdminPermissionKeys,
 } from "../lib/permissions";
 import {
   createRole,
@@ -46,7 +47,10 @@ function roleToForm(role?: AppRole | null): RoleFormState {
     description: role.description ?? "",
     is_active: role.is_active,
     name: role.name,
-    permissions: role.code === "admin" ? [...allRolePermissionKeys] : normalizeRolePermissions(role.permissions),
+    permissions:
+      role.code === "admin"
+        ? [...superAdminPermissionKeys]
+        : normalizeRolePermissions(role.permissions),
   };
 }
 
@@ -86,6 +90,9 @@ function RoleEditorModal({
   const [error, setError] = useState("");
   const formId = role ? `role-form-${role.id}` : "role-form-create";
   const permissionLocked = role?.code === "admin";
+  const selectablePermissionKeys = permissionLocked
+    ? superAdminPermissionKeys
+    : allRolePermissionKeys;
 
   useEffect(() => {
     setForm(roleToForm(role));
@@ -146,7 +153,9 @@ function RoleEditorModal({
     try {
       await onSubmit({
         ...form,
-        permissions: permissionLocked ? [...allRolePermissionKeys] : normalizeRolePermissions(form.permissions),
+        permissions: permissionLocked
+          ? [...superAdminPermissionKeys]
+          : normalizeRolePermissions(form.permissions),
       });
     } catch (requestError) {
       setError(getErrorMessage(requestError, "Lưu vai trò thất bại."));
@@ -225,16 +234,16 @@ function RoleEditorModal({
                 setForm((current) => ({
                   ...current,
                   permissions:
-                    current.permissions.length === allRolePermissionKeys.length
+                    current.permissions.length === selectablePermissionKeys.length
                       ? []
-                      : [...allRolePermissionKeys],
+                      : [...selectablePermissionKeys],
                 }))
               }
               disabled={permissionLocked}
               type="button"
               variant="secondary"
             >
-              {form.permissions.length === allRolePermissionKeys.length ? "Bỏ chọn" : "Chọn tất cả"}
+              {form.permissions.length === selectablePermissionKeys.length ? "Bỏ chọn" : "Chọn tất cả"}
             </Button>
           </div>
 

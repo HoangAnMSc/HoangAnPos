@@ -9,7 +9,7 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { AppRole, Profile } from "../types";
-import { allRolePermissionKeys, type AppPermissionKey } from "../lib/permissions";
+import { superAdminPermissionKeys, type AppPermissionKey } from "../lib/permissions";
 import { isEmailIdentifier, normalizePhoneNumber } from "../lib/phone";
 
 type ProfileWithRole = Profile & {
@@ -21,6 +21,7 @@ type AuthContextValue = {
   profile: Profile | null;
   role: AppRole | null;
   rolePermissions: string[];
+  requiresCashReconciliation: boolean;
   loading: boolean;
   isAdmin: boolean;
   canAccess: (permission: AppPermissionKey | string) => boolean;
@@ -296,7 +297,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (isSuperAdmin) {
-        return allRolePermissionKeys;
+        return superAdminPermissionKeys;
       }
 
       return role?.is_active ? role.permissions : [];
@@ -307,6 +308,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (permission: AppPermissionKey | string) => rolePermissions.includes(permission),
     [rolePermissions]
   );
+  const requiresCashReconciliation = Boolean(
+    profile?.is_active !== false &&
+    !isSuperAdmin &&
+    role?.is_active &&
+    role.permissions.includes("cash-management.reconciliation.required")
+  );
   const loading = authLoading || profileLoading;
 
   const value = useMemo<AuthContextValue>(
@@ -315,6 +322,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profile,
       role,
       rolePermissions,
+      requiresCashReconciliation,
       loading,
       isAdmin,
       canAccess,
@@ -325,7 +333,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       verifyPasswordResetOtp,
       refreshProfile,
     }),
-    [canAccess, isAdmin, loading, profile, refreshProfile, requestPasswordResetOtp, role, rolePermissions, signIn, signOut, updatePasswordAfterOtp, user, verifyPasswordResetOtp]
+    [canAccess, isAdmin, loading, profile, refreshProfile, requestPasswordResetOtp, requiresCashReconciliation, role, rolePermissions, signIn, signOut, updatePasswordAfterOtp, user, verifyPasswordResetOtp]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -42,6 +42,10 @@ function createAttendanceError(error: SupabaseErrorLike) {
     return new Error("Nhân viên đang có một ca khác chưa kết thúc.");
   }
 
+  if (/close cash drawer before clocking out/i.test(message)) {
+    return new Error("Hãy chốt phiên két của bạn trước khi tan làm.");
+  }
+
   if (
     error.code === "PGRST202" ||
     message.includes("Could not find the function") ||

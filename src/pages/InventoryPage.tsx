@@ -8,7 +8,7 @@ import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal } from "../components/ui/ErrorNoticeModal";
 import { Modal } from "../components/ui/Modal";
-import { PageContainer, PageToolbar, SearchInput, StateNotice } from "../components/ui/Page";
+import { PageContainer, SearchInput, StateNotice } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
@@ -258,15 +258,11 @@ export function InventoryPage() {
 
   return (
     <PageContainer
-      className={hasInventoryActions ? "!pb-28" : undefined}
+      className={hasInventoryActions ? "!space-y-3 !pb-28" : "!space-y-3"}
       maxWidth="none"
     >
       <ConfigNotice />
-      <PageToolbar
-        description="Nhân viên nhập số lượng đếm thực tế. Số tồn hệ thống và chênh lệch chỉ hiển thị tại trang Kho."
-        eyebrow="Ghi nhận thực tế"
-        title="Tồn kho"
-      >
+      <Card className="border border-slate-200 p-3 shadow-soft sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <SearchInput
             className="lg:max-w-xl"
@@ -282,21 +278,21 @@ export function InventoryPage() {
             </Badge>
           </div>
         </div>
-        <div className="mt-3 overflow-hidden rounded-full bg-slate-100">
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
           <div
-            className="h-2 rounded-full bg-gradient-to-r from-moss-500 to-moss-700 transition-all"
+            className="h-full rounded-full bg-gradient-to-r from-moss-500 to-moss-700 transition-all"
             style={{
               width: `${products.length ? (countedProducts.length / products.length) * 100 : 0}%`,
             }}
           />
         </div>
-      </PageToolbar>
+      </Card>
 
       {error ? <StateNotice message={error} tone="error" /> : null}
       {success ? <StateNotice icon={CheckCircle2} message={success} tone="success" /> : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
-        <Card className="min-w-0 border border-sky-100 p-4 shadow-[0_10px_28px_rgba(14,165,233,0.07)]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
+        <Card className="min-w-0 border border-sky-100 p-3 shadow-[0_10px_28px_rgba(14,165,233,0.07)] sm:p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h3 className="font-extrabold text-slate-950">Chọn sản phẩm</h3>
@@ -361,7 +357,7 @@ export function InventoryPage() {
           )}
         </Card>
 
-        <Card className="min-w-0 border border-moss-100 p-4 shadow-[0_10px_28px_rgba(57,67,46,0.07)]">
+        <Card className="min-w-0 border border-moss-100 p-3 shadow-[0_10px_28px_rgba(57,67,46,0.07)] sm:p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h3 className="font-extrabold text-slate-950">Số lượng đã nhập</h3>

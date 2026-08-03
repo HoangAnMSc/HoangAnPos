@@ -45,6 +45,7 @@ values
       'cash-management.session.open',
       'cash-management.session.close',
       'cash-management.handover.override',
+      'cash-management.history.view',
       'cash-management.view-all',
       'customers',
       'customers.create',
@@ -101,6 +102,7 @@ values
       'orders',
       'cash-management',
       'cash-management.session.open',
+      'cash-management.reconciliation.required',
       'cash-management.session.close',
       'customers',
       'customers.create',
@@ -898,6 +900,32 @@ as $$
   );
 $$;
 
+create or replace function public.requires_cash_reconciliation(
+  user_id uuid default auth.uid()
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    join public.app_roles r on r.id = p.role_id
+    where p.id = user_id
+      and p.is_active = true
+      and r.is_active = true
+      and p.role <> 'admin'
+      and r.code <> 'admin'
+      and not (
+        user_id = auth.uid()
+        and coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
+      )
+      and 'cash-management.reconciliation.required' = any(coalesce(r.permissions, '{}'))
+  );
+$$;
+
 create or replace function public.submit_inventory_audit(
   staff_name_input text,
   lines_input jsonb
@@ -1080,56 +1108,58 @@ begin
     returning * into attendance_record;
   end if;
 
-  select *
-  into drawer_session
-  from public.cash_drawer_sessions
-  where status = 'open'
-  order by opened_at desc, id desc
-  limit 1;
-
-  if found then
-    expected_cash_value := drawer_session.opening_cash + coalesce((
-      select sum(pos_order.total)
-      from public.orders pos_order
-      where pos_order.cash_session_id = drawer_session.id
-        and pos_order.status = 'paid'
-        and pos_order.payment_method = 'cash'
-    ), 0);
-  else
+  if public.requires_cash_reconciliation(auth.uid()) then
     select *
     into drawer_session
     from public.cash_drawer_sessions
-    where status = 'closed'
-    order by closed_at desc, id desc
+    where status = 'open'
+    order by opened_at desc, id desc
     limit 1;
 
     if found then
-      expected_cash_value := coalesce(drawer_session.counted_cash, 0);
+      expected_cash_value := drawer_session.opening_cash + coalesce((
+        select sum(pos_order.total)
+        from public.orders pos_order
+        where pos_order.cash_session_id = drawer_session.id
+          and pos_order.status = 'paid'
+          and pos_order.payment_method = 'cash'
+      ), 0);
     else
-      expected_cash_value := 0;
+      select *
+      into drawer_session
+      from public.cash_drawer_sessions
+      where status = 'closed'
+      order by closed_at desc, id desc
+      limit 1;
+
+      if found then
+        expected_cash_value := coalesce(drawer_session.counted_cash, 0);
+      else
+        expected_cash_value := 0;
+      end if;
     end if;
+
+    select coalesce(nullif(btrim(profile.full_name), ''), 'Nhân viên ' || left(profile.id::text, 8))
+    into employee_name_value
+    from public.profiles profile
+    where profile.id = auth.uid();
+
+    insert into public.cash_drawer_checks (
+      attendance_record_id,
+      employee_id,
+      employee_name,
+      cash_session_id,
+      expected_cash
+    )
+    values (
+      attendance_record.id,
+      auth.uid(),
+      coalesce(employee_name_value, 'Nhân viên'),
+      drawer_session.id,
+      expected_cash_value
+    )
+    on conflict (attendance_record_id) do nothing;
   end if;
-
-  select coalesce(nullif(btrim(profile.full_name), ''), 'Nhân viên ' || left(profile.id::text, 8))
-  into employee_name_value
-  from public.profiles profile
-  where profile.id = auth.uid();
-
-  insert into public.cash_drawer_checks (
-    attendance_record_id,
-    employee_id,
-    employee_name,
-    cash_session_id,
-    expected_cash
-  )
-  values (
-    attendance_record.id,
-    auth.uid(),
-    coalesce(employee_name_value, 'Nhân viên'),
-    drawer_session.id,
-    expected_cash_value
-  )
-  on conflict (attendance_record_id) do nothing;
 
   return attendance_record;
 end;
@@ -1268,8 +1298,25 @@ begin
     raise exception 'Authentication required';
   end if;
 
-  if not public.has_permission('attendance.clock') then
+  if not public.has_permission('attendance.clock')
+    and not exists (
+      select 1
+      from public.attendance_records attendance
+      where attendance.id = record_id_input
+        and attendance.user_id = auth.uid()
+        and attendance.clock_out_at is null
+    ) then
     raise exception 'Permission denied';
+  end if;
+
+  if public.requires_cash_reconciliation(auth.uid())
+    and exists (
+      select 1
+      from public.cash_drawer_sessions session
+      where session.cashier_id = auth.uid()
+        and session.status = 'open'
+    ) then
+    raise exception 'Close cash drawer before clocking out';
   end if;
 
   update public.attendance_records
@@ -1357,7 +1404,9 @@ begin
   returning * into attendance_record;
 
   -- Reopening a completed attendance also restores the cash confirmation step.
-  if previous_record.clock_out_at is not null and clock_out_at_input is null then
+  if previous_record.clock_out_at is not null
+    and clock_out_at_input is null
+    and public.requires_cash_reconciliation(previous_record.user_id) then
     select coalesce(closed_session.counted_cash, 0)
     into expected_cash_value
     from public.cash_drawer_sessions closed_session
@@ -1687,8 +1736,14 @@ begin
     from public.orders o
     where o.cash_session_id = session.id
   ) sales
-  where session.cashier_id = auth.uid()
-    or public.has_permission('cash-management.view-all')
+  where (
+      session.status = 'open'
+      or public.has_permission('cash-management.history.view')
+    )
+    and (
+      session.cashier_id = auth.uid()
+      or public.has_permission('cash-management.view-all')
+    )
   order by session.opened_at desc
   limit least(greatest(coalesce(limit_input, 100), 1), 500);
 end;
@@ -2028,24 +2083,36 @@ begin
     raise exception 'Cashier identity does not match the signed-in user';
   end if;
 
-  if not exists (
-    select 1
-    from public.attendance_records attendance
-    where attendance.user_id = auth.uid()
-      and attendance.clock_out_at is null
-  ) then
-    raise exception 'Active attendance is required before checkout';
-  end if;
+  if public.requires_cash_reconciliation(auth.uid()) then
+    if not exists (
+      select 1
+      from public.attendance_records attendance
+      where attendance.user_id = auth.uid()
+        and attendance.clock_out_at is null
+    ) then
+      raise exception 'Active attendance is required before checkout';
+    end if;
 
-  select id
-  into cash_session_id_value
-  from public.cash_drawer_sessions
-  where cashier_id = auth.uid()
-    and status = 'open'
-  for update;
+    select id
+    into cash_session_id_value
+    from public.cash_drawer_sessions
+    where cashier_id = auth.uid()
+      and status = 'open'
+    for update;
 
-  if not found then
-    raise exception 'Open a cash drawer session before checkout';
+    if not found then
+      raise exception 'Open a cash drawer session before checkout';
+    end if;
+  else
+    -- A supporting seller does not own the drawer, but their cash sale should
+    -- still be included in the currently open drawer when one exists.
+    select id
+    into cash_session_id_value
+    from public.cash_drawer_sessions
+    where status = 'open'
+    order by opened_at desc, id desc
+    limit 1
+    for update;
   end if;
 
   if items_input is null
@@ -2797,8 +2864,14 @@ drop policy if exists "Cashiers can read cash drawer sessions" on public.cash_dr
 create policy "Cashiers can read cash drawer sessions"
 on public.cash_drawer_sessions for select
 using (
-  cashier_id = auth.uid()
-  or public.has_permission('cash-management.view-all')
+  (
+    status = 'open'
+    or public.has_permission('cash-management.history.view')
+  )
+  and (
+    cashier_id = auth.uid()
+    or public.has_permission('cash-management.view-all')
+  )
 );
 
 drop policy if exists "Managers can read order audit events" on public.order_audit_events;
@@ -2861,14 +2934,27 @@ using (
   (
     employee_id = auth.uid()
     and public.has_permission('attendance.clock')
+    and exists (
+      select 1
+      from public.attendance_records attendance
+      where attendance.id = cash_drawer_checks.attendance_record_id
+        and attendance.clock_out_at is null
+    )
   )
   or public.has_permission('attendance.history.view-all')
-  or public.has_permission('cash-management')
+  or (
+    public.has_permission('cash-management.history.view')
+    and (
+      employee_id = auth.uid()
+      or public.has_permission('cash-management.view-all')
+    )
+  )
 );
 
 -- Security-definer RPCs are callable only by signed-in application users.
 revoke all on function public.is_admin(uuid) from public, anon;
 revoke all on function public.has_permission(text, uuid) from public, anon;
+revoke all on function public.requires_cash_reconciliation(uuid) from public, anon;
 revoke all on function public.list_cash_drawer_sessions(integer) from public, anon;
 revoke all on function public.get_cash_drawer_handover() from public, anon;
 revoke all on function public.open_cash_drawer(numeric, text) from public, anon;
@@ -2888,6 +2974,7 @@ revoke all on function public.transfer_product_shelf(uuid, uuid, integer, text) 
 
 grant execute on function public.is_admin(uuid) to authenticated;
 grant execute on function public.has_permission(text, uuid) to authenticated;
+grant execute on function public.requires_cash_reconciliation(uuid) to authenticated;
 grant execute on function public.list_cash_drawer_sessions(integer) to authenticated;
 grant execute on function public.get_cash_drawer_handover() to authenticated;
 grant execute on function public.open_cash_drawer(numeric, text) to authenticated;

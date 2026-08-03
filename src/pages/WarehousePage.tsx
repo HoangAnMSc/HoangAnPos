@@ -4,7 +4,6 @@ import {
   ClipboardCheck,
   PackageCheck,
   PackageMinus,
-  RefreshCw,
   Scale,
   Trash2,
 } from "lucide-react";
@@ -15,7 +14,7 @@ import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal } from "../components/ui/ErrorNoticeModal";
 import { Modal } from "../components/ui/Modal";
-import { PageContainer, PageToolbar, SearchInput, StateNotice } from "../components/ui/Page";
+import { PageContainer, SearchInput, StateNotice } from "../components/ui/Page";
 import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
@@ -179,63 +178,51 @@ export function WarehousePage() {
   return (
     <PageContainer className="!space-y-3 sm:!space-y-4" maxWidth="none">
       <ConfigNotice />
-      <PageToolbar
-        action={
-          <Button disabled={loading} onClick={() => void loadWarehouseData()} variant="secondary">
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Làm mới
-          </Button>
-        }
-        description="Theo dõi số lượng hiện có và đối chiếu với các phiên kiểm kê do nhân viên gửi."
-        eyebrow="Quản lý hàng hóa"
-        title="Kho"
-      >
-        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-          {[
-            {
-              icon: Boxes,
-              label: "Tổng số lượng",
-              tone: "bg-moss-100 text-moss-700",
-              value: warehouseStats.totalStock,
-            },
-            {
-              icon: PackageCheck,
-              label: "Trên kệ",
-              tone: "bg-sky-100 text-sky-700",
-              value: warehouseStats.shelfStock,
-            },
-            {
-              icon: Boxes,
-              label: "Trong kho",
-              tone: "bg-amber-100 text-amber-700",
-              value: warehouseStats.backroomStock,
-            },
-            {
-              icon: PackageMinus,
-              label: "Hết hàng",
-              tone: "bg-red-100 text-red-700",
-              value: warehouseStats.outOfStock,
-            },
-          ].map((item) => (
-            <div
-              className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5"
-              key={item.label}
-            >
-              <span className={`flex h-9 w-9 flex-none items-center justify-center rounded-lg ${item.tone}`}>
-                <item.icon className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-[10px] font-extrabold uppercase tracking-wide text-slate-500 sm:text-xs">
-                  {item.label}
-                </p>
-                <p className="text-xl font-black tabular-nums text-slate-950">
-                  {loading ? "—" : item.value}
-                </p>
-              </div>
+      <section aria-label="Tổng quan kho" className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+        {[
+          {
+            icon: Boxes,
+            label: "Tổng số lượng",
+            tone: "bg-moss-100 text-moss-700",
+            value: warehouseStats.totalStock,
+          },
+          {
+            icon: PackageCheck,
+            label: "Trên kệ",
+            tone: "bg-sky-100 text-sky-700",
+            value: warehouseStats.shelfStock,
+          },
+          {
+            icon: Boxes,
+            label: "Trong kho",
+            tone: "bg-amber-100 text-amber-700",
+            value: warehouseStats.backroomStock,
+          },
+          {
+            icon: PackageMinus,
+            label: "Hết hàng",
+            tone: "bg-red-100 text-red-700",
+            value: warehouseStats.outOfStock,
+          },
+        ].map((item) => (
+          <article
+            className="flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-soft"
+            key={item.label}
+          >
+            <span className={`flex h-10 w-10 flex-none items-center justify-center rounded-lg ${item.tone}`}>
+              <item.icon className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[10px] font-extrabold uppercase tracking-wide text-slate-500 sm:text-xs">
+                {item.label}
+              </p>
+              <p className="text-xl font-black tabular-nums text-slate-950">
+                {loading ? "—" : item.value}
+              </p>
             </div>
-          ))}
-        </div>
-      </PageToolbar>
+          </article>
+        ))}
+      </section>
 
       {error ? <StateNotice message={error} tone="error" /> : null}
 

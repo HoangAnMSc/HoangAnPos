@@ -1,6 +1,6 @@
-import { LogOut, Menu, PanelLeftClose, UserRound } from "lucide-react";
+import { Bell, LogOut, Menu, PanelLeftClose, UserRound } from "lucide-react";
 import { useState } from "react";
-import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { appPermissions } from "../../lib/permissions";
 import { Button } from "../ui/Button";
@@ -9,11 +9,31 @@ export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { canAccess, profile, role, signOut, user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const page = appPermissions.find((item) => item.path === location.pathname) ?? appPermissions[0];
   const displayName = profile?.full_name || user?.email || "Admin";
   const isPosRoute = location.pathname === "/pos";
   const visibleNavigation = appPermissions.filter((item) => canAccess(item.key));
   const currentPermission = appPermissions.find((item) => item.path === location.pathname);
+  const isWarehouseRoute = location.pathname === "/warehouse";
+  const isCashManagementRoute = location.pathname === "/cash-management";
+  const canOpenPageHistory =
+    isWarehouseRoute ||
+    (isCashManagementRoute && canAccess("cash-management.history.view"));
+  const pageHistoryOpen =
+    canOpenPageHistory && new URLSearchParams(location.search).get("history") === "1";
+  const historyLabel = isWarehouseRoute
+    ? "Mở lịch sử kho"
+    : "Mở lịch sử đối soát két";
+  const historyTitle = isWarehouseRoute
+    ? "Lịch sử nhập kho, xuất kho và chuyển kệ"
+    : "Lịch sử đối soát két";
+
+  function openPageHistory() {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.set("history", "1");
+    void navigate(`${location.pathname}?${nextParams.toString()}`);
+  }
 
   if (profile?.is_active === false) {
     return <Navigate replace to="/unauthorized" />;
@@ -124,6 +144,23 @@ export function AdminLayout() {
                     {page.description}
                   </p>
                 </div>
+                {canOpenPageHistory ? (
+                  <button
+                    aria-expanded={pageHistoryOpen}
+                    aria-haspopup="dialog"
+                    aria-label={historyLabel}
+                    className={`relative ml-auto flex h-11 w-11 flex-none items-center justify-center rounded-xl ring-1 transition ${
+                      pageHistoryOpen
+                        ? "bg-coal text-white ring-coal"
+                        : "bg-white text-coal shadow-soft ring-slate-200 hover:bg-slate-50"
+                    }`}
+                    onClick={openPageHistory}
+                    title={historyTitle}
+                    type="button"
+                  >
+                    <Bell className="h-5 w-5" />
+                  </button>
+                ) : null}
               </div>
             </header>
 

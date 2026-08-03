@@ -11,26 +11,14 @@ export type StockMovement = {
   products: { name: string; sku: string | null } | null;
 };
 
-export async function fetchStockMovements(type: "in" | "out") {
+export async function fetchWarehouseMovements() {
   requireSupabaseConfig();
   const { data, error } = await supabase
     .from("stock_movements")
     .select("id,movement_type,product_id,quantity,reason,actor_name,created_at,products(name,sku)")
-    .eq("movement_type", type)
+    .in("movement_type", ["in", "out", "to_shelf", "to_warehouse"])
     .order("created_at", { ascending: false })
-    .limit(100);
-  if (error) throw error;
-  return (data ?? []) as unknown as StockMovement[];
-}
-
-export async function fetchShelfMovements() {
-  requireSupabaseConfig();
-  const { data, error } = await supabase
-    .from("stock_movements")
-    .select("id,movement_type,product_id,quantity,reason,actor_name,created_at,products(name,sku)")
-    .in("movement_type", ["to_shelf", "to_warehouse"])
-    .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(200);
   if (error) throw error;
   return (data ?? []) as unknown as StockMovement[];
 }
