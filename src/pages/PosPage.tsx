@@ -34,6 +34,7 @@ import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { ErrorNoticeModal } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
@@ -41,7 +42,12 @@ import { useErrorNotice } from "../hooks/useErrorNotice";
 import { uploadPaymentProof } from "../lib/cloudinary";
 import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { normalizeNullableText } from "../lib/text";
-import { printPosReceipt } from "../lib/receipt";
+import {
+  getReceiptPaperSize,
+  printPosReceipt,
+  saveReceiptPaperSize,
+  type ReceiptPaperSize,
+} from "../lib/receipt";
 import {
   findProductByEan13,
   formatProductDate,
@@ -294,6 +300,7 @@ export function PosPage() {
   const [productQuery, setProductQuery] = useState("");
   const [productToBatchSelect, setProductToBatchSelect] = useState<Product | null>(null);
   const [printingCompletedSale, setPrintingCompletedSale] = useState(false);
+  const [receiptPaperSize, setReceiptPaperSize] = useState<ReceiptPaperSize>(() => getReceiptPaperSize());
   const [submittingCustomer, setSubmittingCustomer] = useState(false);
   const [submittingSale, setSubmittingSale] = useState(false);
   const [success, setSuccess] = useState("");
@@ -1000,7 +1007,7 @@ export function PosPage() {
         order: { ...completedSale.order, print_count: updatedOrder.print_count },
       };
       setCompletedSale(nextSale);
-      printPosReceipt(nextSale);
+      printPosReceipt({ ...nextSale, paperSize: receiptPaperSize });
     } catch (requestError) {
       showErrorNotice(
         requestError instanceof Error ? requestError.message : "Không in được hóa đơn.",
@@ -2194,6 +2201,20 @@ export function PosPage() {
               <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">
                 {formatCurrency(completedSale.order.total)}
               </p>
+            </div>
+            <div className="mt-4 text-left">
+              <Select
+                label="Khổ giấy máy in"
+                onChange={(event) => {
+                  const nextSize = event.target.value as ReceiptPaperSize;
+                  setReceiptPaperSize(nextSize);
+                  saveReceiptPaperSize(nextSize);
+                }}
+                value={receiptPaperSize}
+              >
+                <option value="58mm">Máy in nhiệt 58 mm</option>
+                <option value="80mm">Máy in nhiệt 80 mm</option>
+              </Select>
             </div>
             <p className="mt-3 text-xs font-semibold text-slate-500">
               Bạn có thể in ngay hoặc đóng để tiếp tục bán hàng.

@@ -5,7 +5,20 @@ type ReceiptInput = {
   items: CartItem[];
   order: Order;
   pointsBalance?: number | null;
+  paperSize?: ReceiptPaperSize;
 };
+
+export type ReceiptPaperSize = "58mm" | "80mm";
+const receiptPaperStorageKey = "hoang-an-pos:receipt-paper-size";
+
+export function getReceiptPaperSize(): ReceiptPaperSize {
+  if (typeof window === "undefined") return "80mm";
+  return window.localStorage.getItem(receiptPaperStorageKey) === "58mm" ? "58mm" : "80mm";
+}
+
+export function saveReceiptPaperSize(size: ReceiptPaperSize) {
+  window.localStorage.setItem(receiptPaperStorageKey, size);
+}
 
 type SavedReceiptInput = {
   customer: { address?: string | null; name: string; phone: string | null; points?: number } | null;
@@ -29,10 +42,13 @@ function dateTime(value: string) {
   const date = new Date(value);
   const pad = (part: number) => String(part).padStart(2, "0");
 
-  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
+  return `${pad(date.getHours())}:${pad(date.getMinutes())} · ${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
 }
 
-export function printPosReceipt({ customer, items, order, pointsBalance }: ReceiptInput) {
+export function printPosReceipt({ customer, items, order, paperSize = getReceiptPaperSize(), pointsBalance }: ReceiptInput) {
+  const isCompact = paperSize === "58mm";
+  const pageMargin = isCompact ? "3mm" : "4mm";
+  const bodyWidth = isCompact ? "52mm" : "72mm";
   const customerPointsBalance = pointsBalance ?? (
     customer ? Math.max(customer.points - order.points_redeemed + order.points_earned, 0) : null
   );
@@ -61,19 +77,19 @@ export function printPosReceipt({ customer, items, order, pointsBalance }: Recei
   receiptDocument.write(`<!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><title>${escapeHtml(order.code)}</title>
 <style>
-  @page { size: 80mm auto; margin: 4mm; }
+  @page { size: ${paperSize} auto; margin: ${pageMargin}; }
   * { box-sizing: border-box; }
-  body { width: 72mm; margin: 0 auto; color: #111; font: 12px/1.35 Arial, sans-serif; }
+  body { width: ${bodyWidth}; margin: 0 auto; color: #111; font: ${isCompact ? "10px" : "12px"}/1.35 Arial, sans-serif; }
   .center { text-align: center; }
   .brand { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .2px; }
-  h2 { margin: 5px 0 4px; font-size: 17px; text-align: center; }
+  h2 { margin: 5px 0 4px; font-size: ${isCompact ? "14px" : "17px"}; text-align: center; }
   .meta { margin: 7px 0; }
   .meta div, .total div { display: flex; justify-content: space-between; gap: 8px; }
   .meta span:first-child { flex: none; }
   .meta b, .meta span:last-child { text-align: right; overflow-wrap: anywhere; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   th, td { border: 1px solid #333; padding: 3px 2px; vertical-align: top; }
-  th { font-size: 10px; }
+  th { font-size: ${isCompact ? "8px" : "10px"}; }
   th:first-child { width: 38%; }
   th:nth-child(2) { width: 10%; }
   th:nth-child(3), th:nth-child(4) { width: 26%; }
@@ -91,7 +107,8 @@ export function printPosReceipt({ customer, items, order, pointsBalance }: Recei
   <h2>HÓA ĐƠN BÁN HÀNG</h2>
   <section class="meta">
     <div><span>Mã HĐ:</span><b>${escapeHtml(order.code)}</b></div>
-    <div><span>Ngày:</span><span>${dateTime(order.created_at)}</span></div>
+    <div><span>Giờ tạo:</span><span>${dateTime(order.created_at)}</span></div>
+    <div><span>Lần in:</span><b>Số ${Math.max(Number(order.print_count) || 1, 1)}</b></div>
     <div><span>Khách hàng:</span><b>${escapeHtml(customer?.name ?? "Khách lẻ")}</b></div>
     <div><span>Số ĐT:</span><span>${escapeHtml(customer?.phone ?? "—")}</span></div>
     <div><span>Địa chỉ:</span><span>${escapeHtml(customer?.address ?? "—")}</span></div>
