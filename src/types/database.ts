@@ -146,6 +146,45 @@ export type Database = {
         };
         Relationships: [];
       };
+      stock_movements: {
+        Row: {
+          id: string;
+          product_id: string;
+          movement_type: "in" | "out";
+          quantity: number;
+          reason: string | null;
+          actor_id: string | null;
+          actor_name: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_id: string;
+          movement_type: "in" | "out";
+          quantity: number;
+          reason?: string | null;
+          actor_id?: string | null;
+          actor_name: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          product_id?: string;
+          movement_type?: "in" | "out";
+          quantity?: number;
+          reason?: string | null;
+          actor_id?: string | null;
+          actor_name?: string;
+          created_at?: string;
+        };
+        Relationships: [{
+          foreignKeyName: "stock_movements_product_id_fkey";
+          columns: ["product_id"];
+          isOneToOne: false;
+          referencedRelation: "products";
+          referencedColumns: ["id"];
+        }];
+      };
       inventory_audits: {
         Row: {
           id: string;
@@ -944,6 +983,10 @@ export type Database = {
           created_at: string;
           updated_at: string;
         };
+      };
+      issue_product_stock: {
+        Args: { product_id_input: string; quantity_input: number; reason_input: string };
+        Returns: Database["public"]["Tables"]["products"]["Row"];
       };
       create_pos_order: {
         Args: {

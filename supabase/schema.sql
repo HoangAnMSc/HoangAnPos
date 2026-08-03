@@ -63,6 +63,7 @@ values
       'cloudinary-images.delete',
       'warehouse',
       'warehouse.audit.delete',
+      'warehouse.stock-out',
       'inventory',
       'inventory.count',
       'inventory.submit',
@@ -145,6 +146,18 @@ set permissions = (
   )
 )
 where 'pos.checkout' = any(permissions);
+
+-- Keep legacy warehouse/inventory permissions while exposing the unified Warehouse page.
+update public.app_roles
+set permissions = array_append(permissions, 'warehouse')
+where not ('warehouse' = any(permissions))
+  and (
+    'inventory' = any(permissions)
+    or 'inventory.count' = any(permissions)
+    or 'inventory.submit' = any(permissions)
+    or 'products.receive-stock' = any(permissions)
+    or 'warehouse.stock-out' = any(permissions)
+  );
 
 -- Discounts are no longer available in POS or role management.
 update public.app_roles
@@ -445,6 +458,20 @@ create table if not exists public.product_batches (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create table if not exists public.stock_movements (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references public.products(id) on delete restrict,
+  movement_type text not null check (movement_type in ('in', 'out')),
+  quantity integer not null check (quantity > 0),
+  reason text,
+  actor_id uuid references auth.users(id) on delete set null,
+  actor_name text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists stock_movements_created_at_idx on public.stock_movements(created_at desc);
+create index if not exists stock_movements_product_id_idx on public.stock_movements(product_id);
 
 create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
@@ -1387,7 +1414,62 @@ begin
   )
   returning * into batch_record;
 
+  insert into public.stock_movements (product_id, movement_type, quantity, reason, actor_id, actor_name)
+  values (
+    product_id_input,
+    'in',
+    quantity_input,
+    'Nhập kho',
+    auth.uid(),
+    coalesce((select full_name from public.profiles where id = auth.uid()), auth.uid()::text, 'Nhân viên')
+  );
+
   return batch_record;
+end;
+$$;
+
+create or replace function public.issue_product_stock(
+  product_id_input uuid,
+  quantity_input integer,
+  reason_input text
+)
+returns public.products
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  batch_record public.product_batches;
+  product_record public.products;
+  remaining integer := quantity_input;
+  deducted integer;
+begin
+  if not public.has_permission('warehouse.stock-out') then
+    raise exception 'Permission denied for stock out';
+  end if;
+  if quantity_input <= 0 then raise exception 'Quantity must be greater than zero'; end if;
+  if nullif(trim(reason_input), '') is null then raise exception 'Stock out reason is required'; end if;
+
+  select * into product_record from public.products where id = product_id_input for update;
+  if not found then raise exception 'Product not found'; end if;
+  if product_record.stock < quantity_input then raise exception 'Insufficient stock'; end if;
+
+  for batch_record in
+    select * from public.product_batches
+    where product_id = product_id_input and quantity > 0
+    order by expiry_date asc nulls last, import_date asc nulls last, created_at asc
+    for update
+  loop
+    exit when remaining <= 0;
+    deducted := least(batch_record.quantity, remaining);
+    update public.product_batches set quantity = quantity - deducted where id = batch_record.id;
+    remaining := remaining - deducted;
+  end loop;
+
+  update public.products set stock = stock - quantity_input where id = product_id_input returning * into product_record;
+  insert into public.stock_movements (product_id, movement_type, quantity, reason, actor_id, actor_name)
+  values (product_id_input, 'out', quantity_input, left(trim(reason_input), 1000), auth.uid(), coalesce((select full_name from public.profiles where id = auth.uid()), auth.uid()::text, 'Nhân viên'));
+  return product_record;
 end;
 $$;
 
@@ -2269,6 +2351,7 @@ alter table public.inventory_audit_lines enable row level security;
 alter table public.cloudinary_images enable row level security;
 alter table public.product_categories enable row level security;
 alter table public.product_batches enable row level security;
+alter table public.stock_movements enable row level security;
 alter table public.customers enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
@@ -2451,6 +2534,15 @@ using (public.has_permission('products.categories.create'))
 with check (public.has_permission('products.categories.create'));
 
 drop policy if exists "Admins manage product batches" on public.product_batches;
+
+drop policy if exists "Warehouse users can read stock movements" on public.stock_movements;
+create policy "Warehouse users can read stock movements"
+on public.stock_movements for select
+using (
+  public.has_permission('warehouse')
+  or public.has_permission('products.receive-stock')
+  or public.has_permission('warehouse.stock-out')
+);
 drop policy if exists "Permitted users can read product batches" on public.product_batches;
 create policy "Permitted users can read product batches"
 on public.product_batches for select
@@ -2623,6 +2715,8 @@ revoke all on function public.delete_pos_orders(uuid[], text) from public, anon;
 revoke all on function public.set_product_active(uuid, boolean) from public, anon;
 revoke all on function public.soft_delete_product(uuid) from public, anon;
 revoke all on function public.clear_products_image_url(text) from public, anon;
+revoke all on function public.receive_product_stock(uuid, integer, date, date) from public, anon;
+revoke all on function public.issue_product_stock(uuid, integer, text) from public, anon;
 
 grant execute on function public.is_admin(uuid) to authenticated;
 grant execute on function public.has_permission(text, uuid) to authenticated;
@@ -2639,3 +2733,5 @@ grant execute on function public.delete_pos_orders(uuid[], text) to authenticate
 grant execute on function public.set_product_active(uuid, boolean) to authenticated;
 grant execute on function public.soft_delete_product(uuid) to authenticated;
 grant execute on function public.clear_products_image_url(text) to authenticated;
+grant execute on function public.receive_product_stock(uuid, integer, date, date) to authenticated;
+grant execute on function public.issue_product_stock(uuid, integer, text) to authenticated;

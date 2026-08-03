@@ -2,7 +2,6 @@ import {
   BadgeDollarSign,
   Boxes,
   CalendarClock,
-  ClipboardList,
   Images,
   ReceiptText,
   ChartNoAxesCombined,
@@ -168,11 +167,6 @@ export const permissionGroups = [
         description: "Đổi trạng thái hiển thị của sản phẩm.",
       },
       {
-        key: "products.receive-stock",
-        label: "Nhập kho",
-        description: "Thêm lô hàng và số lượng tồn.",
-      },
-      {
         key: "products.categories.create",
         label: "Thêm nhóm hàng",
         description: "Tạo nhóm hàng mới trong biểu mẫu sản phẩm.",
@@ -215,15 +209,11 @@ export const permissionGroups = [
         label: "Xóa phiên kiểm kê",
         description: "Xóa một phiên kiểm kê đã được nhân viên hoàn tất.",
       },
-    ],
-  },
-  {
-    key: "inventory",
-    label: "Tồn kho",
-    path: "/inventory",
-    icon: ClipboardList,
-    description: "Nhập số lượng thực tế mà không hiển thị số tồn hệ thống.",
-    actions: [
+      {
+        key: "inventory",
+        label: "Mở tab tồn kho",
+        description: "Mở màn hình kiểm đếm tồn kho thực tế.",
+      },
       {
         key: "inventory.count",
         label: "Nhập tồn kho",
@@ -232,7 +222,17 @@ export const permissionGroups = [
       {
         key: "inventory.submit",
         label: "Hoàn tất kiểm kê",
-        description: "Gửi phiên kiểm kê sang trang Kho để đối chiếu.",
+        description: "Gửi phiên kiểm kê sang tab Kho để đối chiếu.",
+      },
+      {
+        key: "products.receive-stock",
+        label: "Nhập kho",
+        description: "Tạo lô hàng và cộng số lượng tồn.",
+      },
+      {
+        key: "warehouse.stock-out",
+        label: "Xuất kho",
+        description: "Trừ hàng khỏi kho và ghi nhận lý do xuất.",
       },
     ],
   },

@@ -1408,7 +1408,8 @@ export function ProductsPage() {
   const canEditProduct = canAccess("products.update");
   const canDeleteProduct = canAccess("products.delete");
   const canSetProductVisibility = canAccess("products.toggle-active");
-  const canReceiveStock = canAccess("products.receive-stock");
+  // Nhập kho đã được chuyển vào tab riêng của trang Kho hợp nhất.
+  const canReceiveStock = false;
   const canCreateCategory = canAccess("products.categories.create");
   const canPrintEan13 = canAccess("products.ean13.print");
   const canUploadCloudinaryImage = canAccess("cloudinary-images.upload");

@@ -22,9 +22,6 @@ const CashManagementPage = lazy(() =>
 const CustomersPage = lazy(() =>
   import("./pages/CustomersPage").then((module) => ({ default: module.CustomersPage }))
 );
-const InventoryPage = lazy(() =>
-  import("./pages/InventoryPage").then((module) => ({ default: module.InventoryPage }))
-);
 const LoginPage = lazy(() =>
   import("./pages/LoginPage").then((module) => ({ default: module.LoginPage }))
 );
@@ -57,8 +54,8 @@ const UnauthorizedPage = lazy(() =>
 const UsersPage = lazy(() =>
   import("./pages/UsersPage").then((module) => ({ default: module.UsersPage }))
 );
-const WarehousePage = lazy(() =>
-  import("./pages/WarehousePage").then((module) => ({ default: module.WarehousePage }))
+const WarehouseHubPage = lazy(() =>
+  import("./pages/WarehouseHubPage").then((module) => ({ default: module.WarehouseHubPage }))
 );
 
 function DefaultAdminRedirect() {
@@ -90,8 +87,8 @@ export function App() {
             <Route path="customers" element={<CustomersPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="cloudinary-images" element={<CloudinaryImagesPage />} />
-            <Route path="warehouse" element={<WarehousePage />} />
-            <Route path="inventory" element={<InventoryPage />} />
+            <Route path="warehouse" element={<WarehouseHubPage />} />
+            <Route path="inventory" element={<Navigate replace to="/warehouse?tab=inventory" />} />
             <Route path="attendance" element={<AttendancePage />} />
             <Route path="payment-settings" element={<PaymentSettingsPage />} />
             <Route path="roles" element={<RolesPage />} />
