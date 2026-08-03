@@ -333,7 +333,7 @@ function getLocationUrl(location: AttendanceLocationInput) {
 
 function getGeolocationErrorMessage(error: GeolocationPositionError) {
   if (error.code === error.PERMISSION_DENIED) {
-    return "Trình duyệt đang chặn định vị. Hãy cho phép truy cập vị trí để chấm công.";
+    return "Quyền vị trí đang bị từ chối. Hãy mở cài đặt của trang web, chọn Vị trí → Cho phép, tải lại trang rồi chấm công lại.";
   }
 
   if (error.code === error.TIMEOUT) {
@@ -344,8 +344,33 @@ function getGeolocationErrorMessage(error: GeolocationPositionError) {
 }
 
 async function getCurrentAttendanceLocation(): Promise<AttendanceLocationInput> {
+  if (!window.isSecureContext) {
+    throw new Error("Định vị chỉ hoạt động trên kết nối HTTPS. Hãy mở trang bằng địa chỉ bắt đầu bằng https://.");
+  }
+
   if (!navigator.geolocation) {
-    throw new Error("Trình duyệt không hỗ trợ định vị.");
+    throw new Error("Trình duyệt này không hỗ trợ định vị. Hãy mở trang trực tiếp bằng Chrome hoặc Safari, không dùng trình duyệt bên trong Zalo/Facebook.");
+  }
+
+  const policyDocument = document as Document & {
+    permissionsPolicy?: { allowsFeature: (feature: string) => boolean };
+  };
+
+  if (policyDocument.permissionsPolicy?.allowsFeature("geolocation") === false) {
+    throw new Error("Định vị bị chặn bởi chính sách của trang. Hãy mở trang trực tiếp trên domain chính, không mở bên trong iframe hoặc ứng dụng khác.");
+  }
+
+  if (navigator.permissions?.query) {
+    try {
+      const permission = await navigator.permissions.query({ name: "geolocation" });
+      if (permission.state === "denied") {
+        throw new Error("Bạn đã chặn quyền vị trí cho domain này. Nhấn biểu tượng ổ khóa/cài đặt cạnh thanh địa chỉ, bật Vị trí, rồi tải lại trang.");
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("đã chặn quyền vị trí")) {
+        throw error;
+      }
+    }
   }
 
   return new Promise((resolve, reject) => {

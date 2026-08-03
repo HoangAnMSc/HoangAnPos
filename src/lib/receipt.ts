@@ -4,11 +4,12 @@ type ReceiptInput = {
   customer: Customer | null;
   items: CartItem[];
   order: Order;
+  pointsBalance?: number | null;
 };
 
 type SavedReceiptInput = {
-  customer: { address?: string | null; name: string; phone: string | null } | null;
-  items: Array<{ product_name: string; quantity: number; unit_price: number }>;
+  customer: { address?: string | null; name: string; phone: string | null; points?: number } | null;
+  items: Array<{ product_name: string; quantity: number; unit_price: number; reward_points_cost?: number }>;
   order: Order;
 };
 
@@ -31,14 +32,17 @@ function dateTime(value: string) {
   return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
 }
 
-export function printPosReceipt({ customer, items, order }: ReceiptInput) {
+export function printPosReceipt({ customer, items, order, pointsBalance }: ReceiptInput) {
+  const customerPointsBalance = pointsBalance ?? (
+    customer ? Math.max(customer.points - order.points_redeemed + order.points_earned, 0) : null
+  );
   const rows = items
     .map(
       (item) => `<tr>
         <td>${escapeHtml(item.product.name)}</td>
         <td class="number">${item.quantity}</td>
-        <td class="number">${money(item.product.price)}</td>
-        <td class="number">${money(item.product.price * item.quantity)}</td>
+        <td class="number">${item.product.is_reward && order.points_redeemed > 0 ? `${money(item.product.reward_points_cost)} điểm` : money(item.product.price)}</td>
+        <td class="number">${item.product.is_reward && order.points_redeemed > 0 ? `${money(item.product.reward_points_cost * item.quantity)} điểm` : money(item.product.price * item.quantity)}</td>
       </tr>`
     )
     .join("");
@@ -103,6 +107,9 @@ export function printPosReceipt({ customer, items, order }: ReceiptInput) {
     <div class="grand"><span>Thanh toán</span><b>${money(order.total)}đ</b></div>
     <div><span>Khách đưa</span><b>${money(order.cash_received)}đ</b></div>
     <div><span>Tiền thừa</span><b>${money(order.change_amount)}đ</b></div>
+    ${order.points_redeemed > 0 ? `<div><span>Điểm đổi quà</span><b>-${money(order.points_redeemed)} điểm</b></div>` : ""}
+    ${order.points_earned > 0 ? `<div><span>Điểm tích lũy</span><b>+${money(order.points_earned)} điểm</b></div>` : ""}
+    ${customerPointsBalance !== null ? `<div><span>Điểm hiện có</span><b>${money(customerPointsBalance)} điểm</b></div>` : ""}
   </section>
   <div class="note"><b>Ghi chú:</b>${escapeHtml(order.note?.trim() || "—")}</div>
   <p class="contact">Cần hỗ trợ, kính mời Quý khách liên hệ:<br><b>0362791662 (Mr. An)</b></p>
@@ -122,11 +129,14 @@ export function printSavedReceipt({ customer, items, order }: SavedReceiptInput)
     customer: customer as Customer | null,
     items: items.map((item) => ({
       product: {
+        is_reward: (item.reward_points_cost ?? 0) > 0,
         name: item.product_name,
         price: item.unit_price,
+        reward_points_cost: item.reward_points_cost ?? 0,
       },
       quantity: item.quantity,
     })) as unknown as CartItem[],
     order,
+    pointsBalance: customer && "points" in customer ? Number(customer.points) : null,
   });
 }

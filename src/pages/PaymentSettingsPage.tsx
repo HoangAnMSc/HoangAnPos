@@ -4,7 +4,6 @@ import { MediaPickerModal } from "../components/media/MediaPickerModal";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
-import { Input } from "../components/ui/Input";
 import { PageContainer, StateNotice } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
@@ -171,18 +170,6 @@ export function PaymentSettingsPage() {
             </div>
 
             <div className="space-y-5">
-              <Input
-                label="Link ảnh QR"
-                onChange={(event) => {
-                  setQrUrl(event.target.value);
-                  if (!qrFile) {
-                    setQrPreview(event.target.value);
-                  }
-                }}
-                placeholder="https://..."
-                readOnly={!canUpdateSettings}
-                value={qrUrl}
-              />
               <Textarea
                 label="Thông tin hiển thị kèm mã"
                 onChange={(event) => setNote(event.target.value)}

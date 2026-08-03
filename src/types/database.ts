@@ -100,6 +100,8 @@ export type Database = {
           stock: number;
           image_url: string | null;
           is_active: boolean;
+          is_reward: boolean;
+          reward_points_cost: number;
           deleted_at: string | null;
           created_at: string;
           updated_at: string;
@@ -117,6 +119,8 @@ export type Database = {
           stock?: number;
           image_url?: string | null;
           is_active?: boolean;
+          is_reward?: boolean;
+          reward_points_cost?: number;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -134,6 +138,8 @@ export type Database = {
           stock?: number;
           image_url?: string | null;
           is_active?: boolean;
+          is_reward?: boolean;
+          reward_points_cost?: number;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -355,6 +361,8 @@ export type Database = {
           cancelled_at: string | null;
           cancelled_by: string | null;
           cancel_reason: string | null;
+          points_earned: number;
+          points_redeemed: number;
           status: "paid" | "cancelled";
           created_at: string;
         };
@@ -378,6 +386,8 @@ export type Database = {
           cancelled_at?: string | null;
           cancelled_by?: string | null;
           cancel_reason?: string | null;
+          points_earned?: number;
+          points_redeemed?: number;
           status?: "paid" | "cancelled";
           created_at?: string;
         };
@@ -401,6 +411,8 @@ export type Database = {
           cancelled_at?: string | null;
           cancelled_by?: string | null;
           cancel_reason?: string | null;
+          points_earned?: number;
+          points_redeemed?: number;
           status?: "paid" | "cancelled";
           created_at?: string;
         };
@@ -600,6 +612,7 @@ export type Database = {
           quantity: number;
           unit_price: number;
           line_total: number;
+          reward_points_cost: number;
           created_at: string;
         };
         Insert: {
@@ -613,6 +626,7 @@ export type Database = {
           quantity: number;
           unit_price: number;
           line_total: number;
+          reward_points_cost?: number;
           created_at?: string;
         };
         Update: {
@@ -626,6 +640,7 @@ export type Database = {
           quantity?: number;
           unit_price?: number;
           line_total?: number;
+          reward_points_cost?: number;
           created_at?: string;
         };
         Relationships: [
@@ -963,6 +978,8 @@ export type Database = {
           cancelled_at: string | null;
           cancelled_by: string | null;
           cancel_reason: string | null;
+          points_earned: number;
+          points_redeemed: number;
           status: "paid" | "cancelled";
           created_at: string;
         };
@@ -992,6 +1009,8 @@ export type Database = {
           cancelled_at: string | null;
           cancelled_by: string | null;
           cancel_reason: string | null;
+          points_earned: number;
+          points_redeemed: number;
           status: "paid" | "cancelled";
           created_at: string;
         };
@@ -1027,6 +1046,8 @@ export type Database = {
           cancelled_at: string | null;
           cancelled_by: string | null;
           cancel_reason: string | null;
+          points_earned: number;
+          points_redeemed: number;
           status: "paid" | "cancelled";
           created_at: string;
         };

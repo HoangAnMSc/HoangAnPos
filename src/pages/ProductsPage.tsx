@@ -68,6 +68,8 @@ type ProductFormState = {
   stock: string;
   image_url: string;
   is_active: boolean;
+  is_reward: boolean;
+  reward_points_cost: string;
 };
 
 const emptyForm: ProductFormState = {
@@ -79,8 +81,10 @@ const emptyForm: ProductFormState = {
   image_url: "",
   import_date: "",
   is_active: true,
+  is_reward: false,
   name: "",
   price: "0",
+  reward_points_cost: "0",
   stock: "0",
 };
 
@@ -101,8 +105,10 @@ function productToForm(product?: Product | null, initialEan13 = ""): ProductForm
     image_url: product.image_url ?? "",
     import_date: product.import_date ?? "",
     is_active: product.is_active,
+    is_reward: product.is_reward,
     name: product.name,
     price: String(product.price),
+    reward_points_cost: String(product.reward_points_cost),
     ean13: normalizeEan13Input(product.sku),
     stock: String(product.stock),
   };
@@ -601,6 +607,7 @@ function ProductForm({
     const price = Number(form.price);
     const costPrice = Number(form.cost_price);
     const stock = Number(form.stock);
+    const rewardPointsCost = Number(form.reward_points_cost);
     const ean13Code = normalizeEan13Input(form.ean13);
     const importDate = normalizeNullableText(form.import_date);
     const expiryDate = normalizeNullableText(form.expiry_date);
@@ -610,8 +617,13 @@ function ProductForm({
       return;
     }
 
-    if ([price, costPrice, stock].some((value) => Number.isNaN(value) || value < 0)) {
+    if ([price, costPrice, stock, rewardPointsCost].some((value) => Number.isNaN(value) || value < 0)) {
       setError("Giá bán, giá vốn và số lượng phải là số không âm.");
+      return;
+    }
+
+    if (form.is_reward && rewardPointsCost < 1) {
+      setError("Quà đổi điểm phải có số điểm cần đổi lớn hơn 0.");
       return;
     }
 
@@ -635,8 +647,10 @@ function ProductForm({
           image_url: normalizeNullableText(form.image_url),
           import_date: importDate,
           is_active: form.is_active,
+          is_reward: form.is_reward,
           name,
           price,
+          reward_points_cost: form.is_reward ? Math.floor(rewardPointsCost) : 0,
           sku: ean13Code || null,
           stock: Math.floor(stock),
         },
@@ -734,6 +748,20 @@ function ProductForm({
             value={form.description}
           />
         </label>
+
+        <section className="space-y-3">
+          <h3 className="text-sm font-extrabold text-slate-950">Loại sản phẩm</h3>
+          <div className="grid grid-cols-2 gap-2">
+            <button className={`h-12 rounded-xl border px-3 text-sm font-bold ${!form.is_reward ? "border-moss-500 bg-moss-50 text-moss-700" : "border-slate-200 bg-white"}`} onClick={() => updateField("is_reward", false)} type="button">Sản phẩm bán</button>
+            <button className={`h-12 rounded-xl border px-3 text-sm font-bold ${form.is_reward ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 bg-white"}`} onClick={() => updateField("is_reward", true)} type="button">Quà đổi điểm</button>
+          </div>
+          {form.is_reward ? (
+            <label className="block">
+              <span className={labelClassName}>Điểm cần đổi</span>
+              <input className={fieldClassName} inputMode="numeric" onChange={(event) => updateField("reward_points_cost", normalizeIntegerInput(event.target.value))} placeholder="100" type="text" value={formatIntegerInput(form.reward_points_cost)} />
+            </label>
+          ) : null}
+        </section>
 
         <label className="block">
           <span className={labelClassName}>Nhóm hàng</span>

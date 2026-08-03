@@ -68,7 +68,6 @@ type PosBill = {
   cart: PosCartItem[];
   cashReceived: string;
   customerQuery: string;
-  discount: string;
   orderNote: string;
   paymentMethod: PaymentMethod;
   savedAt: string | null;
@@ -105,7 +104,6 @@ function createEmptyBill(id: number): PosBill {
     cart: [],
     cashReceived: "",
     customerQuery: "",
-    discount: "0",
     orderNote: "",
     paymentMethod: "cash",
     savedAt: null,
@@ -129,7 +127,6 @@ function normalizeBill(value: Partial<PosBill> | undefined, fallbackId: number):
     ...createEmptyBill(Number(value?.id) || fallbackId),
     ...value,
     cart,
-    discount: String(value?.discount ?? "0"),
     cashReceived: String(value?.cashReceived ?? ""),
     paymentMethod: value?.paymentMethod === "transfer" ? "transfer" : "cash",
     savedAt: value?.savedAt || null,
@@ -259,7 +256,6 @@ export function PosPage() {
   const { canAccess, user } = useAuth();
   const productSearchRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLInputElement>(null);
-  const discountRef = useRef<HTMLInputElement>(null);
   const focusSearchAfterBatchRef = useRef(true);
   const paidAmountRef = useRef<HTMLInputElement>(null);
 
@@ -300,12 +296,10 @@ export function PosPage() {
   const cart = activeBill?.cart ?? [];
   const cashReceived = activeBill?.cashReceived ?? "";
   const customerQuery = activeBill?.customerQuery ?? "";
-  const discount = activeBill?.discount ?? "0";
   const orderNote = activeBill?.orderNote ?? "";
   const paymentMethod = activeBill?.paymentMethod ?? "cash";
   const selectedCustomerId = activeBill?.selectedCustomerId ?? "";
   const canCheckout = canAccess("pos.checkout");
-  const canApplyDiscount = canAccess("pos.discount");
   const canCreateQuickCustomer =
     canAccess("pos.quick-customer.create") || canAccess("customers.create");
   const canUploadPaymentProof = canAccess("pos.payment-proof.upload");
@@ -413,17 +407,11 @@ export function PosPage() {
         }
       }
 
-      if (event.key === "F6") {
-        event.preventDefault();
-        if (canApplyDiscount) {
-          discountRef.current?.focus();
-        }
-      }
     }
 
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [canApplyDiscount, canCheckout]);
+  }, [canCheckout]);
 
   const activeProducts = useMemo(() => getActiveProducts(products), [products]);
   const normalizedProductQuery = productQuery.trim().toLowerCase();
@@ -461,10 +449,23 @@ export function PosPage() {
       .slice(0, 6);
   }, [customers, normalizedCustomerQuery, selectedCustomer]);
 
-  const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-  const rawDiscount = canApplyDiscount ? Number(discount || 0) : 0;
-  const safeDiscount = Math.min(Math.max(Number.isNaN(rawDiscount) ? 0 : rawDiscount, 0), subtotal);
-  const total = subtotal - safeDiscount;
+  const regularSubtotal = cart.reduce(
+    (sum, item) => sum + (item.product.is_reward ? 0 : item.product.price * item.quantity),
+    0
+  );
+  const rewardSubtotal = cart.reduce(
+    (sum, item) => sum + (item.product.is_reward ? item.product.price * item.quantity : 0),
+    0
+  );
+  const rewardPointsRequired = cart.reduce(
+    (sum, item) => sum + (item.product.is_reward ? item.product.reward_points_cost * item.quantity : 0),
+    0
+  );
+  const rewardsPaidWithPoints = Boolean(
+    selectedCustomer && rewardPointsRequired > 0 && selectedCustomer.points >= rewardPointsRequired
+  );
+  const subtotal = regularSubtotal + (rewardsPaidWithPoints ? 0 : rewardSubtotal);
+  const total = subtotal;
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const availableProductCount = activeProducts.filter((product) => product.stock > 0).length;
   const paidAmount = Number(cashReceived || 0) || 0;
@@ -770,8 +771,7 @@ export function PosPage() {
     }
   }
 
-  function getValidatedDiscount() {
-    const discountValue = canApplyDiscount ? Number(discount || 0) : 0;
+  function validateCartForCheckout() {
     setError("");
     setSuccess("");
 
@@ -780,12 +780,7 @@ export function PosPage() {
       return null;
     }
 
-    if (Number.isNaN(discountValue) || discountValue < 0) {
-      showErrorNotice("Giảm giá phải là số không âm.", "Giảm giá không hợp lệ");
-      return null;
-    }
-
-    return discountValue;
+    return true;
   }
 
   function openPaymentModal() {
@@ -793,8 +788,7 @@ export function PosPage() {
       return;
     }
 
-    const discountValue = getValidatedDiscount();
-    if (discountValue === null) {
+    if (!validateCartForCheckout()) {
       return;
     }
 
@@ -837,8 +831,7 @@ export function PosPage() {
       return;
     }
 
-    const discountValue = getValidatedDiscount();
-    if (discountValue === null) {
+    if (!validateCartForCheckout()) {
       return;
     }
 
@@ -869,7 +862,6 @@ export function PosPage() {
         cashierId: user?.id ?? null,
         cart,
         customerId: selectedCustomerId || null,
-        discount: discountValue,
         note: normalizeNullableText(orderNote),
         paymentMethod: selectedPaymentMethod,
         paymentProofNote: normalizeNullableText(paymentProofNote),
@@ -888,7 +880,7 @@ export function PosPage() {
       const earnedPoints = completedCustomer ? Math.floor(Number(order.total) / 100000) : 0;
       setSuccess(
         `Đã tạo hóa đơn ${order.code} với tổng tiền ${formatCurrency(order.total)}.${
-          completedCustomer ? ` Khách hàng được cộng ${earnedPoints} điểm.` : ""
+          completedCustomer ? ` Khách hàng được cộng ${earnedPoints} điểm${rewardsPaidWithPoints ? ` và dùng ${rewardPointsRequired} điểm đổi quà` : ""}.` : ""
         }`
       );
       setCompletedSale({
@@ -1613,37 +1605,6 @@ export function PosPage() {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="shrink-0 text-sm font-extrabold text-moss-700">
-                      Giảm giá
-                    </span>
-                    {canApplyDiscount ? (
-                      <label className="relative min-w-0 max-w-40 flex-1">
-                        <input
-                          aria-label="Số tiền giảm giá"
-                          className="h-10 w-full rounded-xl border border-moss-200 bg-white px-3 pr-8 text-right text-sm font-extrabold tabular-nums text-moss-700 outline-none transition focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
-                          inputMode="numeric"
-                          onChange={(event) =>
-                            updateActiveBillField(
-                              "discount",
-                              normalizeIntegerInput(event.target.value)
-                            )
-                          }
-                          ref={discountRef}
-                          type="text"
-                          value={formatIntegerInput(discount)}
-                        />
-                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                          đ
-                        </span>
-                      </label>
-                    ) : (
-                      <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
-                        {formatCurrency(safeDiscount)}
-                      </span>
-                    )}
-                  </div>
-
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-sm font-extrabold text-slate-600">Thành tiền</span>
                     <span className="min-w-[10ch] text-right text-base font-extrabold tabular-nums text-slate-900">
@@ -1802,32 +1763,14 @@ export function PosPage() {
                 {formatCurrency(total)}
               </span>
             </div>
-            {safeDiscount > 0 ? (
-              <p className="mt-2 text-sm font-bold text-moss-700 sm:text-right">
-                Đã giảm {formatCurrency(safeDiscount)}
+            {rewardPointsRequired > 0 ? (
+              <p className="mt-2 text-sm font-bold text-amber-700 sm:text-right">
+                {rewardsPaidWithPoints
+                  ? `Đổi quà: ${rewardPointsRequired.toLocaleString("vi-VN")} điểm`
+                  : `Quà tính theo giá bán${selectedCustomer ? " (không đủ điểm)" : ""}`}
               </p>
             ) : null}
           </div>
-
-          {canApplyDiscount ? (
-            <label className="flex min-h-14 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 sm:px-4 sm:py-3 xl:hidden">
-              <span className="shrink-0 text-sm font-extrabold text-slate-700">Giảm giá</span>
-              <span className="relative w-36">
-                <input
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 pr-8 text-right text-base font-extrabold text-moss-700 outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100 sm:h-11"
-                  inputMode="numeric"
-                  onChange={(event) =>
-                    updateActiveBillField("discount", normalizeIntegerInput(event.target.value))
-                  }
-                  type="text"
-                  value={formatIntegerInput(discount)}
-                />
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
-                  đ
-                </span>
-              </span>
-            </label>
-          ) : null}
 
           <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {(["cash", "transfer"] as PaymentMethod[]).map((method) => {

@@ -483,7 +483,9 @@ export function OrdersPage() {
                     <div>
                       <p className="font-bold text-slate-900">{item.product_name}</p>
                       <p className="mt-1 text-sm font-semibold text-slate-500">
-                        {formatCurrency(item.unit_price)}
+                        {item.reward_points_cost > 0
+                          ? `${item.reward_points_cost.toLocaleString("vi-VN")} điểm`
+                          : formatCurrency(item.unit_price)}
                       </p>
                       {item.import_date || item.expiry_date ? (
                         <p className="mt-1 text-xs font-bold text-moss-600">
@@ -502,6 +504,13 @@ export function OrdersPage() {
                 ))}
               </div>
             </div>
+
+            {selectedOrder.points_redeemed > 0 || selectedOrder.points_earned > 0 ? (
+              <div className="grid gap-3 rounded-2xl bg-amber-50 p-4 sm:grid-cols-2">
+                <p className="font-bold text-amber-900">Điểm đã dùng: {selectedOrder.points_redeemed.toLocaleString("vi-VN")}</p>
+                <p className="font-bold text-emerald-800">Điểm được cộng: {selectedOrder.points_earned.toLocaleString("vi-VN")}</p>
+              </div>
+            ) : null}
 
             {selectedOrder.payment_proof_url ? (
               <div>

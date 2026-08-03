@@ -129,7 +129,9 @@ export function ProductCard({
             {product.name}
           </h3>
           <p className={clsx("mt-1 font-black text-moss-700", compact ? "text-xs" : "text-sm")}>
-            {formatCurrency(product.price)}
+            {product.is_reward
+              ? `${product.reward_points_cost.toLocaleString("vi-VN")} điểm · ${formatCurrency(product.price)}`
+              : formatCurrency(product.price)}
           </p>
 
           <div

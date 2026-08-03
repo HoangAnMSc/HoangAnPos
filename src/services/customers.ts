@@ -6,6 +6,7 @@ export type CustomerInput = {
   email?: string | null;
   address?: string | null;
   note?: string | null;
+  points?: number;
 };
 
 export async function fetchCustomers() {

@@ -16,6 +16,8 @@ export type ProductInput = {
   stock: number;
   image_url?: string | null;
   is_active: boolean;
+  is_reward: boolean;
+  reward_points_cost: number;
 };
 
 export type ReceiveStockInput = {

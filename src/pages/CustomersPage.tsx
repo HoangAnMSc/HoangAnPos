@@ -21,6 +21,7 @@ import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import { getErrorMessage } from "../lib/errors";
+import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { normalizeNullableText } from "../lib/text";
 import {
   createCustomer,
@@ -37,6 +38,7 @@ type CustomerFormState = {
   email: string;
   address: string;
   note: string;
+  points: string;
 };
 
 const emptyForm: CustomerFormState = {
@@ -45,6 +47,7 @@ const emptyForm: CustomerFormState = {
   name: "",
   note: "",
   phone: "",
+  points: "0",
 };
 
 function customerToForm(customer?: Customer | null): CustomerFormState {
@@ -58,6 +61,7 @@ function customerToForm(customer?: Customer | null): CustomerFormState {
     name: customer.name,
     note: customer.note ?? "",
     phone: customer.phone ?? "",
+    points: String(customer.points ?? 0),
   };
 }
 
@@ -89,8 +93,14 @@ function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
     setError("");
 
     const name = form.name.trim();
+    const points = Number(form.points);
     if (!name) {
       setError("Tên khách hàng là bắt buộc.");
+      return;
+    }
+
+    if (!Number.isInteger(points) || points < 0) {
+      setError("Điểm tích lũy phải là số nguyên không âm.");
       return;
     }
 
@@ -101,6 +111,7 @@ function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
         name,
         note: normalizeNullableText(form.note),
         phone: normalizeNullableText(form.phone),
+        points,
       });
     } catch (requestError) {
       setError(getErrorMessage(requestError, "Lưu khách hàng thất bại."));
@@ -135,6 +146,13 @@ function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
           onChange={(event) => updateField("address", event.target.value)}
           placeholder="Quận/Huyện, Tỉnh/Thành"
           value={form.address}
+        />
+        <Input
+          inputMode="numeric"
+          label="Điểm tích lũy"
+          onChange={(event) => updateField("points", normalizeIntegerInput(event.target.value))}
+          placeholder="0"
+          value={formatIntegerInput(form.points)}
         />
       </div>
       <Textarea

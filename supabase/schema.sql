@@ -35,7 +35,6 @@ values
     array[
       'pos',
       'pos.checkout',
-      'pos.discount',
       'pos.quick-customer.create',
       'pos.payment-proof.upload',
       'orders',
@@ -96,7 +95,6 @@ values
     array[
       'pos',
       'pos.checkout',
-      'pos.discount',
       'pos.quick-customer.create',
       'pos.payment-proof.upload',
       'orders',
@@ -147,6 +145,11 @@ set permissions = (
   )
 )
 where 'pos.checkout' = any(permissions);
+
+-- Discounts are no longer available in POS or role management.
+update public.app_roles
+set permissions = array_remove(permissions, 'pos.discount')
+where 'pos.discount' = any(permissions);
 
 alter table public.profiles
 add column if not exists role_id uuid references public.app_roles(id) on delete set null;
@@ -235,6 +238,12 @@ add column if not exists expiry_date date;
 
 alter table public.products
 add column if not exists deleted_at timestamptz;
+
+alter table public.products
+add column if not exists is_reward boolean not null default false;
+
+alter table public.products
+add column if not exists reward_points_cost integer not null default 0 check (reward_points_cost >= 0);
 
 create table if not exists public.cloudinary_images (
   id uuid primary key default gen_random_uuid(),
@@ -327,6 +336,12 @@ add column if not exists cancelled_by uuid references auth.users(id) on delete s
 
 alter table public.orders
 add column if not exists cancel_reason text;
+
+alter table public.orders
+add column if not exists points_earned integer not null default 0;
+
+alter table public.orders
+add column if not exists points_redeemed integer not null default 0;
 
 do $$
 begin
@@ -453,6 +468,9 @@ add column if not exists import_date date;
 
 alter table public.order_items
 add column if not exists expiry_date date;
+
+alter table public.order_items
+add column if not exists reward_points_cost integer not null default 0;
 
 create table if not exists public.payment_settings (
   id boolean primary key default true check (id),
@@ -1759,11 +1777,15 @@ declare
   product_record public.products;
   batch_record public.product_batches;
   subtotal_value numeric(12, 2) := 0;
+  reward_subtotal_value numeric(12, 2) := 0;
   discount_value numeric(12, 2) := greatest(coalesce(discount_input, 0), 0);
   total_value numeric(12, 2);
   payment_method_value text := coalesce(nullif(payment_method_input, ''), 'cash');
   cash_received_value numeric(12, 2) := greatest(coalesce(cash_received_input, 0), 0);
   cash_session_id_value uuid;
+  customer_record public.customers;
+  points_redeemed_value integer := 0;
+  points_earned_value integer := 0;
 begin
   if auth.uid() is null or not public.has_permission('pos.checkout') then
     raise exception 'Only admins can create orders';
@@ -1829,15 +1851,33 @@ begin
       end if;
     end if;
 
-    subtotal_value := subtotal_value + (product_record.price * line_quantity);
+    if product_record.is_reward then
+      if product_record.reward_points_cost <= 0 then
+        raise exception 'Reward product has invalid points cost';
+      end if;
+      points_redeemed_value := points_redeemed_value + (product_record.reward_points_cost * line_quantity);
+      reward_subtotal_value := reward_subtotal_value + (product_record.price * line_quantity);
+    else
+      subtotal_value := subtotal_value + (product_record.price * line_quantity);
+    end if;
   end loop;
 
-  discount_value := least(discount_value, subtotal_value);
-  total_value := subtotal_value - discount_value;
-
-  if discount_value > 0 and not public.has_permission('pos.discount') then
-    raise exception 'Permission denied for order discount';
+  if discount_value > 0 then
+    raise exception 'Order discounts are disabled';
   end if;
+  discount_value := 0;
+  if points_redeemed_value > 0 then
+    if customer_id_input is not null then
+      select * into customer_record from public.customers where id = customer_id_input for update;
+      if not found then raise exception 'Customer not found'; end if;
+    end if;
+    if customer_id_input is null or customer_record.points < points_redeemed_value then
+      points_redeemed_value := 0;
+      subtotal_value := subtotal_value + reward_subtotal_value;
+    end if;
+  end if;
+  total_value := subtotal_value;
+  points_earned_value := floor(total_value / 100000)::integer;
 
   if payment_method_value not in ('cash', 'transfer') then
     raise exception 'Invalid payment method';
@@ -1868,6 +1908,8 @@ begin
     payment_proof_url,
     payment_proof_note,
     note,
+    points_earned,
+    points_redeemed,
     status
   )
   values (
@@ -1897,6 +1939,8 @@ begin
     nullif(payment_proof_url_input, ''),
     nullif(payment_proof_note_input, ''),
     nullif(note_input, ''),
+    points_earned_value,
+    points_redeemed_value,
     'paid'
   )
   returning * into order_record;
@@ -1941,7 +1985,7 @@ begin
     set stock = stock - line_quantity
     where id = product_record.id;
 
-    line_total := product_record.price * line_quantity;
+    line_total := case when product_record.is_reward and points_redeemed_value > 0 then 0 else product_record.price * line_quantity end;
 
     insert into public.order_items (
       order_id,
@@ -1952,7 +1996,8 @@ begin
       product_name,
       quantity,
       unit_price,
-      line_total
+      line_total,
+      reward_points_cost
     )
     values (
       order_record.id,
@@ -1962,14 +2007,15 @@ begin
       case when nullif(item ->> 'batch_id', '') is not null then batch_record.expiry_date else product_record.expiry_date end,
       product_record.name,
       line_quantity,
-      product_record.price,
-      line_total
+      case when product_record.is_reward and points_redeemed_value > 0 then 0 else product_record.price end,
+      line_total,
+      case when product_record.is_reward and points_redeemed_value > 0 then product_record.reward_points_cost else 0 end
     );
   end loop;
 
   if customer_id_input is not null then
     update public.customers
-    set points = points + floor(total_value / 100000)::integer
+    set points = points - points_redeemed_value + points_earned_value
     where id = customer_id_input;
   end if;
 
@@ -2046,7 +2092,7 @@ begin
 
   if order_record.customer_id is not null then
     update public.customers
-    set points = greatest(points - floor(order_record.total / 100000)::integer, 0)
+    set points = greatest(points - order_record.points_earned + order_record.points_redeemed, 0)
     where id = order_record.customer_id;
   end if;
 
@@ -2185,7 +2231,7 @@ begin
     if order_record.status = 'paid' then
       if order_record.customer_id is not null then
         update public.customers
-        set points = greatest(points - floor(order_record.total / 100000)::integer, 0)
+        set points = greatest(points - order_record.points_earned + order_record.points_redeemed, 0)
         where id = order_record.customer_id;
       end if;
 

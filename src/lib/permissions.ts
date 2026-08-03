@@ -43,11 +43,6 @@ export const permissionGroups = [
         description: "Thêm sản phẩm vào giỏ, thanh toán và tạo hóa đơn.",
       },
       {
-        key: "pos.discount",
-        label: "Giảm giá",
-        description: "Nhập giảm giá trên hóa đơn POS.",
-      },
-      {
         key: "pos.quick-customer.create",
         label: "Thêm khách nhanh",
         description: "Tạo khách hàng mới ngay trong màn hình POS.",
