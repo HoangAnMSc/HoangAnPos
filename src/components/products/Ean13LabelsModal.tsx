@@ -25,12 +25,11 @@ function createPrintDocument(products: Product[]) {
         <section class="label">
           <div class="label-head">
             <div class="name">${escapeHtml(product.name)}</div>
-            <div class="price">${escapeHtml(formatCurrency(product.price))}</div>
           </div>
           <div class="ean13">${createEan13SvgMarkup(ean13Value)}</div>
           <div class="code">${escapeHtml(ean13Value)}</div>
           <div class="meta">
-            <span>Tồn kho: <strong>${product.stock}</strong></span>
+            <span><strong>${escapeHtml(formatCurrency(product.price))}</strong></span>
             <span>Hạn dùng: <strong>${escapeHtml(formatProductDate(product.expiry_date))}</strong></span>
           </div>
         </section>
@@ -83,17 +82,11 @@ function createPrintDocument(products: Product[]) {
           }
 
           .name {
-            min-height: 9mm;
             overflow: hidden;
             font-size: 10pt;
             font-weight: 800;
             line-height: 1.15;
-          }
-
-          .price {
-            color: #475569;
-            font-size: 8pt;
-            font-weight: 700;
+            text-align: center;
           }
 
           .ean13 {
@@ -186,13 +179,10 @@ export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalPr
                 className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
                 key={product.id}
               >
-                <div className="min-h-12">
-                  <h3 className="line-clamp-2 text-sm font-extrabold leading-tight text-slate-950">
+                <div>
+                  <h3 className="line-clamp-2 text-center text-sm font-extrabold leading-tight text-slate-950">
                     {product.name}
                   </h3>
-                  <p className="mt-1 text-xs font-bold text-slate-500">
-                    {formatCurrency(product.price)}
-                  </p>
                 </div>
                 <div
                   className="mt-3 h-16 w-full [&_svg]:h-full [&_svg]:w-full"
@@ -203,7 +193,7 @@ export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalPr
                 </p>
                 <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
                   <span>
-                    Tồn kho: <strong className="text-slate-950">{product.stock}</strong>
+                    <strong className="text-slate-950">{formatCurrency(product.price)}</strong>
                   </span>
                   <span>
                     HSD:{" "}
