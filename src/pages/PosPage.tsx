@@ -190,6 +190,10 @@ function formatCustomerLabel(customer: Customer) {
   return `${customer.name}${customer.phone ? ` - ${customer.phone}` : ""}`;
 }
 
+function getSellableStock(product: Product) {
+  return Math.max(0, product.shelf_stock ?? 0);
+}
+
 type QuickCustomerFormProps = {
   formId: string;
   submitting: boolean;
@@ -403,13 +407,13 @@ export function PosPage() {
               return item;
             }
 
-            if (!freshProduct.is_active || freshProduct.stock <= 0) {
+            if (!freshProduct.is_active || getSellableStock(freshProduct) <= 0) {
               changed = true;
               return null;
             }
 
             const freshBatch = item.batch?.id ? batchesById.get(item.batch.id) ?? null : null;
-            const availableStock = freshBatch?.quantity ?? freshProduct.stock;
+            const availableStock = freshBatch?.shelf_quantity ?? getSellableStock(freshProduct);
             if (item.batch?.id && (!freshBatch || freshBatch.quantity <= 0)) {
               changed = true;
               return null;
@@ -459,7 +463,7 @@ export function PosPage() {
   const activeProducts = useMemo(() => getActiveProducts(products), [products]);
   const productCategories = useMemo(() => {
     const counts = new Map<string, number>();
-    activeProducts.filter((product) => product.stock > 0).forEach((product) => {
+    activeProducts.filter((product) => getSellableStock(product) > 0).forEach((product) => {
       const category = product.category?.trim() || "Khác";
       counts.set(category, (counts.get(category) ?? 0) + 1);
     });
@@ -489,7 +493,7 @@ export function PosPage() {
       .slice(0, 8);
   }, [activeProducts, matchesSelectedCategory, normalizedProductQuery]);
   const quickProducts = useMemo(
-    () => activeProducts.filter((product) => product.stock > 0).filter(matchesSelectedCategory).slice(0, 24),
+    () => activeProducts.filter((product) => getSellableStock(product) > 0).filter(matchesSelectedCategory).slice(0, 24),
     [activeProducts, matchesSelectedCategory]
   );
 
@@ -530,7 +534,7 @@ export function PosPage() {
   const subtotal = regularSubtotal + (rewardsPaidWithPoints ? 0 : rewardSubtotal);
   const total = subtotal;
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const availableProductCount = activeProducts.filter((product) => product.stock > 0).length;
+  const availableProductCount = activeProducts.filter((product) => getSellableStock(product) > 0).length;
   const paidAmount = Number(cashReceived || 0) || 0;
   const changeAmount = Math.max(paidAmount - total, 0);
   const quickCustomerFormId = "quick-customer-form";
@@ -571,7 +575,7 @@ export function PosPage() {
   }
 
   function getProductBatches(productId: string) {
-    return productBatches.filter((batch) => batch.product_id === productId && batch.quantity > 0);
+    return productBatches.filter((batch) => batch.product_id === productId && batch.shelf_quantity > 0);
   }
 
   function switchBill(billId: number) {
@@ -630,7 +634,7 @@ export function PosPage() {
     setSuccess("");
     setError("");
 
-    if (product.stock <= 0) {
+    if (getSellableStock(product) <= 0) {
       showErrorNotice("Sản phẩm này đã hết hàng.", "Không thể thêm sản phẩm");
       return;
     }
@@ -656,9 +660,9 @@ export function PosPage() {
         : 0;
       const maxByBatch = selectedBatch
         ? selectedBatch.quantity - quantityInBatch
-        : product.stock - quantityInCart;
+        : getSellableStock(product) - quantityInCart;
 
-      if (quantityInCart >= product.stock || maxByBatch <= 0) {
+      if (quantityInCart >= getSellableStock(product) || maxByBatch <= 0) {
         return current;
       }
 
@@ -714,7 +718,7 @@ export function PosPage() {
                 : cartItem.product.id === item.product.id
             )
             .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-          const availableStock = item.batch?.quantity ?? item.product.stock;
+          const availableStock = item.batch?.shelf_quantity ?? getSellableStock(item.product);
           const maxQuantity = Math.max(availableStock - otherQuantity, 0);
 
           return {
@@ -803,7 +807,7 @@ export function PosPage() {
       return;
     }
 
-    if (product.stock <= 0 || getQuantityInCart(product.id) >= product.stock) {
+    if (getSellableStock(product) <= 0 || getQuantityInCart(product.id) >= getSellableStock(product)) {
       showErrorNotice(`Sản phẩm "${product.name}" không còn tồn để thêm.`, "Hết tồn kho");
       return;
     }
@@ -1094,7 +1098,7 @@ export function PosPage() {
                       {productResults.map((product) => {
                         const quantityInCart = getQuantityInCart(product.id);
                         const disabled =
-                          !canCheckout || product.stock <= 0 || quantityInCart >= product.stock;
+                          !canCheckout || getSellableStock(product) <= 0 || quantityInCart >= getSellableStock(product);
 
                         return (
                           <button
@@ -1129,7 +1133,7 @@ export function PosPage() {
                               </p>
                               <div className="mt-2 flex flex-wrap gap-2 text-xs font-extrabold">
                                 <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600">
-                                  Tồn {product.stock}
+                                  Trên kệ {getSellableStock(product)}
                                 </span>
                                 {quantityInCart > 0 ? (
                                   <span className="rounded-lg bg-moss-50 px-2 py-1 text-moss-700">
@@ -1369,7 +1373,7 @@ export function PosPage() {
                     >
                       {quickProducts.map((product) => {
                         const quantityInCart = getQuantityInCart(product.id);
-                        const disabled = !canCheckout || quantityInCart >= product.stock;
+                        const disabled = !canCheckout || quantityInCart >= getSellableStock(product);
 
                         return (
                           <button
@@ -1421,7 +1425,7 @@ export function PosPage() {
                                 {formatIntegerInput(String(product.price))} đ
                               </span>
                               <span className="mt-1 truncate text-[10px] font-bold text-slate-500 sm:text-[11px]">
-                                Tồn {product.stock}
+                                Trên kệ {getSellableStock(product)}
                                 {quantityInCart > 0 ? ` / Đã chọn ${quantityInCart}` : ""}
                               </span>
                             </div>
@@ -1566,7 +1570,7 @@ export function PosPage() {
                                     <button
                                       aria-label={`Tăng số lượng ${item.product.name}`}
                                       className="flex h-9 w-9 items-center justify-center rounded-lg bg-moss-700 text-white shadow-sm transition hover:bg-moss-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60 sm:h-10 sm:w-10"
-                                      disabled={quantityInProduct >= item.product.stock}
+                                      disabled={quantityInProduct >= getSellableStock(item.product)}
                                       onClick={() => changeQuantity(item.lineId, item.quantity + 1)}
                                       type="button"
                                     >
@@ -2330,7 +2334,7 @@ export function PosPage() {
             <div className="grid gap-3">
               {getProductBatches(productToBatchSelect.id).map((batch) => {
                 const selectedQuantity = getQuantityInCart(productToBatchSelect.id, batch.id);
-                const disabled = selectedQuantity >= batch.quantity;
+                const disabled = selectedQuantity >= batch.shelf_quantity;
 
                 return (
                   <button
@@ -2357,7 +2361,7 @@ export function PosPage() {
                     <div className="text-left sm:text-right">
                       <p className="text-xs font-extrabold uppercase text-slate-400">Còn lại</p>
                       <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
-                        {batch.quantity - selectedQuantity}
+                        {batch.shelf_quantity - selectedQuantity}
                       </p>
                     </div>
                     <span className="rounded-xl bg-coal px-4 py-3 text-center text-sm font-extrabold text-white">

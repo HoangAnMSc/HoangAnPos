@@ -390,6 +390,23 @@ export async function receiveProductStock(input: ReceiveStockInput) {
   return data;
 }
 
+export async function transferProductShelf(
+  productId: string,
+  batchId: string,
+  quantity: number,
+  direction: "to_shelf" | "to_warehouse"
+) {
+  requireSupabaseConfig();
+  const { data, error } = await supabase.rpc("transfer_product_shelf", {
+    batch_id_input: batchId,
+    direction_input: direction,
+    product_id_input: productId,
+    quantity_input: Math.floor(quantity),
+  });
+  if (error) throw error;
+  return data as ProductBatch;
+}
+
 async function createProductBatch(input: ReceiveStockInput): Promise<ProductBatch> {
   const { data, error } = await supabase
     .from("product_batches")

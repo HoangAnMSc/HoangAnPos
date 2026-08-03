@@ -98,6 +98,7 @@ export type Database = {
           import_date: string | null;
           expiry_date: string | null;
           stock: number;
+          shelf_stock: number;
           image_url: string | null;
           is_active: boolean;
           is_reward: boolean;
@@ -117,6 +118,7 @@ export type Database = {
           import_date?: string | null;
           expiry_date?: string | null;
           stock?: number;
+          shelf_stock?: number;
           image_url?: string | null;
           is_active?: boolean;
           is_reward?: boolean;
@@ -136,6 +138,7 @@ export type Database = {
           import_date?: string | null;
           expiry_date?: string | null;
           stock?: number;
+          shelf_stock?: number;
           image_url?: string | null;
           is_active?: boolean;
           is_reward?: boolean;
@@ -150,7 +153,7 @@ export type Database = {
         Row: {
           id: string;
           product_id: string;
-          movement_type: "in" | "out";
+          movement_type: "in" | "out" | "to_shelf" | "to_warehouse";
           quantity: number;
           reason: string | null;
           actor_id: string | null;
@@ -160,7 +163,7 @@ export type Database = {
         Insert: {
           id?: string;
           product_id: string;
-          movement_type: "in" | "out";
+          movement_type: "in" | "out" | "to_shelf" | "to_warehouse";
           quantity: number;
           reason?: string | null;
           actor_id?: string | null;
@@ -170,7 +173,7 @@ export type Database = {
         Update: {
           id?: string;
           product_id?: string;
-          movement_type?: "in" | "out";
+          movement_type?: "in" | "out" | "to_shelf" | "to_warehouse";
           quantity?: number;
           reason?: string | null;
           actor_id?: string | null;
@@ -310,6 +313,7 @@ export type Database = {
           id: string;
           product_id: string;
           quantity: number;
+          shelf_quantity: number;
           import_date: string | null;
           expiry_date: string | null;
           created_at: string;
@@ -319,6 +323,7 @@ export type Database = {
           id?: string;
           product_id: string;
           quantity: number;
+          shelf_quantity?: number;
           import_date?: string | null;
           expiry_date?: string | null;
           created_at?: string;
@@ -328,6 +333,7 @@ export type Database = {
           id?: string;
           product_id?: string;
           quantity?: number;
+          shelf_quantity?: number;
           import_date?: string | null;
           expiry_date?: string | null;
           created_at?: string;
@@ -988,6 +994,15 @@ export type Database = {
         Args: { product_id_input: string; quantity_input: number; reason_input: string };
         Returns: Database["public"]["Tables"]["products"]["Row"];
       };
+      transfer_product_shelf: {
+        Args: {
+          batch_id_input: string;
+          direction_input: "to_shelf" | "to_warehouse";
+          product_id_input: string;
+          quantity_input: number;
+        };
+        Returns: Database["public"]["Tables"]["product_batches"]["Row"];
+      };
       create_pos_order: {
         Args: {
           cashier_id_input: string | null;
@@ -1125,6 +1140,7 @@ export type Database = {
           id: string;
           product_id: string;
           quantity: number;
+          shelf_quantity: number;
           import_date: string | null;
           expiry_date: string | null;
           created_at: string;

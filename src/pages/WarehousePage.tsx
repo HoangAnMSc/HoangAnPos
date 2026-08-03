@@ -7,7 +7,6 @@ import {
   RefreshCw,
   Scale,
   Trash2,
-  TriangleAlert,
 } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -131,10 +130,10 @@ export function WarehousePage() {
   );
   const warehouseStats = useMemo(
     () => ({
-      activeProducts: products.filter((product) => product.is_active).length,
-      lowStock: products.filter((product) => product.stock > 0 && product.stock <= 5).length,
       outOfStock: products.filter((product) => product.stock <= 0).length,
       totalStock: products.reduce((total, product) => total + Math.max(0, product.stock), 0),
+      shelfStock: products.reduce((total, product) => total + Math.max(0, product.shelf_stock), 0),
+      backroomStock: products.reduce((total, product) => total + Math.max(0, product.stock - product.shelf_stock), 0),
     }),
     [products]
   );
@@ -201,15 +200,15 @@ export function WarehousePage() {
             },
             {
               icon: PackageCheck,
-              label: "Đang bán",
+              label: "Trên kệ",
               tone: "bg-sky-100 text-sky-700",
-              value: warehouseStats.activeProducts,
+              value: warehouseStats.shelfStock,
             },
             {
-              icon: TriangleAlert,
-              label: "Sắp hết",
+              icon: Boxes,
+              label: "Trong kho",
               tone: "bg-amber-100 text-amber-700",
-              value: warehouseStats.lowStock,
+              value: warehouseStats.backroomStock,
             },
             {
               icon: PackageMinus,
@@ -377,16 +376,18 @@ export function WarehousePage() {
           </div>
         ) : (
           <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="hidden grid-cols-[minmax(240px,1fr)_150px_110px_100px] gap-3 bg-slate-100 px-3 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
+            <div className="hidden grid-cols-[minmax(220px,1fr)_140px_100px_80px_80px_80px] gap-3 bg-slate-100 px-3 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
               <span>Sản phẩm</span>
               <span>Nhóm hàng</span>
               <span>Trạng thái</span>
-              <span className="text-right">Số lượng</span>
+              <span className="text-right">Tổng tồn</span>
+              <span className="text-right text-sky-700">Trên kệ</span>
+              <span className="text-right text-amber-700">Trong kho</span>
             </div>
             <div className="max-h-[60dvh] divide-y divide-slate-100 overflow-y-auto overscroll-contain">
               {visibleProducts.map((product) => (
                 <article
-                  className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 px-3 py-2.5 transition md:grid-cols-[minmax(240px,1fr)_150px_110px_100px] md:items-center md:gap-3 ${
+                  className={`grid gap-2 px-3 py-3 transition md:grid-cols-[minmax(220px,1fr)_140px_100px_80px_80px_80px] md:items-center md:gap-3 ${
                     product.stock <= 0
                       ? "bg-red-50/35 hover:bg-red-50/70"
                       : product.stock <= 5
@@ -401,7 +402,7 @@ export function WarehousePage() {
                       EAN-13 {getProductEan13Value(product)}
                     </p>
                   </div>
-                  <div className="col-start-1 row-start-2 flex min-w-0 items-center gap-2 md:contents">
+                  <div className="flex min-w-0 items-center gap-2 md:contents">
                     <p className="min-w-0 truncate text-xs font-semibold text-slate-600 md:text-sm">
                       {product.category || "Chưa phân nhóm"}
                     </p>
@@ -412,29 +413,19 @@ export function WarehousePage() {
                       {product.is_active ? "Đang bán" : "Đang ẩn"}
                     </Badge>
                   </div>
-                  <div
-                    className={`col-start-2 row-span-2 row-start-1 flex min-w-[58px] flex-col items-end justify-center self-stretch rounded-xl px-2.5 py-1.5 md:col-start-auto md:row-span-1 md:row-start-auto md:block md:min-w-0 md:self-auto md:bg-transparent md:p-0 md:text-right ${
-                      product.stock <= 0
-                        ? "bg-red-100/70"
-                        : product.stock <= 5
-                          ? "bg-amber-100/70"
-                          : "bg-slate-100"
-                    }`}
-                  >
-                    <span className="text-[9px] font-extrabold uppercase tracking-wide text-slate-400 md:hidden">
-                      Số lượng
-                    </span>
-                    <span
-                      className={`text-lg font-black tabular-nums md:text-xl ${
-                        product.stock <= 0
-                          ? "text-red-600"
-                          : product.stock <= 5
-                            ? "text-amber-700"
-                            : "text-slate-950"
-                      }`}
-                    >
-                      {product.stock}
-                    </span>
+                  <div className="grid grid-cols-3 gap-2 md:contents">
+                    <div className="rounded-xl bg-slate-100 px-2 py-2 text-center md:bg-transparent md:p-0 md:text-right">
+                      <span className="block text-[9px] font-extrabold uppercase text-slate-400 md:hidden">Tổng tồn</span>
+                      <strong className="text-lg tabular-nums text-slate-950">{product.stock}</strong>
+                    </div>
+                    <div className="rounded-xl bg-sky-50 px-2 py-2 text-center md:bg-transparent md:p-0 md:text-right">
+                      <span className="block text-[9px] font-extrabold uppercase text-sky-600 md:hidden">Trên kệ</span>
+                      <strong className="text-lg tabular-nums text-sky-700">{product.shelf_stock}</strong>
+                    </div>
+                    <div className="rounded-xl bg-amber-50 px-2 py-2 text-center md:bg-transparent md:p-0 md:text-right">
+                      <span className="block text-[9px] font-extrabold uppercase text-amber-600 md:hidden">Trong kho</span>
+                      <strong className="text-lg tabular-nums text-amber-700">{product.stock - product.shelf_stock}</strong>
+                    </div>
                   </div>
                 </article>
               ))}

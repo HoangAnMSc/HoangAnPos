@@ -1112,7 +1112,9 @@ function ProductDetailModal({
     { label: "Nhóm hàng", value: product.category || "Chưa phân nhóm" },
     { label: "Giá vốn", value: formatCurrency(product.cost_price) },
     { label: "Giá bán", value: formatCurrency(product.price) },
-    { label: "Tồn kho", value: String(product.stock) },
+    { label: "Tổng tồn", value: String(product.stock) },
+    { label: "Trên kệ", value: String(product.shelf_stock) },
+    { label: "Trong kho", value: String(product.stock - product.shelf_stock) },
     { label: "Tồn theo lô", value: `${batchTotal} / ${activeBatches.length} lô` },
     { label: "Trạng thái", value: product.is_active ? "Đang hiện" : "Đang ẩn" },
   ];
@@ -1198,7 +1200,7 @@ function ProductDetailModal({
               <div className="hidden grid-cols-[1fr_1fr_110px_120px] gap-3 bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500 sm:grid">
                 <span>Ngày nhập</span>
                 <span>Hạn sử dụng</span>
-                <span className="text-right">Còn lại</span>
+                <span className="text-right">Tổng / Kệ / Kho</span>
                 <span className="text-right">Trạng thái</span>
               </div>
               <div className="divide-y divide-slate-100">
@@ -1226,8 +1228,8 @@ function ProductDetailModal({
                           {formatProductDate(batch.expiry_date)}
                         </p>
                       </div>
-                      <p className="text-left text-xl font-extrabold tabular-nums text-slate-900 sm:text-right">
-                        {batch.quantity}
+                      <p className="text-left font-extrabold tabular-nums text-slate-900 sm:text-right">
+                        {batch.quantity} / {batch.shelf_quantity} / {batch.quantity - batch.shelf_quantity}
                       </p>
                       <div className="sm:text-right">
                         <Badge tone={getExpiryTone(status)}>{getExpiryLabel(status)}</Badge>
@@ -1673,7 +1675,7 @@ export function ProductsPage() {
 
   function getProductStockLabel(product: Product) {
     const batches = getProductActiveBatches(product.id);
-    return batches.length > 0 ? `${product.stock}/${batches.length} lô` : String(product.stock);
+    return `Tổng ${product.stock} · Kệ ${product.shelf_stock} · Kho ${product.stock - product.shelf_stock}${batches.length > 0 ? ` · ${batches.length} lô` : ""}`;
   }
 
   function getProductExpiryLabel(product: Product) {

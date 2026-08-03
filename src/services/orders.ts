@@ -48,6 +48,8 @@ function toOrderError(error: unknown) {
     [/reward product has invalid points cost/i, "Quà chưa được cấu hình số điểm hợp lệ."],
     [/insufficient stock for selected date/i, "Số lượng trong lô đã chọn không còn đủ."],
     [/insufficient stock for product/i, "Tồn kho sản phẩm không còn đủ để thanh toán."],
+    [/insufficient shelf stock for selected date/i, "Số lượng trên kệ của lô đã chọn không còn đủ."],
+    [/insufficient shelf stock for product/i, "Số lượng trên kệ không còn đủ. Hãy chuyển thêm hàng từ kho lên kệ."],
     [/cash received is lower than total/i, "Số tiền khách đưa chưa đủ để thanh toán."],
   ];
   const translated = translations.find(([pattern]) => pattern.test(message))?.[1] ?? message;

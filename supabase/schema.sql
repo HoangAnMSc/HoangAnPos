@@ -199,6 +199,7 @@ create table if not exists public.products (
   import_date date,
   expiry_date date,
   stock integer not null default 0 check (stock >= 0),
+  shelf_stock integer not null default 0 check (shelf_stock >= 0 and shelf_stock <= stock),
   image_url text,
   is_active boolean not null default true,
   deleted_at timestamptz,
@@ -453,6 +454,7 @@ create table if not exists public.product_batches (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references public.products(id) on delete cascade,
   quantity integer not null check (quantity >= 0),
+  shelf_quantity integer not null default 0 check (shelf_quantity >= 0 and shelf_quantity <= quantity),
   import_date date,
   expiry_date date,
   created_at timestamptz not null default now(),
@@ -462,13 +464,41 @@ create table if not exists public.product_batches (
 create table if not exists public.stock_movements (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references public.products(id) on delete restrict,
-  movement_type text not null check (movement_type in ('in', 'out')),
+  movement_type text not null check (movement_type in ('in', 'out', 'to_shelf', 'to_warehouse')),
   quantity integer not null check (quantity > 0),
   reason text,
   actor_id uuid references auth.users(id) on delete set null,
   actor_name text not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.stock_movements drop constraint if exists stock_movements_movement_type_check;
+alter table public.stock_movements add constraint stock_movements_movement_type_check
+check (movement_type in ('in', 'out', 'to_shelf', 'to_warehouse'));
+
+-- Existing installations start with their current inventory on the shelf so POS remains usable.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'products' and column_name = 'shelf_stock'
+  ) then
+    alter table public.products add column shelf_stock integer not null default 0;
+    update public.products set shelf_stock = stock;
+    alter table public.products add constraint products_shelf_stock_check
+      check (shelf_stock >= 0 and shelf_stock <= stock);
+  end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'product_batches' and column_name = 'shelf_quantity'
+  ) then
+    alter table public.product_batches add column shelf_quantity integer not null default 0;
+    update public.product_batches set shelf_quantity = quantity;
+    alter table public.product_batches add constraint product_batches_shelf_quantity_check
+      check (shelf_quantity >= 0 and shelf_quantity <= quantity);
+  end if;
+end $$;
 
 create index if not exists stock_movements_created_at_idx on public.stock_movements(created_at desc);
 create index if not exists stock_movements_product_id_idx on public.stock_movements(product_id);
@@ -1489,6 +1519,7 @@ declare
   product_record public.products;
   remaining integer := quantity_input;
   deducted integer;
+  shelf_deducted integer;
 begin
   if not public.has_permission('warehouse.stock-out') then
     raise exception 'Permission denied for stock out';
@@ -1508,14 +1539,88 @@ begin
   loop
     exit when remaining <= 0;
     deducted := least(batch_record.quantity, remaining);
-    update public.product_batches set quantity = quantity - deducted where id = batch_record.id;
+    shelf_deducted := greatest(deducted - (batch_record.quantity - batch_record.shelf_quantity), 0);
+    update public.product_batches
+    set quantity = quantity - deducted,
+        shelf_quantity = shelf_quantity - shelf_deducted
+    where id = batch_record.id;
+    product_record.shelf_stock := product_record.shelf_stock - shelf_deducted;
     remaining := remaining - deducted;
   end loop;
 
-  update public.products set stock = stock - quantity_input where id = product_id_input returning * into product_record;
+  update public.products
+  set stock = stock - quantity_input,
+      shelf_stock = product_record.shelf_stock
+  where id = product_id_input returning * into product_record;
   insert into public.stock_movements (product_id, movement_type, quantity, reason, actor_id, actor_name)
   values (product_id_input, 'out', quantity_input, left(trim(reason_input), 1000), auth.uid(), coalesce((select full_name from public.profiles where id = auth.uid()), auth.uid()::text, 'Nhân viên'));
   return product_record;
+end;
+$$;
+
+create or replace function public.transfer_product_shelf(
+  product_id_input uuid,
+  batch_id_input uuid,
+  quantity_input integer,
+  direction_input text
+)
+returns public.product_batches
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  batch_record public.product_batches;
+begin
+  if not (
+    public.has_permission('warehouse')
+    or public.has_permission('products.receive-stock')
+  ) then
+    raise exception 'Permission denied';
+  end if;
+
+  if quantity_input is null or quantity_input <= 0 then
+    raise exception 'Quantity must be greater than zero';
+  end if;
+
+  select * into batch_record
+  from public.product_batches
+  where id = batch_id_input and product_id = product_id_input
+  for update;
+
+  if not found then raise exception 'Stock batch is not available'; end if;
+
+  if direction_input = 'to_shelf' then
+    if batch_record.quantity - batch_record.shelf_quantity < quantity_input then
+      raise exception 'Insufficient warehouse stock';
+    end if;
+    update public.product_batches
+    set shelf_quantity = shelf_quantity + quantity_input
+    where id = batch_record.id returning * into batch_record;
+    update public.products set shelf_stock = shelf_stock + quantity_input where id = product_id_input;
+  elsif direction_input = 'to_warehouse' then
+    if batch_record.shelf_quantity < quantity_input then
+      raise exception 'Insufficient shelf stock';
+    end if;
+    update public.product_batches
+    set shelf_quantity = shelf_quantity - quantity_input
+    where id = batch_record.id returning * into batch_record;
+    update public.products set shelf_stock = shelf_stock - quantity_input where id = product_id_input;
+  else
+    raise exception 'Invalid shelf transfer direction';
+  end if;
+
+  insert into public.stock_movements (product_id, movement_type, quantity, reason, actor_id, actor_name)
+  values (
+    product_id_input,
+    direction_input,
+    quantity_input,
+    case when direction_input = 'to_shelf' then 'Chuyển lên kệ' else 'Chuyển về kho' end,
+    auth.uid(),
+    coalesce((select full_name from public.profiles where id = auth.uid()), auth.uid()::text, 'Nhân viên')
+  );
+
+  return batch_record;
 end;
 $$;
 
@@ -1967,8 +2072,8 @@ begin
       raise exception 'Product % is not available', item ->> 'product_id';
     end if;
 
-    if product_record.stock < line_quantity then
-      raise exception 'Insufficient stock for product %', product_record.name;
+    if product_record.shelf_stock < line_quantity then
+      raise exception 'Insufficient shelf stock for product %', product_record.name;
     end if;
 
     if nullif(item ->> 'batch_id', '') is not null then
@@ -1983,8 +2088,8 @@ begin
         raise exception 'Selected stock batch is not available';
       end if;
 
-      if batch_record.quantity < line_quantity then
-        raise exception 'Insufficient stock for selected date of product %', product_record.name;
+      if batch_record.shelf_quantity < line_quantity then
+        raise exception 'Insufficient shelf stock for selected date of product %', product_record.name;
       end if;
     end if;
 
@@ -2112,14 +2217,16 @@ begin
       for update;
 
       update public.product_batches
-      set quantity = quantity - line_quantity
+      set quantity = quantity - line_quantity,
+          shelf_quantity = shelf_quantity - line_quantity
       where id = batch_record.id;
     else
       batch_record := null;
     end if;
 
     update public.products
-    set stock = stock - line_quantity
+    set stock = stock - line_quantity,
+        shelf_stock = shelf_stock - line_quantity
     where id = product_record.id;
 
     line_total := case when product_record.is_reward and points_redeemed_value > 0 then 0 else product_record.price * line_quantity end;
@@ -2208,12 +2315,14 @@ begin
     order by id
   loop
     update public.products
-    set stock = stock + item_record.quantity
+    set stock = stock + item_record.quantity,
+        shelf_stock = shelf_stock + item_record.quantity
     where id = item_record.product_id;
 
     if item_record.batch_id is not null then
       update public.product_batches
-      set quantity = quantity + item_record.quantity
+      set quantity = quantity + item_record.quantity,
+          shelf_quantity = shelf_quantity + item_record.quantity
       where id = item_record.batch_id;
     end if;
   end loop;
@@ -2379,12 +2488,14 @@ begin
         order by id
       loop
         update public.products
-        set stock = stock + item_record.quantity
+        set stock = stock + item_record.quantity,
+            shelf_stock = shelf_stock + item_record.quantity
         where id = item_record.product_id;
 
         if item_record.batch_id is not null then
           update public.product_batches
-          set quantity = quantity + item_record.quantity
+          set quantity = quantity + item_record.quantity,
+              shelf_quantity = shelf_quantity + item_record.quantity
           where id = item_record.batch_id;
         end if;
       end loop;
@@ -2605,6 +2716,7 @@ using (
   public.has_permission('products')
   or public.has_permission('pos')
   or public.has_permission('inventory')
+  or public.has_permission('warehouse')
 );
 
 drop policy if exists "Product stock managers can insert batches" on public.product_batches;
@@ -2772,6 +2884,7 @@ revoke all on function public.soft_delete_product(uuid) from public, anon;
 revoke all on function public.clear_products_image_url(text) from public, anon;
 revoke all on function public.receive_product_stock(uuid, integer, date, date) from public, anon;
 revoke all on function public.issue_product_stock(uuid, integer, text) from public, anon;
+revoke all on function public.transfer_product_shelf(uuid, uuid, integer, text) from public, anon;
 
 grant execute on function public.is_admin(uuid) to authenticated;
 grant execute on function public.has_permission(text, uuid) to authenticated;
@@ -2790,3 +2903,4 @@ grant execute on function public.soft_delete_product(uuid) to authenticated;
 grant execute on function public.clear_products_image_url(text) to authenticated;
 grant execute on function public.receive_product_stock(uuid, integer, date, date) to authenticated;
 grant execute on function public.issue_product_stock(uuid, integer, text) to authenticated;
+grant execute on function public.transfer_product_shelf(uuid, uuid, integer, text) to authenticated;
