@@ -27,6 +27,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
@@ -49,6 +50,10 @@ import {
   normalizeEan13Input,
 } from "../lib/productDisplay";
 import { createCustomer, fetchCustomers, type CustomerInput } from "../services/customers";
+import {
+  fetchCheckoutShiftStatus,
+  type CheckoutShiftStatus,
+} from "../services/cashManagement";
 import { createSale, recordOrderPrint, type PaymentMethod } from "../services/orders";
 import { fetchPaymentSettings } from "../services/paymentSettings";
 import { fetchProductBatches, fetchProducts, getActiveProducts } from "../services/products";
@@ -288,6 +293,8 @@ export function PosPage() {
   const [submittingCustomer, setSubmittingCustomer] = useState(false);
   const [submittingSale, setSubmittingSale] = useState(false);
   const [success, setSuccess] = useState("");
+  const [checkoutShiftStatus, setCheckoutShiftStatus] = useState<CheckoutShiftStatus | null>(null);
+  const [shiftStatusLoading, setShiftStatusLoading] = useState(true);
   const [workspace, setWorkspace] = useState<PosWorkspace>(() => loadPosWorkspace(user?.id));
   const { clearErrorNotice, errorNotice, showErrorNotice } = useErrorNotice(setError);
 
@@ -306,6 +313,27 @@ export function PosPage() {
   const canCreateQuickCustomer =
     canAccess("pos.quick-customer.create") || canAccess("customers.create");
   const canUploadPaymentProof = canAccess("pos.payment-proof.upload");
+  const shiftReadyForCheckout = checkoutShiftStatus?.ready === true;
+
+  const loadCheckoutShiftStatus = useCallback(async () => {
+    if (!canCheckout) {
+      setShiftStatusLoading(false);
+      return;
+    }
+
+    setShiftStatusLoading(true);
+    try {
+      setCheckoutShiftStatus(await fetchCheckoutShiftStatus());
+    } catch (requestError) {
+      setCheckoutShiftStatus(null);
+      showErrorNotice(
+        requestError instanceof Error ? requestError.message : "Không kiểm tra được trạng thái ca làm việc.",
+        "Không kiểm tra được ca làm việc"
+      );
+    } finally {
+      setShiftStatusLoading(false);
+    }
+  }, [canCheckout, showErrorNotice]);
 
   const loadPosData = useCallback(async () => {
     setLoading(true);
@@ -335,6 +363,18 @@ export function PosPage() {
   useEffect(() => {
     void loadPosData();
   }, [loadPosData]);
+
+  useEffect(() => {
+    void loadCheckoutShiftStatus();
+
+    const refreshWhenActive = () => void loadCheckoutShiftStatus();
+    window.addEventListener("focus", refreshWhenActive);
+    document.addEventListener("visibilitychange", refreshWhenActive);
+    return () => {
+      window.removeEventListener("focus", refreshWhenActive);
+      document.removeEventListener("visibilitychange", refreshWhenActive);
+    };
+  }, [loadCheckoutShiftStatus]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) {
@@ -812,6 +852,16 @@ export function PosPage() {
       return;
     }
 
+    if (!shiftReadyForCheckout) {
+      showErrorNotice(
+        checkoutShiftStatus?.hasActiveAttendance
+          ? "Bạn đã vào ca nhưng chưa xác nhận tiền đầu ca để mở két. Hãy hoàn tất tại trang Chấm công."
+          : "Bạn cần vào ca và xác nhận tiền đầu ca trước khi thanh toán.",
+        "Chưa sẵn sàng thanh toán"
+      );
+      return;
+    }
+
     if (!validateCartForCheckout()) {
       return;
     }
@@ -852,6 +902,16 @@ export function PosPage() {
 
   async function handleCheckout() {
     if (!canCheckout) {
+      return;
+    }
+
+    if (!shiftReadyForCheckout) {
+      setPaymentModalOpen(false);
+      showErrorNotice(
+        "Ca làm việc hoặc phiên két đã kết thúc. Hãy vào ca và mở két trước khi thanh toán.",
+        "Không thể thanh toán"
+      );
+      void loadCheckoutShiftStatus();
       return;
     }
 
@@ -1184,6 +1244,21 @@ export function PosPage() {
       >
         <div className="mx-auto w-full max-w-none space-y-4">
           <ConfigNotice />
+          {canCheckout && !shiftStatusLoading && !shiftReadyForCheckout ? (
+            <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-extrabold text-amber-900">POS đang khóa thanh toán</p>
+                <p className="mt-0.5 font-semibold text-amber-700">
+                  {checkoutShiftStatus?.hasActiveAttendance
+                    ? "Hãy xác nhận tiền đầu ca để mở két. Bạn vẫn có thể xem hàng và chuẩn bị giỏ."
+                    : "Hãy vào ca và xác nhận tiền đầu ca. Bạn vẫn có thể xem hàng và chuẩn bị giỏ."}
+                </p>
+              </div>
+              <Link className="inline-flex h-10 flex-none items-center justify-center rounded-xl bg-amber-700 px-4 font-extrabold text-white transition hover:bg-amber-800" to="/attendance">
+                Đi đến Chấm công
+              </Link>
+            </div>
+          ) : null}
 
           {error ? (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 shadow-sm">
@@ -1717,7 +1792,7 @@ export function PosPage() {
                 {canCheckout ? (
                   <button
                     className="hidden h-14 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(5,150,105,0.24)] transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 xl:flex"
-                    disabled={cart.length === 0 || submittingSale}
+                    disabled={cart.length === 0 || submittingSale || shiftStatusLoading || !shiftReadyForCheckout}
                     onClick={openPaymentModal}
                     type="button"
                   >
@@ -1746,7 +1821,7 @@ export function PosPage() {
           {canCheckout ? (
             <button
               className="flex h-14 min-w-[8.5rem] items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(5,150,105,0.25)] transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-40"
-              disabled={cart.length === 0 || submittingSale}
+              disabled={cart.length === 0 || submittingSale || shiftStatusLoading || !shiftReadyForCheckout}
               onClick={openPaymentModal}
               type="button"
             >

@@ -38,6 +38,10 @@ type SupabaseErrorLike = {
 function createAttendanceError(error: SupabaseErrorLike) {
   const message = [error.message, error.details].filter(Boolean).join(" ");
 
+  if (/employee already has another active attendance/i.test(message)) {
+    return new Error("Nhân viên đang có một ca khác chưa kết thúc.");
+  }
+
   if (
     error.code === "PGRST202" ||
     message.includes("Could not find the function") ||

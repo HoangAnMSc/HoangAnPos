@@ -1,6 +1,5 @@
 import { createOrderCode } from "../lib/format";
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
-import { ensureCashDrawerSessionForCheckout } from "./cashManagement";
 import type { CartItem } from "../types";
 
 export type PaymentMethod = "cash" | "transfer";
@@ -38,6 +37,7 @@ function toOrderError(error: unknown) {
       /open a cash drawer session before checkout/i,
       "Chưa có phiên tiền két đang mở. Hãy chấm công và xác nhận tiền két trước khi thanh toán.",
     ],
+    [/active attendance is required before checkout/i, "Bạn cần vào ca trước khi thanh toán."],
     [/cash drawer is already open/i, "Tiền két đang thuộc ca khác. Cần kết thúc ca trước khi mở ca bán hàng mới."],
     [/manager must initialize the first drawer balance/i, "Cần tài khoản quản lý xác nhận số tiền két đầu tiên."],
     [/opening cash does not match the previous handover balance/i, "Tiền két đã xác nhận không khớp số bàn giao của ca trước."],
@@ -87,16 +87,7 @@ export async function createSale({
     payment_proof_url_input: paymentProofUrl ?? null,
   };
 
-  let result = await supabase.rpc("create_pos_order", rpcInput);
-
-  if (result.error && /open a cash drawer session before checkout/i.test(readOrderErrorMessage(result.error))) {
-    try {
-      await ensureCashDrawerSessionForCheckout();
-      result = await supabase.rpc("create_pos_order", rpcInput);
-    } catch (drawerError) {
-      throw toOrderError(drawerError);
-    }
-  }
+  const result = await supabase.rpc("create_pos_order", rpcInput);
 
   if (result.error) {
     throw toOrderError(result.error);

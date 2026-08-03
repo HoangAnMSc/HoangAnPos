@@ -30,6 +30,47 @@ export type CashDrawerHandover = {
   open_cashier_name: string | null;
 };
 
+export type CheckoutShiftStatus = {
+  hasActiveAttendance: boolean;
+  hasOpenCashDrawer: boolean;
+  ready: boolean;
+};
+
+export async function fetchCheckoutShiftStatus(): Promise<CheckoutShiftStatus> {
+  requireSupabaseConfig();
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !authData.user) {
+    throw authError ?? new Error("Phiên đăng nhập đã hết hạn.");
+  }
+
+  const [attendanceResult, drawerResult] = await Promise.all([
+    supabase
+      .from("attendance_records")
+      .select("id")
+      .eq("user_id", authData.user.id)
+      .is("clock_out_at", null)
+      .limit(1),
+    supabase
+      .from("cash_drawer_sessions")
+      .select("id")
+      .eq("cashier_id", authData.user.id)
+      .eq("status", "open")
+      .limit(1),
+  ]);
+
+  if (attendanceResult.error) throw attendanceResult.error;
+  if (drawerResult.error) throw drawerResult.error;
+
+  const hasActiveAttendance = Boolean(attendanceResult.data?.length);
+  const hasOpenCashDrawer = Boolean(drawerResult.data?.length);
+  return {
+    hasActiveAttendance,
+    hasOpenCashDrawer,
+    ready: hasActiveAttendance && hasOpenCashDrawer,
+  };
+}
+
 export type OrderAuditEvent = {
   id: number;
   order_id: string;

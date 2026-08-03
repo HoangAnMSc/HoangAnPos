@@ -1118,6 +1118,7 @@ as $$
 declare
   check_record public.cash_drawer_checks;
   normalized_reason text := nullif(btrim(reason_input), '');
+  opened_session public.cash_drawer_sessions;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
@@ -1146,8 +1147,13 @@ begin
     raise exception 'Reason is required when cash does not match';
   end if;
 
+  select *
+  into opened_session
+  from public.open_cash_drawer(actual_cash_input, normalized_reason);
+
   update public.cash_drawer_checks
   set
+    cash_session_id = opened_session.id,
     actual_cash = actual_cash_input,
     is_match = (actual_cash_input = expected_cash),
     reason = case when actual_cash_input = expected_cash then null else normalized_reason end,
@@ -1269,6 +1275,8 @@ set search_path = public
 as $$
 declare
   attendance_record public.attendance_records;
+  previous_record public.attendance_records;
+  expected_cash_value numeric(12, 2) := 0;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
@@ -1286,20 +1294,58 @@ begin
     raise exception 'Clock out time must be after clock in time';
   end if;
 
-  update public.attendance_records
-  set
-    clock_in_at = clock_in_at_input,
-    clock_out_at = clock_out_at_input,
-    work_date = ((clock_in_at_input at time zone 'Asia/Ho_Chi_Minh')::date)
+  select *
+  into previous_record
+  from public.attendance_records
   where id = record_id_input
     and (
       user_id = auth.uid()
       or public.has_permission('attendance.history.view-all')
     )
-  returning * into attendance_record;
+  for update;
 
   if not found then
     raise exception 'Attendance record is not available';
+  end if;
+
+  if clock_out_at_input is null and exists (
+    select 1
+    from public.attendance_records other_record
+    where other_record.user_id = previous_record.user_id
+      and other_record.id <> previous_record.id
+      and other_record.clock_out_at is null
+  ) then
+    raise exception 'Employee already has another active attendance';
+  end if;
+
+  update public.attendance_records
+  set
+    clock_in_at = clock_in_at_input,
+    clock_out_at = clock_out_at_input,
+    work_date = ((clock_in_at_input at time zone 'Asia/Ho_Chi_Minh')::date)
+  where id = previous_record.id
+  returning * into attendance_record;
+
+  -- Reopening a completed attendance also restores the cash confirmation step.
+  if previous_record.clock_out_at is not null and clock_out_at_input is null then
+    select coalesce(closed_session.counted_cash, 0)
+    into expected_cash_value
+    from public.cash_drawer_sessions closed_session
+    where closed_session.status = 'closed'
+    order by closed_session.closed_at desc, closed_session.id desc
+    limit 1;
+
+    expected_cash_value := coalesce(expected_cash_value, 0);
+
+    update public.cash_drawer_checks
+    set
+      cash_session_id = null,
+      expected_cash = expected_cash_value,
+      actual_cash = null,
+      is_match = null,
+      reason = null,
+      checked_at = null
+    where attendance_record_id = attendance_record.id;
   end if;
 
   return attendance_record;
@@ -1875,6 +1921,15 @@ begin
 
   if cashier_id_input is not null and cashier_id_input <> auth.uid() then
     raise exception 'Cashier identity does not match the signed-in user';
+  end if;
+
+  if not exists (
+    select 1
+    from public.attendance_records attendance
+    where attendance.user_id = auth.uid()
+      and attendance.clock_out_at is null
+  ) then
+    raise exception 'Active attendance is required before checkout';
   end if;
 
   select id

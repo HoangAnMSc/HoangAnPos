@@ -35,6 +35,11 @@ import { getErrorMessage } from "../lib/errors";
 import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { normalizeNullableText } from "../lib/text";
 import {
+  closeCashDrawer,
+  fetchCashDrawerSessions,
+  type CashDrawerSession,
+} from "../services/cashManagement";
+import {
   clockInAttendance,
   clockOutAttendance,
   deleteAttendanceRecord,
@@ -416,6 +421,10 @@ export function AttendancePage() {
   const [cashReason, setCashReason] = useState("");
   const [cashSaving, setCashSaving] = useState(false);
   const [confirmClockOutOpen, setConfirmClockOutOpen] = useState(false);
+  const [clockOutCashActual, setClockOutCashActual] = useState("");
+  const [clockOutCashNote, setClockOutCashNote] = useState("");
+  const [clockOutCashSession, setClockOutCashSession] = useState<CashDrawerSession | null>(null);
+  const [clockOutCashLoading, setClockOutCashLoading] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [editError, setEditError] = useState("");
   const [editForm, setEditForm] = useState<AttendanceEditForm>({ clockIn: "", clockOut: "" });
@@ -654,6 +663,33 @@ export function AttendancePage() {
     }
   }
 
+  async function openClockOutConfirmation() {
+    setConfirmClockOutOpen(true);
+    setClockOutCashActual("");
+    setClockOutCashNote("");
+    setClockOutCashSession(null);
+    setClockOutCashLoading(true);
+    try {
+      const sessions = await fetchCashDrawerSessions(20);
+      setClockOutCashSession(sessions.find((session) => session.status === "open") ?? null);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Không tải được số tiền két để chốt ca."));
+      setConfirmClockOutOpen(false);
+    } finally {
+      setClockOutCashLoading(false);
+    }
+  }
+
+  function closeClockOutConfirmation() {
+    if (submitting) {
+      return;
+    }
+    setConfirmClockOutOpen(false);
+    setClockOutCashActual("");
+    setClockOutCashNote("");
+    setClockOutCashSession(null);
+  }
+
   function handleClockButton() {
     if (!canClock || openLoading || submitting || isTodayCompleted) {
       return;
@@ -663,7 +699,7 @@ export function AttendancePage() {
     setSuccess("");
 
     if (isClockedIn) {
-      setConfirmClockOutOpen(true);
+      void openClockOutConfirmation();
       return;
     }
 
@@ -675,11 +711,29 @@ export function AttendancePage() {
       return;
     }
 
+    const actualCash = Number(clockOutCashActual);
+    const expectedCash = Number(clockOutCashSession?.expected_cash ?? 0);
+    if (clockOutCashSession && (!clockOutCashActual.trim() || !Number.isFinite(actualCash) || actualCash < 0)) {
+      setError("Nhập số tiền thực tế đang có trong két.");
+      return;
+    }
+    if (clockOutCashSession && actualCash !== expectedCash && !clockOutCashNote.trim()) {
+      setError("Tiền thực tế đang lệch hệ thống. Hãy nhập lý do chênh lệch trước khi tan ca.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     setSuccess("");
 
     try {
+      if (clockOutCashSession) {
+        await closeCashDrawer(
+          clockOutCashSession.id,
+          actualCash,
+          normalizeNullableText(clockOutCashNote)
+        );
+      }
       let location: AttendanceLocationInput | null = null;
 
       try {
@@ -692,6 +746,7 @@ export function AttendancePage() {
       setOpenRecord(null);
       setCashCheck(null);
       setConfirmClockOutOpen(false);
+      setClockOutCashSession(null);
       setSuccess(`Đã tan làm lúc ${formatDateTime(closedRecord.clock_out_at)}.`);
 
       if (canViewHistory) {
@@ -780,7 +835,11 @@ export function AttendancePage() {
         clock_out_at: clockOutAt,
       });
       setEditingRecord(null);
-      setSuccess("Đã cập nhật lịch sử chấm công.");
+      setSuccess(
+        !clockOutAt && editingRecord.clock_out_at
+          ? "Đã khôi phục ca đang chạy. Nhân viên cần xác nhận lại tiền két trước khi thanh toán tại POS."
+          : "Đã cập nhật lịch sử chấm công."
+      );
       await Promise.all([loadOpenRecord(), loadHistory(), loadAllHistory()]);
     } catch (requestError) {
       setEditError(getErrorMessage(requestError, "Sửa lịch sử chấm công thất bại."));
@@ -1264,7 +1323,7 @@ export function AttendancePage() {
                               type="button"
                             >
                               <span className="block whitespace-nowrap">{formatTime(record.clock_in_at)}</span>
-                              <span className="block whitespace-nowrap opacity-70">{formatTime(record.clock_out_at)}</span>
+                              <span className="block whitespace-nowrap opacity-70">{record.clock_out_at ? formatTime(record.clock_out_at) : "Đang chạy"}</span>
                             </button>
                           ) : (
                             <p className="mt-4 text-center text-[9px] font-semibold text-coal/25 sm:text-[10px]">Không có ca</p>
@@ -1370,7 +1429,7 @@ export function AttendancePage() {
                                   type="button"
                                 >
                                   <span className="block">{formatTime(record.clock_in_at)}</span>
-                                  <span className="block opacity-70">{formatTime(record.clock_out_at)}</span>
+                                  <span className="block opacity-70">{record.clock_out_at ? formatTime(record.clock_out_at) : "Đang chạy"}</span>
                                 </button>
                               ) : (
                                 <span className="text-coal/20">—</span>
@@ -1415,7 +1474,9 @@ export function AttendancePage() {
               </div>
               <div className="rounded-xl bg-slate-50 p-3">
                 <dt className="text-[11px] font-bold text-slate-500">Tan làm</dt>
-                <dd className="mt-1 font-black text-slate-950">{formatTime(selectedHistoryAttendance.clock_out_at)}</dd>
+                <dd className={`mt-1 font-black ${selectedHistoryAttendance.clock_out_at ? "text-slate-950" : "text-amber-700"}`}>
+                  {selectedHistoryAttendance.clock_out_at ? formatTime(selectedHistoryAttendance.clock_out_at) : "Ca đang chạy"}
+                </dd>
               </div>
               <div className="rounded-xl bg-blue-50 p-3">
                 <dt className="text-[11px] font-bold text-blue-700">Thời gian</dt>
@@ -1467,7 +1528,9 @@ export function AttendancePage() {
               </div>
               <div className="rounded-xl bg-slate-50 p-3">
                 <dt className="text-[11px] font-bold text-slate-500">Kết thúc</dt>
-                <dd className="mt-1 font-black text-slate-950">{formatTime(selectedTeamAttendance.record.clock_out_at)}</dd>
+                <dd className={`mt-1 font-black ${selectedTeamAttendance.record.clock_out_at ? "text-slate-950" : "text-amber-700"}`}>
+                  {selectedTeamAttendance.record.clock_out_at ? formatTime(selectedTeamAttendance.record.clock_out_at) : "Ca đang chạy"}
+                </dd>
               </div>
               <div className="rounded-xl bg-blue-50 p-3">
                 <dt className="text-[11px] font-bold text-blue-700">Thời gian</dt>
@@ -1733,7 +1796,7 @@ export function AttendancePage() {
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button
-              disabled={submitting}
+              disabled={submitting || clockOutCashLoading}
               onClick={() => setEditingRecord(null)}
               type="button"
               variant="secondary"
@@ -1791,23 +1854,19 @@ export function AttendancePage() {
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button
               disabled={submitting}
-              onClick={() => setConfirmClockOutOpen(false)}
+              onClick={closeClockOutConfirmation}
               type="button"
               variant="secondary"
             >
               Hủy
             </Button>
-            <Button isLoading={submitting} onClick={() => void handleConfirmClockOut()} type="button" variant="danger">
+            <Button disabled={clockOutCashLoading} isLoading={submitting} onClick={() => void handleConfirmClockOut()} type="button" variant="danger">
               <CheckCircle2 className="h-4 w-4" />
               Xác nhận tan làm
             </Button>
           </div>
         }
-        onClose={() => {
-          if (!submitting) {
-            setConfirmClockOutOpen(false);
-          }
-        }}
+        onClose={closeClockOutConfirmation}
         open={confirmClockOutOpen}
         size="sm"
         title="Xác nhận tan làm"
@@ -1834,6 +1893,47 @@ export function AttendancePage() {
               </dd>
             </div>
           </dl>
+          {clockOutCashLoading ? (
+            <Spinner label="Đang đối chiếu tiền két..." />
+          ) : clockOutCashSession ? (
+            <section className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-extrabold text-amber-950">Chốt két bàn giao</h4>
+                  <p className="mt-0.5 text-xs font-semibold text-amber-700">Số thực đếm sẽ được nhân viên ca sau đối chiếu khi vào ca.</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-bold text-amber-700">Hệ thống</p>
+                  <p className="font-black tabular-nums text-amber-950">{formatCurrency(Number(clockOutCashSession.expected_cash))}</p>
+                </div>
+              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-extrabold text-coal">Tiền thực tế trong két</span>
+                <div className="relative">
+                  <input
+                    className="h-12 w-full rounded-xl border border-amber-200 bg-white px-3 pr-10 text-right text-lg font-black tabular-nums outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100"
+                    inputMode="numeric"
+                    onChange={(event) => setClockOutCashActual(normalizeIntegerInput(event.target.value))}
+                    placeholder="0"
+                    type="text"
+                    value={formatIntegerInput(clockOutCashActual)}
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">đ</span>
+                </div>
+              </label>
+              {clockOutCashActual.trim() ? (
+                <div className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm font-bold ${Number(clockOutCashActual) === Number(clockOutCashSession.expected_cash) ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                  <span>Chênh lệch</span>
+                  <span className="font-black tabular-nums">{formatCurrency(Number(clockOutCashActual) - Number(clockOutCashSession.expected_cash))}</span>
+                </div>
+              ) : null}
+              {clockOutCashActual.trim() && Number(clockOutCashActual) !== Number(clockOutCashSession.expected_cash) ? (
+                <Textarea label="Lý do chênh lệch" onChange={(event) => setClockOutCashNote(event.target.value)} placeholder="Bắt buộc khi tiền thực tế không khớp hệ thống" value={clockOutCashNote} />
+              ) : null}
+            </section>
+          ) : (
+            <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500">Ca này không có phiên két đang mở.</p>
+          )}
         </div>
       </Modal>
     </PageContainer>
