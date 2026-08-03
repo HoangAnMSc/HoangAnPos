@@ -333,6 +333,10 @@ function getLocationUrl(location: AttendanceLocationInput) {
 
 function getGeolocationErrorMessage(error: GeolocationPositionError) {
   if (error.code === error.PERMISSION_DENIED) {
+    if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      return "iPhone đang từ chối định vị. Vào Cài đặt → Quyền riêng tư & Bảo mật → Dịch vụ định vị, bật Dịch vụ định vị; chọn Safari Websites → Khi dùng ứng dụng và bật Vị trí chính xác. Sau đó quay lại Safari, tải lại trang và thử lại.";
+    }
+
     return "Quyền vị trí đang bị từ chối. Hãy mở cài đặt của trang web, chọn Vị trí → Cho phép, tải lại trang rồi chấm công lại.";
   }
 
@@ -364,10 +368,14 @@ async function getCurrentAttendanceLocation(): Promise<AttendanceLocationInput> 
     try {
       const permission = await navigator.permissions.query({ name: "geolocation" });
       if (permission.state === "denied") {
-        throw new Error("Bạn đã chặn quyền vị trí cho domain này. Nhấn biểu tượng ổ khóa/cài đặt cạnh thanh địa chỉ, bật Vị trí, rồi tải lại trang.");
+        throw new Error(
+          /iPhone|iPad|iPod/i.test(navigator.userAgent)
+            ? "iPhone đang chặn quyền vị trí của Safari. Vào Cài đặt → Quyền riêng tư & Bảo mật → Dịch vụ định vị → Safari Websites → Khi dùng ứng dụng, rồi bật Vị trí chính xác."
+            : "Bạn đã chặn quyền vị trí cho domain này. Nhấn biểu tượng ổ khóa/cài đặt cạnh thanh địa chỉ, bật Vị trí, rồi tải lại trang."
+        );
       }
     } catch (error) {
-      if (error instanceof Error && error.message.includes("đã chặn quyền vị trí")) {
+      if (error instanceof Error && error.message.includes("quyền vị trí")) {
         throw error;
       }
     }
