@@ -12,6 +12,7 @@ import {
   Check,
   ChevronDown,
   DollarSign,
+  FileText,
   ImagePlus,
   Loader2,
   Minus,
@@ -90,6 +91,10 @@ type PosWorkspace = {
   activeBillId: number;
   bills: PosBill[];
 };
+
+type PosDiscardAction =
+  | { type: "close-bill"; billId: number }
+  | { type: "clear-bill"; billId: number };
 
 type QuickCustomerFormState = {
   name: string;
@@ -271,7 +276,9 @@ function QuickCustomerForm({ formId, onCancel, onSubmit, submitting }: QuickCust
 export function PosPage() {
   const { canAccess, user } = useAuth();
   const productSearchRef = useRef<HTMLInputElement>(null);
+  const mobileProductSearchRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLInputElement>(null);
+  const cartSectionRef = useRef<HTMLElement>(null);
   const focusSearchAfterBatchRef = useRef(true);
   const paidAmountRef = useRef<HTMLInputElement>(null);
 
@@ -281,10 +288,13 @@ export function PosPage() {
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [discardAction, setDiscardAction] = useState<PosDiscardAction | null>(null);
   const [error, setError] = useState("");
   const [cartExpanded, setCartExpanded] = useState(true);
   const [lineSeparated, setLineSeparated] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [orderNoteModalOpen, setOrderNoteModalOpen] = useState(false);
+  const [orderDetailsOpen, setOrderDetailsOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentProofModalOpen, setPaymentProofModalOpen] = useState(false);
   const [paymentProofNote, setPaymentProofNote] = useState("");
@@ -295,6 +305,7 @@ export function PosPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>("cash");
   const [products, setProducts] = useState<Product[]>([]);
   const [productBatches, setProductBatches] = useState<ProductBatch[]>([]);
+  const [productSearchModalOpen, setProductSearchModalOpen] = useState(false);
   const [quickProductsExpanded, setQuickProductsExpanded] = useState(true);
   const [selectedProductCategory, setSelectedProductCategory] = useState("all");
   const [productQuery, setProductQuery] = useState("");
@@ -545,6 +556,11 @@ export function PosPage() {
   const availableProductCount = activeProducts.filter((product) => getSellableStock(product) > 0).length;
   const paidAmount = Number(cashReceived || 0) || 0;
   const changeAmount = Math.max(paidAmount - total, 0);
+  const cashPaymentReady = selectedPaymentMethod === "cash" && paidAmount >= total;
+  const transferPaymentReady =
+    selectedPaymentMethod === "transfer" &&
+    Boolean(paymentProofFile || paymentProofNote.trim());
+  const paymentReady = cashPaymentReady || transferPaymentReady;
   const quickCustomerFormId = "quick-customer-form";
 
   function updateActiveBill(updater: (bill: PosBill) => PosBill) {
@@ -610,7 +626,7 @@ export function PosPage() {
     setSuccess("");
   }
 
-  function closeBill(billId: number) {
+  function closeBillNow(billId: number) {
     if (!canCheckout) {
       return;
     }
@@ -628,6 +644,23 @@ export function PosPage() {
     setProductQuery("");
     setError("");
     setSuccess("");
+  }
+
+  function requestCloseBill(billId: number) {
+    const bill = workspace.bills.find((item) => item.id === billId);
+    if (!bill) return;
+
+    const hasBillContent =
+      bill.cart.length > 0 ||
+      Boolean(bill.selectedCustomerId) ||
+      Boolean(bill.orderNote.trim());
+
+    if (!hasBillContent) {
+      closeBillNow(billId);
+      return;
+    }
+
+    setDiscardAction({ billId, type: "close-bill" });
   }
 
   function addToCart(
@@ -738,6 +771,47 @@ export function PosPage() {
     );
   }
 
+  function changeCartItemBatch(lineId: string, batchId: string) {
+    if (!canCheckout) return;
+
+    const item = cart.find((cartItem) => cartItem.lineId === lineId);
+    const nextBatch = productBatches.find((batch) => batch.id === batchId);
+    if (!item || !nextBatch || nextBatch.product_id !== item.product.id) return;
+
+    const quantityAlreadySelected = cart
+      .filter((cartItem) => cartItem.lineId !== lineId && cartItem.batch?.id === nextBatch.id)
+      .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+    const availableQuantity = Math.max(nextBatch.shelf_quantity - quantityAlreadySelected, 0);
+
+    if (item.quantity > availableQuantity) {
+      showErrorNotice(
+        `Lô này chỉ còn ${availableQuantity} sản phẩm có thể chọn. Hãy giảm số lượng trước khi đổi lô.`,
+        "Không thể đổi lô"
+      );
+      return;
+    }
+
+    updateActiveCart((current) =>
+      current.map((cartItem) =>
+        cartItem.lineId === lineId ? { ...cartItem, batch: nextBatch } : cartItem
+      )
+    );
+  }
+
+  function decreaseProductQuantity(productId: string) {
+    if (!canCheckout) return;
+
+    const matchingItems = cart.filter((item) => item.product.id === productId);
+    const item = matchingItems[matchingItems.length - 1];
+    if (!item) return;
+
+    if (item.quantity > 1) {
+      changeQuantity(item.lineId, item.quantity - 1);
+    } else {
+      removeFromCart(item.lineId);
+    }
+  }
+
   function removeFromCart(lineId: string) {
     if (!canCheckout) {
       return;
@@ -746,14 +820,37 @@ export function PosPage() {
     updateActiveCart((current) => current.filter((item) => item.lineId !== lineId));
   }
 
-  function clearCart() {
+  function clearBillNow(billId: number) {
     if (!canCheckout) {
       return;
     }
 
-    updateActiveBill((bill) => createEmptyBill(bill.id));
+    setWorkspace((current) => ({
+      ...current,
+      bills: current.bills.map((bill) =>
+        bill.id === billId
+          ? { ...bill, cart: [], cashReceived: "", savedAt: null }
+          : bill
+      ),
+    }));
     setError("");
     setSuccess("");
+  }
+
+  function requestClearBill() {
+    if (cart.length === 0) return;
+    setDiscardAction({ billId: activeBill.id, type: "clear-bill" });
+  }
+
+  function confirmDiscardAction() {
+    if (!discardAction) return;
+
+    if (discardAction.type === "close-bill") {
+      closeBillNow(discardAction.billId);
+    } else {
+      clearBillNow(discardAction.billId);
+    }
+    setDiscardAction(null);
   }
 
   function selectCustomer(customer: Customer) {
@@ -1041,9 +1138,9 @@ export function PosPage() {
 
   return (
     <div className="min-h-screen overflow-x-clip bg-[linear-gradient(135deg,#f8faf7_0%,#f1f5ee_55%,#f8fafc_100%)]">
-      <header className="sticky top-0 z-40 border-b border-moss-100 bg-white/95 px-2 py-1.5 shadow-[0_8px_28px_rgba(57,67,46,0.10)] backdrop-blur-xl sm:px-3 sm:py-2 xl:px-4">
+      <header className="sticky top-0 z-40 border-b border-moss-100 bg-white/95 px-4 py-3 shadow-[0_8px_28px_rgba(57,67,46,0.10)] backdrop-blur-xl sm:px-6 lg:px-3 lg:py-2 xl:px-4">
         <div className="flex flex-col gap-1.5 lg:gap-2 xl:flex-row xl:items-center">
-          <div className="flex min-w-0 flex-1 gap-1.5 pl-12 lg:gap-2 lg:pl-0">
+          <div className="hidden min-w-0 flex-1 gap-1.5 lg:flex lg:gap-2">
             {canCheckout ? (
               <button
                 aria-label="Quét EAN-13"
@@ -1173,10 +1270,10 @@ export function PosPage() {
 
           <div
             aria-label="Danh sách đơn đang bán"
-            className="scrollbar-none flex min-w-0 items-center gap-1 overflow-x-auto lg:gap-1.5 xl:max-w-[46%] xl:flex-none"
+            className="scrollbar-none flex min-w-0 items-center gap-1 overflow-x-auto pl-14 lg:gap-1.5 lg:pl-0 xl:max-w-[46%] xl:flex-none"
           >
             {workspace.bills.length === 0 ? (
-              <span className="inline-flex h-9 flex-none items-center rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs font-extrabold text-slate-500 lg:h-11 lg:rounded-xl lg:text-sm">
+              <span className="inline-flex h-12 flex-none items-center rounded-xl border border-slate-200 bg-slate-100 px-3 text-sm font-extrabold text-slate-500 lg:h-11 lg:text-sm">
                 Chưa có đơn
               </span>
             ) : null}
@@ -1186,7 +1283,7 @@ export function PosPage() {
 
               return (
                 <div
-                  className={`flex h-9 flex-none items-stretch overflow-hidden rounded-lg border transition lg:h-11 lg:rounded-xl ${
+                  className={`flex h-12 flex-none items-stretch overflow-hidden rounded-xl border transition lg:h-11 ${
                     isActive
                       ? "border-moss-700 bg-gradient-to-r from-moss-800 to-moss-600 text-white shadow-[0_8px_18px_rgba(72,84,54,0.22)]"
                       : "border-slate-200 bg-white text-slate-600 hover:border-moss-200 hover:bg-moss-50"
@@ -1195,7 +1292,7 @@ export function PosPage() {
                 >
                   <button
                     aria-current={isActive ? "page" : undefined}
-                    className="flex min-w-16 items-center gap-1.5 whitespace-nowrap px-2 text-xs font-extrabold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-moss-300 lg:min-w-24 lg:gap-2 lg:px-3 lg:text-sm"
+                    className="flex min-w-20 items-center gap-1.5 whitespace-nowrap px-2.5 text-sm font-extrabold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-moss-300 lg:min-w-24 lg:gap-2 lg:px-3"
                     onClick={() => switchBill(bill.id)}
                     type="button"
                   >
@@ -1226,7 +1323,7 @@ export function PosPage() {
                           ? "border-white/15 text-white/65 hover:bg-white/10 hover:text-white"
                           : "border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-500"
                       }`}
-                      onClick={() => closeBill(bill.id)}
+                      onClick={() => requestCloseBill(bill.id)}
                       type="button"
                     >
                       <X className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
@@ -1238,7 +1335,7 @@ export function PosPage() {
             {canCheckout ? (
               <button
                 aria-label="Thêm đơn mới"
-                className="flex h-9 min-w-9 flex-none items-center justify-center rounded-lg border border-moss-600 bg-moss-600 text-white shadow-sm transition hover:bg-moss-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 lg:h-11 lg:min-w-11 lg:rounded-xl"
+                className="flex h-12 min-w-12 flex-none items-center justify-center rounded-xl border border-moss-600 bg-moss-600 text-white shadow-sm transition hover:bg-moss-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 lg:h-11 lg:min-w-11"
                 onClick={addBill}
                 type="button"
               >
@@ -1250,11 +1347,11 @@ export function PosPage() {
       </header>
 
       <main
-        className={`w-full max-w-[100vw] px-2 pt-3 sm:px-3 xl:pb-4 xl:px-4 ${
-          hasActiveBill ? "pb-[calc(7.5rem+env(safe-area-inset-bottom))]" : "pb-5"
+        className={`w-full max-w-[100vw] px-1 pt-1.5 sm:px-3 sm:pt-3 xl:pb-4 xl:px-4 ${
+          hasActiveBill ? "pb-[calc(8.75rem+env(safe-area-inset-bottom))]" : "pb-5"
         }`}
       >
-        <div className="mx-auto w-full max-w-none space-y-4">
+        <div className="mx-auto w-full max-w-none space-y-2 sm:space-y-4">
           <ConfigNotice />
           {canCheckout && !shiftStatusLoading && !shiftReadyForCheckout ? (
             <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
@@ -1309,12 +1406,12 @@ export function PosPage() {
               ) : null}
             </section>
           ) : (
-          <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_clamp(380px,27vw,480px)]">
-            <div className="min-w-0 space-y-3">
+          <div className="grid min-w-0 gap-2 sm:gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_clamp(380px,27vw,480px)]">
+            <div className="min-w-0 space-y-2 sm:space-y-3">
               {!loading && quickProducts.length > 0 ? (
-                <section className="overflow-hidden rounded-2xl bg-white shadow-[0_10px_28px_rgba(57,67,46,0.07)] ring-1 ring-moss-100">
+                <section className="overflow-hidden rounded-xl bg-white shadow-[0_10px_28px_rgba(57,67,46,0.07)] ring-1 ring-moss-100 sm:rounded-2xl">
                   <div
-                    className={`grid grid-cols-1 gap-2 bg-gradient-to-r from-moss-50/90 to-white px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
+                    className={`hidden gap-2 bg-gradient-to-r from-moss-50/90 to-white px-3 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
                       quickProductsExpanded ? "border-b border-moss-100" : ""
                     }`}
                   >
@@ -1330,7 +1427,7 @@ export function PosPage() {
                           Sản phẩm nhanh
                         </h2>
                         <p className="mt-0.5 text-xs font-bold text-slate-500">
-                          Chọn để thêm ngay · {availableProductCount} mặt hàng sẵn bán
+                          Chạm đúng sản phẩm để thêm · {availableProductCount} mặt hàng sẵn bán
                         </p>
                       </div>
                       <ChevronDown
@@ -1348,7 +1445,7 @@ export function PosPage() {
                     </button>
                   </div>
                   {quickProductsExpanded ? (
-                    <div className="border-b border-moss-100 bg-white px-2.5 py-2 sm:px-3">
+                    <div className="border-b border-moss-100 bg-white px-1.5 py-1.5 sm:px-3 sm:py-2">
                       <div className="scrollbar-none flex gap-2 overflow-x-auto pb-0.5" role="tablist" aria-label="Lọc nhanh theo nhóm hàng">
                         <button
                           aria-selected={selectedProductCategory === "all"}
@@ -1376,7 +1473,7 @@ export function PosPage() {
                   ) : null}
                   {quickProductsExpanded ? (
                     <div
-                      className="grid max-h-[min(48dvh,520px)] grid-cols-3 gap-2 overflow-y-auto overscroll-contain p-2.5 sm:grid-cols-4 sm:p-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-4 2xl:grid-cols-6"
+                      className="grid grid-cols-2 gap-1.5 p-1.5 sm:grid-cols-3 sm:gap-3 sm:p-3 md:grid-cols-4 lg:grid-cols-5 xl:max-h-[min(56dvh,620px)] xl:grid-cols-3 xl:overflow-y-auto xl:overscroll-contain 2xl:grid-cols-4"
                       id="pos-quick-products"
                     >
                       {quickProducts.map((product) => {
@@ -1384,23 +1481,34 @@ export function PosPage() {
                         const disabled = !canCheckout || quantityInCart >= getSellableStock(product);
 
                         return (
-                          <button
+                          <article
                             aria-label={`Thêm ${product.name} vào đơn`}
-                            className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border p-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 disabled:cursor-not-allowed disabled:opacity-55 sm:p-2 ${
+                            className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white p-1.5 transition sm:rounded-2xl sm:p-2 ${
                               quantityInCart > 0
-                                ? "border-moss-300 bg-moss-50 shadow-[0_6px_16px_rgba(72,84,54,0.10)]"
-                                : "border-slate-200 bg-white hover:border-moss-300 hover:bg-moss-50"
+                                ? "cursor-pointer border-moss-500 shadow-[0_8px_20px_rgba(72,84,54,0.14)] ring-1 ring-moss-200"
+                                : disabled
+                                  ? "cursor-not-allowed border-slate-200 opacity-60 shadow-sm"
+                                  : "cursor-pointer border-slate-200 shadow-sm hover:border-moss-300 hover:bg-moss-50/30"
                             }`}
-                            disabled={disabled}
                             key={product.id}
-                            onClick={() => addToCart(product, undefined, false)}
-                            type="button"
+                            onClick={() => {
+                              if (!disabled) addToCart(product, undefined, false);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.target !== event.currentTarget) return;
+                              if (!disabled && (event.key === "Enter" || event.key === " ")) {
+                                event.preventDefault();
+                                addToCart(product, undefined, false);
+                              }
+                            }}
+                            role="button"
+                            tabIndex={disabled ? -1 : 0}
                           >
-                            <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-100 sm:rounded-xl">
+                            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-100">
                               {product.image_url ? (
                                 <img
                                   alt={product.name}
-                                  className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                                  className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
                                   src={product.image_url}
                                 />
                               ) : (
@@ -1409,8 +1517,8 @@ export function PosPage() {
                                 </div>
                               )}
                               {quantityInCart > 0 ? (
-                                <span className="absolute right-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-moss-700 px-1.5 text-[10px] font-black text-white shadow-sm">
-                                  {quantityInCart}
+                                <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-moss-700 text-white shadow-md">
+                                  <Check className="h-4 w-4 stroke-[3]" />
                                 </span>
                               ) : null}
                               {product.is_reward ? (
@@ -1419,25 +1527,55 @@ export function PosPage() {
                                 </span>
                               ) : null}
                             </div>
-                            <div className="flex min-w-0 flex-1 flex-col px-0.5 pb-0.5 pt-1.5">
-                              <span
-                                className="line-clamp-2 min-h-8 text-[11px] font-extrabold leading-4 text-slate-900 sm:text-xs"
+                            <div className="flex min-w-0 flex-1 flex-col px-0.5 pb-0.5 pt-2">
+                              <h3
+                                className="line-clamp-2 min-h-10 text-sm font-extrabold leading-5 text-slate-900"
                                 title={product.name}
                               >
                                 {product.name}
-                              </span>
-                              <span
-                                className="mt-1 block max-w-full truncate whitespace-nowrap text-[11px] font-extrabold tabular-nums text-moss-700 sm:text-xs"
-                                title={formatCurrency(product.price)}
-                              >
-                                {formatIntegerInput(String(product.price))} đ
-                              </span>
-                              <span className="mt-1 truncate text-[10px] font-bold text-slate-500 sm:text-[11px]">
-                                Trên kệ {getSellableStock(product)}
-                                {quantityInCart > 0 ? ` / Đã chọn ${quantityInCart}` : ""}
-                              </span>
+                              </h3>
+                              <p className="mt-0.5 text-[11px] font-bold text-slate-500">
+                                Còn {Math.max(getSellableStock(product) - quantityInCart, 0)} trên kệ
+                              </p>
+                              <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5">
+                                <span
+                                  className="min-w-0 flex-1 truncate text-xs font-black tabular-nums text-moss-800 sm:text-base"
+                                  title={formatCurrency(product.price)}
+                                >
+                                  {formatIntegerInput(String(product.price))} đ
+                                </span>
+                                <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-moss-50 p-0.5 sm:gap-1 sm:p-1">
+                                  <button
+                                    aria-label={`Giảm ${product.name}`}
+                                    className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-moss-700 shadow-sm ring-1 ring-moss-100 disabled:text-slate-300 disabled:shadow-none sm:h-7 sm:w-7"
+                                    disabled={!canCheckout || quantityInCart === 0}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      decreaseProductQuantity(product.id);
+                                    }}
+                                    type="button"
+                                  >
+                                    <Minus className="h-3.5 w-3.5" />
+                                  </button>
+                                  <span className="min-w-4 text-center text-xs font-black tabular-nums text-slate-900 sm:min-w-5 sm:text-sm">
+                                    {quantityInCart}
+                                  </span>
+                                  <button
+                                    aria-label={`Thêm ${product.name}`}
+                                    className="flex h-7 w-7 items-center justify-center rounded-full bg-moss-700 text-white shadow-sm transition hover:bg-moss-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:h-8 sm:w-8"
+                                    disabled={disabled}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      addToCart(product, undefined, false);
+                                    }}
+                                    type="button"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
-                          </button>
+                          </article>
                         );
                       })}
                     </div>
@@ -1445,7 +1583,10 @@ export function PosPage() {
                 </section>
               ) : null}
 
-              <section className="overflow-hidden rounded-2xl bg-white shadow-[0_10px_28px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/80">
+              <section
+                className="hidden scroll-mt-32 overflow-hidden rounded-2xl bg-white shadow-[0_10px_28px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/80 xl:block"
+                ref={cartSectionRef}
+              >
                 <div
                   className={`grid grid-cols-1 gap-2 bg-slate-50/80 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
                     cartExpanded ? "border-b border-slate-100" : ""
@@ -1486,12 +1627,13 @@ export function PosPage() {
                     {canCheckout && cart.length > 0 ? (
                       <button
                         aria-label="Xóa tất cả sản phẩm trong giỏ"
-                        className="flex h-10 items-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-3 text-sm font-extrabold text-red-500 transition hover:border-red-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                        onClick={clearCart}
+                        className="flex h-10 items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 text-sm font-extrabold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={requestClearBill}
+                        title="Xóa toàn bộ sản phẩm khỏi đơn hiện tại"
                         type="button"
                       >
                         <Trash2 className="h-4 w-4" />
-                        <span className="hidden sm:inline">Xóa tất cả</span>
+                        <span>Xóa giỏ</span>
                       </button>
                     ) : null}
                   </div>
@@ -1566,7 +1708,8 @@ export function PosPage() {
                                   <div className="flex w-fit flex-none items-center gap-0.5 rounded-xl bg-slate-100 p-1">
                                     <button
                                       aria-label={`Giảm số lượng ${item.product.name}`}
-                                      className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 sm:h-10 sm:w-10"
+                                      className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none sm:h-10 sm:w-10"
+                                      disabled={item.quantity <= 1}
                                       onClick={() => changeQuantity(item.lineId, item.quantity - 1)}
                                       type="button"
                                     >
@@ -1604,8 +1747,9 @@ export function PosPage() {
                               {canCheckout ? (
                                 <button
                                   aria-label={`Xóa ${item.product.name}`}
-                                  className="col-start-3 row-start-1 flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-500 sm:col-start-5 sm:row-start-auto"
+                                  className="col-start-3 row-start-1 flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100 sm:col-start-5 sm:row-start-auto"
                                   onClick={() => removeFromCart(item.lineId)}
+                                  title="Xóa sản phẩm khỏi giỏ"
                                   type="button"
                                 >
                                   <Trash2 className="h-5 w-5" />
@@ -1620,7 +1764,7 @@ export function PosPage() {
                 ) : null}
               </section>
 
-              <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="hidden min-w-0 gap-3 xl:grid xl:grid-cols-[minmax(0,1fr)_220px]">
                 <input
                   aria-label="Ghi chú đơn hàng"
                   className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base font-medium text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
@@ -1642,7 +1786,7 @@ export function PosPage() {
               </div>
             </div>
 
-            <aside className="order-first min-w-0 space-y-3 xl:order-none xl:sticky xl:top-[4.75rem] xl:flex xl:max-h-[calc(100dvh-5.25rem)] xl:flex-col xl:self-start xl:overflow-hidden">
+            <aside className="hidden min-w-0 space-y-3 xl:sticky xl:top-[4.75rem] xl:flex xl:max-h-[calc(100dvh-5.25rem)] xl:flex-col xl:self-start xl:overflow-hidden">
               <section className="min-h-0 rounded-2xl bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/80 sm:p-4 xl:flex-1 xl:overflow-y-auto xl:overscroll-contain">
                 <button
                   className="flex w-full items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-left xl:hidden"
@@ -1820,34 +1964,321 @@ export function PosPage() {
       </main>
 
       {hasActiveBill ? (
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-moss-100 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-14px_36px_rgba(57,67,46,0.16)] backdrop-blur-xl lg:left-72 xl:hidden">
-        <div className="mx-auto flex max-w-3xl items-center gap-3">
-          <div className="min-w-0 flex-1" aria-live="polite">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-              Đơn {activeBill.id} · {totalItems} sản phẩm
-            </p>
-            <p className="truncate text-xl font-extrabold tabular-nums text-moss-800 sm:text-2xl">
-              {formatCurrency(total)}
-            </p>
-          </div>
-          {canCheckout ? (
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-moss-100 bg-white/95 px-1.5 pb-[calc(0.35rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-14px_36px_rgba(57,67,46,0.16)] backdrop-blur-xl sm:px-3 sm:pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:pt-2 lg:left-72 xl:hidden">
+        <div className="mx-auto max-w-3xl">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
-              className="flex h-14 min-w-[8.5rem] items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-base font-extrabold text-white shadow-[0_12px_26px_rgba(5,150,105,0.25)] transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-40"
-              disabled={cart.length === 0 || submittingSale || shiftStatusLoading || !shiftReadyForCheckout}
-              onClick={openPaymentModal}
+              aria-label={`Mở chi tiết đơn ${activeBill.id}`}
+              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl px-1.5 py-1 text-left transition hover:bg-moss-50 sm:gap-2 sm:px-2 sm:py-1.5"
+              onClick={() => setOrderDetailsOpen(true)}
               type="button"
             >
-              {submittingSale ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <Wallet className="h-5 w-5" />
-              )}
-              Thanh toán
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-moss-50 text-moss-700 sm:h-9 sm:w-9">
+                <ChevronDown className="h-4 w-4 rotate-180" />
+              </span>
+              <span className="min-w-0" aria-live="polite">
+                <span className="block text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Đơn {activeBill.id} · {totalItems} sản phẩm
+                </span>
+                <span className="block truncate text-xl font-black tabular-nums text-moss-800">
+                  {formatCurrency(total)}
+                </span>
+              </span>
             </button>
-          ) : null}
+            {canCheckout ? (
+              <button
+                className="flex h-12 min-w-[7.25rem] items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-sm font-extrabold text-white shadow-[0_10px_22px_rgba(5,150,105,0.24)] transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:h-14 sm:min-w-40 sm:gap-2 sm:px-4 sm:text-base"
+                disabled={cart.length === 0 || submittingSale || shiftStatusLoading || !shiftReadyForCheckout}
+                onClick={openPaymentModal}
+                type="button"
+              >
+                {submittingSale ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Wallet className="h-5 w-5" />
+                )}
+                Thanh toán
+              </button>
+            ) : null}
+          </div>
+
+          <nav
+            aria-label="Công cụ đơn hàng"
+            className="mt-1 grid grid-cols-4 gap-0.5 rounded-xl bg-moss-50/80 p-0.5 sm:mt-1.5 sm:gap-1 sm:rounded-2xl sm:p-1"
+          >
+            <button
+              className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[10px] font-extrabold text-moss-800 transition hover:bg-white sm:py-1.5"
+              onClick={() => setEan13ScannerOpen(true)}
+              type="button"
+            >
+              <Barcode className="h-4 w-4" />
+              Quét
+            </button>
+            <button
+              className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[10px] font-extrabold text-moss-800 transition hover:bg-white sm:py-1.5"
+              onClick={() => setProductSearchModalOpen(true)}
+              type="button"
+            >
+              <Search className="h-4 w-4" />
+              Tìm
+            </button>
+            <button
+              className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-extrabold transition hover:bg-white ${
+                selectedCustomer ? "bg-white text-amber-700 shadow-sm" : "text-moss-800"
+              }`}
+              onClick={() => setCustomerPickerOpen(true)}
+              type="button"
+            >
+              <UserRound className="h-4 w-4" />
+              Khách hàng
+              {selectedCustomer ? <span className="absolute right-3 top-1.5 h-2 w-2 rounded-full bg-amber-500" /> : null}
+            </button>
+            <button
+              className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-extrabold transition hover:bg-white ${
+                orderNote.trim() ? "bg-white text-sky-700 shadow-sm" : "text-moss-800"
+              }`}
+              onClick={() => setOrderNoteModalOpen(true)}
+              type="button"
+            >
+              <FileText className="h-4 w-4" />
+              Ghi chú
+              {orderNote.trim() ? <span className="absolute right-3 top-1.5 h-2 w-2 rounded-full bg-sky-500" /> : null}
+            </button>
+          </nav>
         </div>
       </div>
       ) : null}
+
+      <Modal
+        bodyClassName="px-3 py-3 sm:px-6 sm:py-5"
+        contentClassName="max-h-[calc(100dvh-0.75rem)] sm:max-h-[88dvh]"
+        footer={
+          <div className="flex w-full items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-slate-500">{totalItems} sản phẩm</p>
+              <p className="text-lg font-black tabular-nums text-moss-800">{formatCurrency(total)}</p>
+            </div>
+            <Button onClick={() => setOrderDetailsOpen(false)} type="button">
+              Xong
+            </Button>
+          </div>
+        }
+        onClose={() => setOrderDetailsOpen(false)}
+        open={orderDetailsOpen}
+        size="lg"
+        title={`Chi tiết đơn ${activeBill.id}`}
+      >
+        {cart.length === 0 ? (
+          <div className="flex min-h-52 flex-col items-center justify-center rounded-2xl bg-slate-50 px-5 text-center">
+            <ShoppingBag className="h-10 w-10 text-moss-500" />
+            <p className="mt-3 font-extrabold text-slate-800">Đơn chưa có sản phẩm</p>
+            <p className="mt-1 text-sm font-semibold text-slate-500">Chọn sản phẩm hoặc dùng nút Quét bên dưới.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {cart.map((item) => {
+              const batches = getProductBatches(item.product.id);
+              const quantityInProduct = getQuantityInCart(item.product.id);
+              const quantityInCurrentBatch = item.batch
+                ? getQuantityInCart(item.product.id, item.batch.id)
+                : quantityInProduct;
+              const maxQuantity = item.batch?.shelf_quantity ?? getSellableStock(item.product);
+
+              return (
+                <article className="rounded-2xl border border-slate-200 bg-white p-3" key={item.lineId}>
+                  <div className="flex min-w-0 gap-3">
+                    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                      {item.product.image_url ? (
+                        <img alt={item.product.name} className="h-full w-full object-cover" src={item.product.image_url} />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-slate-400">
+                          <ShoppingBag className="h-6 w-6" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="line-clamp-2 text-sm font-extrabold leading-5 text-slate-900">
+                        {item.product.name}
+                      </h3>
+                      <p className="mt-1 text-xs font-bold tabular-nums text-moss-700">
+                        {formatCurrency(item.product.price * item.quantity)}
+                      </p>
+                    </div>
+                    {canCheckout ? (
+                      <button
+                        aria-label={`Xóa ${item.product.name}`}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 transition hover:bg-red-100"
+                        onClick={() => removeFromCart(item.lineId)}
+                        type="button"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+                    <div className="col-start-2 row-start-1 justify-self-end">
+                      <span className="mb-1 block text-right text-[11px] font-extrabold uppercase tracking-wide text-slate-400">
+                        Số lượng
+                      </span>
+                      <div className="flex items-center rounded-xl bg-slate-100 p-1">
+                        <button
+                          aria-label={`Giảm số lượng ${item.product.name}`}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm disabled:text-slate-300"
+                          disabled={!canCheckout || item.quantity <= 1}
+                          onClick={() => changeQuantity(item.lineId, item.quantity - 1)}
+                          type="button"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <span className="min-w-9 text-center text-base font-black tabular-nums text-slate-900">
+                          {item.quantity}
+                        </span>
+                        <button
+                          aria-label={`Tăng số lượng ${item.product.name}`}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-moss-700 text-white shadow-sm disabled:bg-slate-300"
+                          disabled={!canCheckout || quantityInCurrentBatch >= maxQuantity || quantityInProduct >= getSellableStock(item.product)}
+                          onClick={() => changeQuantity(item.lineId, item.quantity + 1)}
+                          type="button"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <label className="col-start-1 row-start-1 min-w-0">
+                      <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-wide text-slate-400">
+                        Lô xuất bán
+                      </span>
+                      {batches.length > 0 ? (
+                        <select
+                          aria-label={`Lô xuất bán của ${item.product.name}`}
+                          className="h-11 w-full truncate rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100 disabled:bg-slate-100"
+                          disabled={!canCheckout || batches.length === 1}
+                          onChange={(event) => changeCartItemBatch(item.lineId, event.target.value)}
+                          value={item.batch?.id ?? ""}
+                        >
+                          {!item.batch ? <option value="">Chọn lô</option> : null}
+                          {batches.map((batch) => {
+                            const selectedByOtherLines = cart
+                              .filter((cartItem) => cartItem.lineId !== item.lineId && cartItem.batch?.id === batch.id)
+                              .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+                            const availableForLine = Math.max(batch.shelf_quantity - selectedByOtherLines, 0);
+
+                            return (
+                              <option
+                                disabled={batch.id !== item.batch?.id && availableForLine < item.quantity}
+                                key={batch.id}
+                                value={batch.id}
+                              >
+                                {formatProductDate(batch.import_date)} · HSD {formatProductDate(batch.expiry_date)} · còn {availableForLine}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      ) : (
+                        <span className="flex h-11 items-center rounded-xl bg-slate-100 px-3 text-sm font-bold text-slate-500">
+                          Không quản lý theo lô
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                </article>
+              );
+            })}
+            {canCheckout ? (
+              <button
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 text-sm font-extrabold text-red-700 transition hover:border-red-300 hover:bg-red-100"
+                onClick={() => {
+                  setOrderDetailsOpen(false);
+                  requestClearBill();
+                }}
+                type="button"
+              >
+                <Trash2 className="h-4 w-4" />
+                Xóa toàn bộ sản phẩm
+              </button>
+            ) : null}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        bodyClassName="px-3 py-3 sm:px-6 sm:py-5"
+        footer={<Button onClick={() => { setProductSearchModalOpen(false); setProductQuery(""); }} type="button" variant="secondary">Đóng</Button>}
+        onClose={() => { setProductSearchModalOpen(false); setProductQuery(""); }}
+        open={productSearchModalOpen}
+        size="md"
+        title="Tìm sản phẩm"
+      >
+        <div className="space-y-3">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <input
+              autoFocus
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-base font-semibold text-slate-900 outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
+              onChange={(event) => setProductQuery(event.target.value)}
+              placeholder="Tên, mã hàng hoặc EAN-13"
+              ref={mobileProductSearchRef}
+              value={productQuery}
+            />
+            {productQuery ? (
+              <button
+                aria-label="Xóa nội dung tìm kiếm"
+                className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                onClick={() => { setProductQuery(""); mobileProductSearchRef.current?.focus(); }}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </label>
+
+          {!productQuery.trim() ? (
+            <div className="rounded-2xl bg-moss-50 px-4 py-6 text-center text-sm font-semibold text-moss-700">
+              Nhập tên sản phẩm, mã hàng hoặc EAN-13 để tìm.
+            </div>
+          ) : productResults.length === 0 ? (
+            <div className="rounded-2xl bg-slate-50 px-4 py-6 text-center text-sm font-semibold text-slate-500">
+              Không tìm thấy sản phẩm phù hợp.
+            </div>
+          ) : (
+            <div className="max-h-[55dvh] space-y-2 overflow-y-auto overscroll-contain">
+              {productResults.map((product) => {
+                const quantityInCart = getQuantityInCart(product.id);
+                const disabled = !canCheckout || quantityInCart >= getSellableStock(product);
+
+                return (
+                  <button
+                    className="grid w-full grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-slate-200 bg-white p-2 text-left transition hover:border-moss-300 hover:bg-moss-50 disabled:opacity-50"
+                    disabled={disabled}
+                    key={product.id}
+                    onClick={() => {
+                      setProductSearchModalOpen(false);
+                      setProductQuery("");
+                      addToCart(product, undefined, false);
+                    }}
+                    type="button"
+                  >
+                    <div className="h-12 w-12 overflow-hidden rounded-lg bg-slate-100">
+                      {product.image_url ? (
+                        <img alt={product.name} className="h-full w-full object-cover" src={product.image_url} />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-slate-400"><ShoppingBag className="h-5 w-5" /></div>
+                      )}
+                    </div>
+                    <span className="min-w-0">
+                      <span className="line-clamp-2 text-sm font-extrabold text-slate-900">{product.name}</span>
+                      <span className="mt-0.5 block text-xs font-bold text-slate-500">Còn {Math.max(getSellableStock(product) - quantityInCart, 0)} trên kệ</span>
+                    </span>
+                    <span className="text-sm font-black tabular-nums text-moss-800">{formatIntegerInput(String(product.price))} đ</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         footer={
@@ -1909,6 +2340,44 @@ export function PosPage() {
         </div>
       </Modal>
 
+      <Modal
+        footer={
+          <div className="flex w-full items-center justify-between gap-2">
+            {orderNote.trim() ? (
+              <Button
+                onClick={() => updateActiveBillField("orderNote", "")}
+                type="button"
+                variant="secondary"
+              >
+                Xóa ghi chú
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button onClick={() => setOrderNoteModalOpen(false)} type="button">
+              Xong
+            </Button>
+          </div>
+        }
+        onClose={() => setOrderNoteModalOpen(false)}
+        open={orderNoteModalOpen}
+        size="sm"
+        title={`Ghi chú đơn ${activeBill.id}`}
+      >
+        <div className="space-y-3">
+          <Textarea
+            label="Nội dung ghi chú"
+            onChange={(event) => updateActiveBillField("orderNote", event.target.value)}
+            placeholder="Ví dụ: giao buổi chiều, khách cần gọi trước..."
+            rows={5}
+            value={orderNote}
+          />
+          <p className="text-xs font-semibold leading-5 text-slate-500">
+            Ghi chú này được lưu cùng hóa đơn và không làm thay đổi số tiền thanh toán.
+          </p>
+        </div>
+      </Modal>
+
       {canCreateQuickCustomer ? (
         <Modal
           footer={
@@ -1953,19 +2422,14 @@ export function PosPage() {
               Hủy
             </Button>
             <Button
-              className="bg-coal hover:bg-coal/90"
-              disabled={
-                submittingSale ||
-                (selectedPaymentMethod === "transfer" &&
-                  !paymentProofFile &&
-                  !paymentProofNote.trim())
-              }
+              className="bg-emerald-600 hover:bg-emerald-700 sm:min-w-56"
+              disabled={submittingSale || !paymentReady}
               isLoading={submittingSale}
               onClick={handleCheckout}
               type="button"
             >
               <Check className="h-4 w-4" />
-              Xác nhận
+              Hoàn tất · {formatCurrency(total)}
             </Button>
           </div>
         }
@@ -2125,7 +2589,7 @@ export function PosPage() {
 
               <button
                 className={`flex min-h-28 items-center gap-4 rounded-2xl border p-5 text-left transition ${
-                  paymentProofFile
+                  paymentProofFile || paymentProofNote.trim()
                     ? "border-moss-300 bg-moss-50 hover:bg-moss-100"
                     : "border-amber-200 bg-amber-50 hover:bg-amber-100"
                 }`}
@@ -2134,7 +2598,9 @@ export function PosPage() {
               >
                 <span
                   className={`flex h-14 w-14 flex-none items-center justify-center rounded-2xl ${
-                    paymentProofFile ? "bg-moss-100 text-moss-700" : "bg-white text-amber-700"
+                    paymentProofFile || paymentProofNote.trim()
+                      ? "bg-moss-100 text-moss-700"
+                      : "bg-white text-amber-700"
                   }`}
                 >
                   <ImagePlus className="h-7 w-7" />
@@ -2156,6 +2622,22 @@ export function PosPage() {
               </button>
             </div>
           )}
+          <div
+            className={`rounded-xl px-4 py-3 text-sm font-bold ${
+              paymentReady
+                ? "bg-emerald-50 text-emerald-800"
+                : "bg-amber-50 text-amber-800"
+            }`}
+            role="status"
+          >
+            {selectedPaymentMethod === "cash"
+              ? paymentReady
+                ? `Đã đủ tiền khách đưa. Tiền thừa ${formatCurrency(changeAmount)}.`
+                : `Còn thiếu ${formatCurrency(Math.max(total - paidAmount, 0))}. Nhập đủ tiền để hoàn tất.`
+              : paymentReady
+                ? "Đã có xác nhận chuyển khoản. Có thể hoàn tất hóa đơn."
+                : "Cần ảnh, mã giao dịch hoặc ghi chú xác nhận trước khi hoàn tất."}
+          </div>
         </div>
         </Modal>
       ) : null}
@@ -2343,15 +2825,33 @@ export function PosPage() {
         }}
         open={batchModalOpen}
         size="lg"
-        title="Chọn lô nhập kho"
+        title="Chọn lô xuất bán"
       >
         {productToBatchSelect ? (
           <div className="space-y-4">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-sm font-bold text-slate-500">Sản phẩm</p>
-              <p className="mt-1 text-xl font-extrabold text-slate-900">
-                {productToBatchSelect.name}
-              </p>
+            <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 sm:gap-4 sm:p-4">
+              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 sm:h-24 sm:w-24">
+                {productToBatchSelect.image_url ? (
+                  <img
+                    alt={productToBatchSelect.name}
+                    className="h-full w-full object-cover"
+                    src={productToBatchSelect.image_url}
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-slate-400">
+                    <ShoppingBag className="h-8 w-8" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Sản phẩm</p>
+                <p className="mt-1 line-clamp-2 text-lg font-extrabold leading-6 text-slate-900 sm:text-xl">
+                  {productToBatchSelect.name}
+                </p>
+                <p className="mt-1 text-sm font-black tabular-nums text-moss-700">
+                  {formatCurrency(productToBatchSelect.price)}
+                </p>
+              </div>
             </div>
             <div className="grid gap-3">
               {getProductBatches(productToBatchSelect.id).map((batch) => {
@@ -2395,6 +2895,36 @@ export function PosPage() {
             </div>
           </div>
         ) : null}
+        </Modal>
+      ) : null}
+      {canCheckout ? (
+        <Modal
+          footer={
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+              <Button onClick={() => setDiscardAction(null)} variant="secondary">
+                Giữ lại
+              </Button>
+              <Button onClick={confirmDiscardAction} variant="danger">
+                <Trash2 className="h-4 w-4" />
+                {discardAction?.type === "close-bill" ? "Đóng đơn" : "Xóa sản phẩm"}
+              </Button>
+            </div>
+          }
+          onClose={() => setDiscardAction(null)}
+          open={Boolean(discardAction)}
+          size="sm"
+          title={discardAction?.type === "close-bill" ? "Đóng đơn đang bán?" : "Xóa toàn bộ sản phẩm?"}
+        >
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm font-bold leading-6 text-red-800">
+              {discardAction?.type === "close-bill"
+                ? `Đơn ${discardAction.billId} sẽ bị đóng và mọi sản phẩm, khách hàng, ghi chú chưa thanh toán sẽ bị xóa.`
+                : `Toàn bộ sản phẩm trong đơn ${discardAction?.billId ?? activeBill.id} sẽ bị xóa. Khách hàng và ghi chú vẫn được giữ lại.`}
+            </div>
+            <p className="text-sm font-semibold text-slate-500">
+              Thao tác này không thể hoàn tác.
+            </p>
+          </div>
         </Modal>
       ) : null}
       {canCheckout ? (

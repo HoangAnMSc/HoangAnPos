@@ -117,11 +117,11 @@ export function AdminLayout() {
           <>
             <button
               aria-label="Mở menu"
-              className="fixed left-2 top-1.5 z-50 flex h-10 w-10 items-center justify-center rounded-lg bg-white text-coal shadow-soft ring-1 ring-slate-200 lg:hidden"
+              className="fixed left-4 top-3 z-50 flex h-12 w-12 items-center justify-center rounded-xl bg-white text-coal shadow-soft ring-1 ring-slate-200 lg:hidden"
               onClick={() => setSidebarOpen(true)}
               type="button"
             >
-              <Menu className="h-5 w-5" />
+              <Menu className="h-6 w-6" />
             </button>
             <main className="min-h-screen bg-[#f7f8f5] text-coal">
               <Outlet />
