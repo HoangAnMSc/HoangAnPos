@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Printer, ReceiptText, Trash2 } from "lucide-react";
+import { Image as ImageIcon, Printer, ReceiptText, Search, Trash2 } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -54,6 +55,8 @@ function formatOrderTime(value: string) {
 
 export function OrdersPage() {
   const { canAccess } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [activeList, setActiveList] = useState<"paid" | "cancelled">("paid");
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -68,8 +71,10 @@ export function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Invoice | null>(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [selectedYear, setSelectedYear] = useState("");
+  const [transferImageQuery, setTransferImageQuery] = useState("");
   const canCancelOrder = canAccess("orders.cancel");
   const canDeleteOrders = canAccess("orders.delete");
+  const transferImagesOpen = new URLSearchParams(location.search).get("transfer-images") === "1";
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -143,7 +148,37 @@ export function OrdersPage() {
   }, [activeList, orders, query, selectedDay, selectedMonth, selectedYear]);
   const paidCount = orders.filter((order) => order.status === "paid").length;
   const cancelledCount = orders.filter((order) => order.status === "cancelled").length;
+  const transferProofOrders = useMemo(() => {
+    const normalizedQuery = transferImageQuery.trim().toLowerCase();
+
+    return orders.filter((order) => {
+      if (
+        order.status !== "paid" ||
+        order.payment_method !== "transfer" ||
+        !order.payment_proof_url
+      ) {
+        return false;
+      }
+
+      return (
+        !normalizedQuery ||
+        [order.code, order.customers?.name, order.customers?.phone]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(normalizedQuery))
+      );
+    });
+  }, [orders, transferImageQuery]);
   const allFilteredSelected = filteredOrders.length > 0 && filteredOrders.every((order) => selectedOrderIds.has(order.id));
+
+  function closeTransferImages() {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.delete("transfer-images");
+    setTransferImageQuery("");
+    void navigate(
+      nextParams.size > 0 ? `${location.pathname}?${nextParams.toString()}` : location.pathname,
+      { replace: true }
+    );
+  }
 
   function toggleOrderSelection(orderId: string) {
     setSelectedOrderIds((current) => {
@@ -392,11 +427,18 @@ export function OrdersPage() {
                         />
                       </td>
                     ) : null}
-                    <td className="truncate px-3 py-3 text-xs font-bold text-slate-800 sm:px-5 sm:text-sm">
-                      {order.customers?.name ?? "Khách lẻ"}
+                    <td className="px-3 py-3 text-xs font-bold text-slate-800 sm:px-5 sm:text-sm">
+                      <span className="block truncate">{order.customers?.name ?? "Khách lẻ"}</span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 text-xs font-semibold text-slate-600 sm:px-5 sm:text-sm">
-                      {formatOrderTime(order.created_at)}
+                      <div className="flex items-center gap-2">
+                        <span>{formatOrderTime(order.created_at)}</span>
+                        {order.status === "paid" && order.payment_method === "transfer" ? (
+                          <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-sky-100 px-2.5 text-[10px] font-black uppercase tracking-wide text-sky-800 ring-1 ring-sky-200">
+                            CK
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -404,6 +446,78 @@ export function OrdersPage() {
             </table>
           </div>
       )}
+
+      <Modal
+        bodyClassName="px-3 py-3 sm:px-6 sm:py-5"
+        contentClassName="max-h-[calc(100dvh-1rem)] sm:max-h-[90dvh]"
+        footer={
+          <Button onClick={closeTransferImages} type="button" variant="secondary">
+            Đóng
+          </Button>
+        }
+        onClose={closeTransferImages}
+        open={transferImagesOpen}
+        size="wide"
+        title={`Ảnh chuyển khoản (${transferProofOrders.length})`}
+      >
+        <div className="space-y-3">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <input
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm font-bold text-slate-900 outline-none transition focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
+              onChange={(event) => setTransferImageQuery(event.target.value)}
+              placeholder="Tìm mã hóa đơn, tên hoặc số điện thoại khách"
+              value={transferImageQuery}
+            />
+          </label>
+
+          {transferProofOrders.length === 0 ? (
+            <div className="flex min-h-60 flex-col items-center justify-center rounded-2xl bg-slate-50 px-5 text-center">
+              <ImageIcon className="h-11 w-11 text-slate-400" />
+              <p className="mt-3 font-extrabold text-slate-800">Không có ảnh chuyển khoản phù hợp</p>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                Chỉ hiển thị hóa đơn thành công bằng chuyển khoản có ảnh xác nhận.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {transferProofOrders.map((order) => (
+                <button
+                  className="flex w-full min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2 text-left transition hover:border-moss-300 hover:bg-moss-50/40 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-moss-100 sm:gap-3"
+                  key={order.id}
+                  onClick={() => {
+                    closeTransferImages();
+                    setSelectedOrder(order);
+                  }}
+                  type="button"
+                >
+                  <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-slate-100 sm:h-20 sm:w-24">
+                    <img
+                      alt={`Ảnh chuyển khoản hóa đơn ${order.code}`}
+                      className="h-full w-full object-cover"
+                      src={order.payment_proof_url!}
+                    />
+                    <span className="absolute right-1 top-1 rounded-full bg-sky-600 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-white shadow-sm">
+                      CK
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-extrabold text-slate-900 sm:text-sm">
+                      {order.code}
+                    </p>
+                    <p className="mt-1 truncate text-[10px] font-semibold text-slate-500 sm:text-xs">
+                      {order.customers?.name ?? "Khách lẻ"} · {formatOrderTime(order.created_at)}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-black tabular-nums text-moss-800 sm:text-base">
+                    {formatCurrency(order.total)}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         footer={
@@ -456,12 +570,19 @@ export function OrdersPage() {
               </div>
               <div>
                 <p className="text-xs font-extrabold uppercase text-slate-500">Thanh toán</p>
-                <p className="mt-1 font-bold text-slate-900">
-                  {getPaymentLabel(selectedOrder.payment_method)}
-                </p>
+                <div className="mt-1 flex items-center gap-2">
+                  <p className="font-bold text-slate-900">
+                    {getPaymentLabel(selectedOrder.payment_method)}
+                  </p>
+                  {selectedOrder.status === "paid" && selectedOrder.payment_method === "transfer" ? (
+                    <span className="inline-flex h-6 items-center rounded-full bg-sky-100 px-2.5 text-[10px] font-black uppercase tracking-wide text-sky-800 ring-1 ring-sky-200">
+                      CK
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <div>
-                <p className="text-xs font-extrabold uppercase text-slate-500">Cần thử</p>
+                <p className="text-xs font-extrabold uppercase text-slate-500">Cần thu</p>
                 <p className="mt-1 text-xl font-extrabold tabular-nums text-slate-900">
                   {formatCurrency(selectedOrder.total)}
                 </p>

@@ -1,4 +1,4 @@
-import { Bell, LogOut, Menu, PanelLeftClose, UserRound } from "lucide-react";
+import { Bell, Image as ImageIcon, LogOut, Menu, PanelLeftClose, UserRound } from "lucide-react";
 import { useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -17,11 +17,14 @@ export function AdminLayout() {
   const currentPermission = appPermissions.find((item) => item.path === location.pathname);
   const isWarehouseRoute = location.pathname === "/warehouse";
   const isCashManagementRoute = location.pathname === "/cash-management";
+  const isOrdersRoute = location.pathname === "/orders";
   const canOpenPageHistory =
     isWarehouseRoute ||
     (isCashManagementRoute && canAccess("cash-management.history.view"));
   const pageHistoryOpen =
     canOpenPageHistory && new URLSearchParams(location.search).get("history") === "1";
+  const transferImagesOpen =
+    isOrdersRoute && new URLSearchParams(location.search).get("transfer-images") === "1";
   const historyLabel = isWarehouseRoute
     ? "Mở lịch sử kho"
     : "Mở lịch sử đối soát két";
@@ -32,6 +35,12 @@ export function AdminLayout() {
   function openPageHistory() {
     const nextParams = new URLSearchParams(location.search);
     nextParams.set("history", "1");
+    void navigate(`${location.pathname}?${nextParams.toString()}`);
+  }
+
+  function openTransferImages() {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.set("transfer-images", "1");
     void navigate(`${location.pathname}?${nextParams.toString()}`);
   }
 
@@ -144,6 +153,24 @@ export function AdminLayout() {
                     {page.description}
                   </p>
                 </div>
+                {isOrdersRoute ? (
+                  <button
+                    aria-expanded={transferImagesOpen}
+                    aria-haspopup="dialog"
+                    aria-label="Mở ảnh xác nhận chuyển khoản"
+                    className={`relative ml-auto flex h-11 flex-none items-center justify-center gap-2 rounded-xl px-3 ring-1 transition sm:px-4 ${
+                      transferImagesOpen
+                        ? "bg-coal text-white ring-coal"
+                        : "bg-white text-coal shadow-soft ring-slate-200 hover:bg-slate-50"
+                    }`}
+                    onClick={openTransferImages}
+                    title="Ảnh xác nhận chuyển khoản theo hóa đơn"
+                    type="button"
+                  >
+                    <ImageIcon className="h-5 w-5" />
+                    <span className="hidden text-sm font-extrabold sm:inline">Ảnh CK</span>
+                  </button>
+                ) : null}
                 {canOpenPageHistory ? (
                   <button
                     aria-expanded={pageHistoryOpen}

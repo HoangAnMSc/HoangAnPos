@@ -4,7 +4,11 @@ import { requireSupabaseConfig, supabase } from "./supabase";
 const cloudName =
   import.meta.env.CLOUDINARY_CLOUD_NAME || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 export const productImageFolder = "hoang-an-pos/products";
+export const invoicePaymentProofFolder = "hoang-an-pos/invoices/payment-proofs";
+const legacyInvoicePaymentProofFolder = "hoang-an-pos/payment-proofs";
 export const isCloudinaryConfigured = Boolean(cloudName);
+
+export type CloudinaryImageScope = "invoices" | "payment-qr" | "products";
 
 type CloudinaryUploadResponse = {
   delete_token?: string;
@@ -58,8 +62,19 @@ export async function uploadProductImageAsset(file: File) {
 }
 
 export async function uploadPaymentProof(file: File) {
-  const upload = await uploadImage(file, "hoang-an-pos/payment-proofs");
-  return upload.url;
+  try {
+    const upload = await uploadImage(file, invoicePaymentProofFolder);
+    return upload.url;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+
+    if (!/upload folder is not allowed/i.test(message)) {
+      throw error;
+    }
+
+    const upload = await uploadImage(file, legacyInvoicePaymentProofFolder);
+    return upload.url;
+  }
 }
 
 export async function uploadPaymentQr(file: File) {
@@ -177,8 +192,8 @@ async function deleteCloudinaryImageViaAppApi(publicId: string) {
   return data;
 }
 
-export async function fetchCloudinaryImageResources() {
-  const response = await fetch("/api/cloudinary-images", {
+export async function fetchCloudinaryImageResources(scope: CloudinaryImageScope = "products") {
+  const response = await fetch(`/api/cloudinary-images?scope=${encodeURIComponent(scope)}`, {
     headers: await createAuthHeaders(),
   });
   const contentType = response.headers.get("content-type") ?? "";

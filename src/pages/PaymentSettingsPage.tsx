@@ -32,7 +32,7 @@ export function PaymentSettingsPage() {
     try {
       const [settings, cloudinaryResources] = await Promise.all([
         fetchPaymentSettings(),
-        fetchCloudinaryImageResources().catch(() => []),
+        fetchCloudinaryImageResources("payment-qr").catch(() => []),
       ]);
       setNote(settings?.transfer_note ?? "");
       setQrUrl(settings?.transfer_qr_url ?? "");

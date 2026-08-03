@@ -83,7 +83,13 @@ export default async function handler(request, response) {
         ]
       : request.method === "POST"
       ? ["cloudinary-images.delete"]
-      : ["cloudinary-images", "products.create", "products.update"]
+      : [
+          "cloudinary-images",
+          "orders",
+          "payment-settings.update",
+          "products.create",
+          "products.update",
+        ]
   );
 
   if (!auth.ok) {
@@ -102,17 +108,46 @@ export default async function handler(request, response) {
   }
 
   if (request.method === "GET") {
-    const canBrowseAll = await userHasAnyPermission(auth.admin, auth.user, ["cloudinary-images"]);
-    await listCloudinaryImages(
-      response,
-      config,
-      canBrowseAll ? null : "hoang-an-pos/products/"
-    );
+    const rawScope = Array.isArray(request.query?.scope)
+      ? request.query.scope[0]
+      : request.query?.scope;
+    const scope = typeof rawScope === "string" && rawScope.trim() ? rawScope.trim() : "products";
+    const scopes = {
+      invoices: {
+        permissions: ["orders"],
+        prefixes: [
+          "hoang-an-pos/invoices/payment-proofs/",
+          "hoang-an-pos/payment-proofs/",
+        ],
+      },
+      "payment-qr": {
+        permissions: ["payment-settings.update"],
+        prefixes: ["hoang-an-pos/payment-qr/"],
+      },
+      products: {
+        permissions: ["cloudinary-images", "products.create", "products.update"],
+        prefixes: ["hoang-an-pos/products/"],
+      },
+    };
+    const requestedScope = scopes[scope];
+
+    if (!requestedScope) {
+      sendJson(response, 400, { message: "Image scope is not allowed.", ok: false });
+      return;
+    }
+
+    if (!(await userHasAnyPermission(auth.admin, auth.user, requestedScope.permissions))) {
+      sendJson(response, 403, { message: "Permission denied for this image scope.", ok: false });
+      return;
+    }
+
+    await listCloudinaryImages(response, config, requestedScope.prefixes);
     return;
   }
 
   if (signingUpload) {
     const folderPermissions = {
+      "hoang-an-pos/invoices/payment-proofs": ["pos.payment-proof.upload"],
       "hoang-an-pos/payment-proofs": ["pos.payment-proof.upload"],
       "hoang-an-pos/payment-qr": ["payment-settings.update"],
       "hoang-an-pos/products": [
@@ -161,7 +196,7 @@ export default async function handler(request, response) {
   await deleteCloudinaryImage(response, config, publicId);
 }
 
-async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }, allowedPrefix) {
+async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }, allowedPrefixes) {
   const resources = [];
   let nextCursor = "";
 
@@ -196,7 +231,9 @@ async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }, 
 
       resources.push(
         ...(data.resources ?? []).filter(
-          (resource) => !allowedPrefix || resource.public_id?.startsWith(allowedPrefix)
+          (resource) =>
+            !allowedPrefixes ||
+            allowedPrefixes.some((prefix) => resource.public_id?.startsWith(prefix))
         )
       );
       nextCursor = data.next_cursor ?? "";

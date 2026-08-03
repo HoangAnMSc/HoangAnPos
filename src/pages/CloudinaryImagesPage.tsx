@@ -142,16 +142,10 @@ export function CloudinaryImagesPage() {
       const [nextProducts, nextRecords, nextCloudinaryResources] = await Promise.all([
         fetchProducts(),
         fetchCloudinaryImageRecords(),
-        // The Admin API is optional. Unsigned uploads only need the cloud name
-        // and upload preset; uploaded images are also tracked in Supabase.
         fetchCloudinaryImageResources().catch(() => []),
       ]);
 
-      const nextImages = createImageLibraryItems(
-        nextProducts,
-        nextRecords,
-        nextCloudinaryResources
-      );
+      const nextImages = createImageLibraryItems(nextProducts, nextRecords, nextCloudinaryResources);
       const availableUrls = new Set(nextImages.map((item) => item.url));
 
       setImages(nextImages);
@@ -178,8 +172,7 @@ export function CloudinaryImagesPage() {
     () => images.filter((item) => selectedUrls.has(item.url)),
     [images, selectedUrls]
   );
-  const allFilteredSelected =
-    images.length > 0 && images.every((item) => selectedUrls.has(item.url));
+  const allImagesSelected = images.length > 0 && images.every((item) => selectedUrls.has(item.url));
   const deleting = deletingUrls.length > 0;
 
   function toggleImageSelection(imageUrl: string) {
@@ -200,7 +193,7 @@ export function CloudinaryImagesPage() {
     });
   }
 
-  function toggleFilteredSelection() {
+  function toggleAllSelection() {
     if (!canDeleteImage) {
       return;
     }
@@ -208,7 +201,7 @@ export function CloudinaryImagesPage() {
     setSelectedUrls((current) => {
       const nextSelected = new Set(current);
 
-      if (allFilteredSelected) {
+      if (allImagesSelected) {
         images.forEach((item) => nextSelected.delete(item.url));
       } else {
         images.forEach((item) => nextSelected.add(item.url));
@@ -322,10 +315,10 @@ export function CloudinaryImagesPage() {
                 <Button
                   className="!min-h-9 w-full !rounded-lg !px-3 !py-1.5 !text-xs sm:w-auto"
                   disabled={images.length === 0 || deleting}
-                  onClick={toggleFilteredSelection}
+                  onClick={toggleAllSelection}
                   variant="secondary"
                 >
-                  {allFilteredSelected ? "Bỏ chọn" : "Chọn tất cả"}
+                  {allImagesSelected ? "Bỏ chọn" : "Chọn tất cả"}
                 </Button>
               ) : null}
               {canUploadImage ? (
@@ -349,9 +342,9 @@ export function CloudinaryImagesPage() {
           </div>
         ) : images.length === 0 ? (
           <EmptyState
-            description="Ảnh tải lên Cloudinary sẽ hiển thị tại đây."
+            description="Ảnh sản phẩm tải lên Cloudinary sẽ hiển thị tại đây."
             icon={ImageIcon}
-            title="Chưa có ảnh"
+            title="Chưa có ảnh sản phẩm"
           />
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))] sm:gap-4">
@@ -429,15 +422,17 @@ export function CloudinaryImagesPage() {
         onClose={() => setPreviewImage(null)}
         open={Boolean(previewImage)}
         size="wide"
-        title="Xem ảnh"
+        title="Xem ảnh sản phẩm"
       >
         {previewImage ? (
-          <div className="flex min-h-64 items-center justify-center overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#f1f5f9,#e2e8f0)] p-2 sm:min-h-[560px]">
-            <img
-              alt="Ảnh xem trước"
-              className="max-h-[68dvh] w-full object-contain"
-              src={previewImage.url}
-            />
+          <div>
+            <div className="flex min-h-64 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 p-2 sm:min-h-[560px]">
+              <img
+                alt="Ảnh xem trước"
+                className="max-h-[68dvh] w-full object-contain"
+                src={previewImage.url}
+              />
+            </div>
           </div>
         ) : null}
       </Modal>
