@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Banknote, CalendarDays, Download, Printer, ReceiptText, TrendingUp } from "lucide-react";
+import { Banknote, Download, Landmark, ReceiptText, TrendingUp } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
@@ -22,14 +22,6 @@ function localDateInput(date: Date) {
 
 function shortDate(value: string) {
   return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(value));
-}
-
-function money(value: number) {
-  return new Intl.NumberFormat("vi-VN").format(value);
-}
-
-function escapeHtml(value: string | number | null | undefined) {
-  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function SummaryCard({ icon: Icon, label, value, tone = "moss" }: { icon: typeof Banknote; label: string; value: string; tone?: "moss" | "blue" | "amber" | "slate" }) {
@@ -95,7 +87,7 @@ export function RevenuePage() {
     const revenue = filteredOrders.reduce((sum, order) => sum + Number(order.total), 0);
     const cash = filteredOrders.filter((order) => order.payment_method === "cash").reduce((sum, order) => sum + Number(order.total), 0);
     const transfer = revenue - cash;
-    return { revenue, cash, transfer, average: filteredOrders.length ? revenue / filteredOrders.length : 0 };
+    return { revenue, cash, transfer };
   }, [filteredOrders]);
 
   const dailyRows = useMemo(() => {
@@ -107,7 +99,7 @@ export function RevenuePage() {
     });
     return [...grouped.entries()].map(([day, value]) => ({ day, ...value })).sort((a, b) => a.day.localeCompare(b.day));
   }, [filteredOrders]);
-  const maxDailyRevenue = Math.max(...dailyRows.map((row) => row.revenue), 1);
+  const cashPercent = totals.revenue ? (totals.cash / totals.revenue) * 100 : 0;
   const periodLabel = quickPeriod === "today" ? "Hôm nay" : quickPeriod === "first-half" ? `6 tháng đầu năm ${selectedYear}` : quickPeriod === "second-half" ? `6 tháng cuối năm ${selectedYear}` : selectedDay ? `Ngày ${selectedDay}/${selectedMonth}/${selectedYear}` : selectedMonth ? `Tháng ${selectedMonth}/${selectedYear}` : `Năm ${selectedYear}`;
 
   function exportCsv() {
@@ -120,17 +112,9 @@ export function RevenuePage() {
     URL.revokeObjectURL(url);
   }
 
-  function printBook() {
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) return;
-    const rows = dailyRows.map((row) => `<tr><td>${shortDate(row.day)}</td><td>Tổng doanh thu bán hàng trong ngày (${row.count} hóa đơn)</td><td class="num">${money(row.revenue)}</td></tr>`).join("");
-    printWindow.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Sổ S1a-HKD</title><style>@page{size:A4;margin:14mm}body{font:13px Arial;color:#111}h1{text-align:center;font-size:18px;margin:18px 0 5px}.top{display:flex;justify-content:space-between;gap:30px}.top p{margin:4px 0}.sub{text-align:center;margin:0 0 18px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #222;padding:7px;vertical-align:top}th{background:#eee}.num{text-align:right;white-space:nowrap}tfoot{font-weight:bold}.sign{margin-top:28px;text-align:right}.sign b{display:block;margin-top:6px}</style></head><body><div class="top"><div><p><b>HỘ, CÁ NHÂN KINH DOANH:</b> HỘ KINH DOANH SỮA TÃ BABYBOO</p><p><b>Địa chỉ:</b> ................................................</p><p><b>Mã số thuế:</b> ..........................................</p></div><div><b>Mẫu số S1a-HKD</b></div></div><h1>SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ</h1><p class="sub">Kỳ: ${escapeHtml(periodLabel)}</p><table><thead><tr><th style="width:18%">Ngày tháng<br>A</th><th>Giao dịch<br>B</th><th style="width:23%">Số tiền<br>1</th></tr></thead><tbody>${rows || '<tr><td colspan="3" style="text-align:center">Không có giao dịch</td></tr>'}</tbody><tfoot><tr><td></td><td>Tổng cộng</td><td class="num">${money(totals.revenue)}</td></tr></tfoot></table><div class="sign">Ngày ..... tháng ..... năm .....<b>NGƯỜI ĐẠI DIỆN HỘ KINH DOANH</b><p>(Ký, họ tên, đóng dấu)</p></div></body></html>`);
-    printWindow.document.close(); printWindow.focus(); window.setTimeout(() => printWindow.print(), 200);
-  }
-
   return <PageContainer maxWidth="none">
     <ConfigNotice />
-    <PageToolbar eyebrow="Sổ S1a-HKD" title="Thống kê doanh thu" description="Tự động tổng hợp từ hóa đơn thành công; hóa đơn đã hủy không được tính vào doanh thu. Dùng bộ lọc kỳ để xem, đối chiếu, in hoặc xuất sổ.">
+    <PageToolbar eyebrow="Doanh thu" title="Thống kê doanh thu" description="Theo dõi doanh thu và tỷ trọng tiền mặt, chuyển khoản theo kỳ đã chọn.">
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <label className="text-xs font-bold text-slate-500">Kỳ xem<select className="mt-1 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800" onChange={(e) => setQuickPeriod(e.target.value as typeof quickPeriod)} value={quickPeriod}><option value="">Theo ngày tháng</option><option value="today">Hôm nay</option><option value="first-half">6 tháng đầu năm</option><option value="second-half">6 tháng cuối năm</option></select></label>
@@ -138,14 +122,25 @@ export function RevenuePage() {
           <label className="text-xs font-bold text-slate-500">Tháng<select className="mt-1 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 disabled:bg-slate-100" disabled={Boolean(quickPeriod)} onChange={(e) => { setSelectedMonth(e.target.value); setSelectedDay(""); }} value={selectedMonth}><option value="">Tháng</option>{Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{month}</option>)}</select></label>
           <label className="text-xs font-bold text-slate-500">Ngày<select className="mt-1 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 disabled:bg-slate-100" disabled={Boolean(quickPeriod) || !selectedMonth} onChange={(e) => setSelectedDay(e.target.value)} value={selectedDay}><option value="">Ngày</option>{availableDays.map((day) => <option key={day} value={day}>{day}</option>)}</select></label>
         </div>
-        {canExport ? <div className="grid grid-cols-2 gap-2"><Button onClick={exportCsv} variant="secondary"><Download className="h-4 w-4" />Xuất CSV</Button><Button onClick={printBook}><Printer className="h-4 w-4" />In sổ</Button></div> : null}
+        {canExport ? <Button onClick={exportCsv} variant="secondary"><Download className="h-4 w-4" />Xuất CSV</Button> : null}
       </div>
     </PageToolbar>
 
     {loading ? <div className="rounded-2xl bg-white p-10 shadow-soft"><Spinner label="Đang tổng hợp doanh thu..." /></div> : <>
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4"><SummaryCard icon={TrendingUp} label="Tổng doanh thu" value={formatCurrency(totals.revenue)} /><SummaryCard icon={ReceiptText} label="Giao dịch" value={`${filteredOrders.length} hóa đơn`} tone="blue" /><SummaryCard icon={Banknote} label="Tiền mặt / chuyển khoản" value={`${money(totals.cash)} / ${money(totals.transfer)}`} tone="amber" /><SummaryCard icon={CalendarDays} label="Trung bình hóa đơn" value={formatCurrency(totals.average)} tone="slate" /></section>
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4"><SummaryCard icon={TrendingUp} label="Tổng doanh thu" value={formatCurrency(totals.revenue)} /><SummaryCard icon={Banknote} label="Tiền mặt" value={formatCurrency(totals.cash)} tone="moss" /><SummaryCard icon={Landmark} label="Chuyển khoản" value={formatCurrency(totals.transfer)} tone="blue" /><SummaryCard icon={ReceiptText} label="Giao dịch" value={`${filteredOrders.length} hóa đơn`} tone="slate" /></section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5"><div className="flex items-center justify-between"><div><h3 className="font-display text-lg font-bold">Tổng doanh thu theo ngày</h3><p className="text-sm font-semibold text-slate-500">{periodLabel}</p></div></div>{dailyRows.length ? <div className="mt-5 flex h-44 items-end gap-2 overflow-x-auto border-b border-slate-200 pb-1">{dailyRows.map((row) => <div className="group flex h-full min-w-10 flex-1 flex-col justify-end" key={row.day} title={`${shortDate(row.day)}: ${formatCurrency(row.revenue)} · ${row.count} hóa đơn`}><span className="mb-1 hidden text-center text-[10px] font-bold text-slate-500 group-hover:block">{money(row.revenue)}</span><div className="min-h-1 rounded-t-lg bg-moss-500" style={{ height: `${Math.max((row.revenue / maxDailyRevenue) * 100, 4)}%` }} /><span className="mt-1 text-center text-[10px] font-bold text-slate-500">{row.day.slice(8, 10)}</span></div>)}</div> : <p className="py-12 text-center text-sm font-semibold text-slate-500">Chưa có doanh thu trong kỳ đã chọn.</p>}</section>
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
+        <div><h3 className="font-display text-lg font-bold">Cơ cấu tổng doanh thu</h3><p className="text-sm font-semibold text-slate-500">{periodLabel}</p></div>
+        <div className="mt-5 grid items-center gap-5 sm:grid-cols-[180px_1fr]">
+          <div className="relative mx-auto h-40 w-40 rounded-full" style={{ background: totals.revenue ? `conic-gradient(#16a34a 0 ${cashPercent}%, #2563eb ${cashPercent}% 100%)` : "#e2e8f0" }}>
+            <div className="absolute inset-7 flex flex-col items-center justify-center rounded-full bg-white text-center"><span className="text-xs font-bold text-slate-500">Tổng cộng</span><strong className="mt-1 text-sm font-black text-slate-950">{formatCurrency(totals.revenue)}</strong></div>
+          </div>
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-green-50 px-4 py-3"><span className="flex items-center gap-2 text-sm font-bold text-green-800"><i className="h-3 w-3 rounded-full bg-green-600" />Tiền mặt</span><strong className="tabular-nums text-green-900">{formatCurrency(totals.cash)}</strong></div>
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-blue-50 px-4 py-3"><span className="flex items-center gap-2 text-sm font-bold text-blue-800"><i className="h-3 w-3 rounded-full bg-blue-600" />Chuyển khoản</span><strong className="tabular-nums text-blue-900">{formatCurrency(totals.transfer)}</strong></div>
+          </div>
+        </div>
+      </section>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
         <div className="flex flex-col gap-3 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">

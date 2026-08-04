@@ -1,4 +1,4 @@
-import { createAuthHeaders } from "./apiClient";
+import { authenticatedFetch } from "./apiClient";
 import { requireSupabaseConfig, supabase } from "./supabase";
 
 const cloudName =
@@ -167,9 +167,9 @@ async function deleteCloudinaryImageByToken(deleteToken: string) {
 }
 
 async function deleteCloudinaryImageViaAppApi(publicId: string) {
-  const response = await fetch("/api/cloudinary-images", {
+  const response = await authenticatedFetch("/api/cloudinary-images", {
     body: JSON.stringify({ publicId }),
-    headers: await createAuthHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     method: "POST",
   });
   const contentType = response.headers.get("content-type") ?? "";
@@ -188,9 +188,7 @@ async function deleteCloudinaryImageViaAppApi(publicId: string) {
 }
 
 export async function fetchCloudinaryImageResources(scope: CloudinaryImageScope = "products") {
-  const response = await fetch(`/api/cloudinary-images?scope=${encodeURIComponent(scope)}`, {
-    headers: await createAuthHeaders(),
-  });
+  const response = await authenticatedFetch(`/api/cloudinary-images?scope=${encodeURIComponent(scope)}`);
   const contentType = response.headers.get("content-type") ?? "";
 
   if (!contentType.includes("application/json")) {
@@ -251,9 +249,9 @@ async function uploadImage(file: File, folder: string): Promise<CloudinaryImageU
     throw new Error("Ảnh không được lớn hơn 10 MB.");
   }
 
-  const signatureResponse = await fetch("/api/cloudinary-images", {
+  const signatureResponse = await authenticatedFetch("/api/cloudinary-images", {
     body: JSON.stringify({ action: "sign-upload", folder }),
-    headers: await createAuthHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     method: "POST",
   });
   const signatureData = (await signatureResponse.json().catch(() => null)) as

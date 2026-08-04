@@ -1,5 +1,15 @@
 import type { AppRole, Profile } from "../types";
-import { createAuthHeaders } from "../lib/apiClient";
+import { authenticatedFetch } from "../lib/apiClient";
+
+export class AdminUsersApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "AdminUsersApiError";
+    this.status = status;
+  }
+}
 
 export type ManagedUser = {
   id: string;
@@ -29,24 +39,27 @@ async function parseResponse<T>(response: Response) {
   const data = (await response.json()) as { message?: string } & T;
 
   if (!response.ok) {
-    throw new Error(data.message || "Yêu cầu quản lý nhân viên thất bại.");
+    throw new AdminUsersApiError(
+      response.status === 401
+        ? "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại."
+        : data.message || "Yêu cầu quản lý nhân viên thất bại.",
+      response.status
+    );
   }
 
   return data;
 }
 
 export async function fetchManagedUsers() {
-  const response = await fetch("/api/admin-users", {
-    headers: await createAuthHeaders(),
-  });
+  const response = await authenticatedFetch("/api/admin-users");
   const data = await parseResponse<{ users: ManagedUser[] }>(response);
   return data.users;
 }
 
 export async function createManagedUser(input: UserInput) {
-  const response = await fetch("/api/admin-users", {
+  const response = await authenticatedFetch("/api/admin-users", {
     body: JSON.stringify(input),
-    headers: await createAuthHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     method: "POST",
   });
   const data = await parseResponse<{ user: ManagedUser }>(response);
@@ -54,9 +67,9 @@ export async function createManagedUser(input: UserInput) {
 }
 
 export async function updateManagedUser(id: string, input: UserInput) {
-  const response = await fetch(`/api/admin-users?id=${encodeURIComponent(id)}`, {
+  const response = await authenticatedFetch(`/api/admin-users?id=${encodeURIComponent(id)}`, {
     body: JSON.stringify(input),
-    headers: await createAuthHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     method: "PATCH",
   });
   const data = await parseResponse<{ user: ManagedUser }>(response);
@@ -64,8 +77,7 @@ export async function updateManagedUser(id: string, input: UserInput) {
 }
 
 export async function deleteManagedUser(id: string) {
-  const response = await fetch(`/api/admin-users?id=${encodeURIComponent(id)}`, {
-    headers: await createAuthHeaders(),
+  const response = await authenticatedFetch(`/api/admin-users?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   await parseResponse<{ ok: boolean }>(response);

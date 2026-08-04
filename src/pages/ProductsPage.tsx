@@ -14,7 +14,7 @@ import {
 import { MediaPickerModal } from "../components/media/MediaPickerModal";
 import { Ean13LabelsModal } from "../components/products/Ean13LabelsModal";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
-import { ProductCard } from "../components/products/ProductCard";
+import { NoImagePlaceholder, ProductCard } from "../components/products/ProductCard";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -1152,9 +1152,7 @@ function ProductDetailModal({
             {product.image_url ? (
               <img alt={product.name} className="h-full w-full object-cover" src={product.image_url} />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-coal/35">
-                <Boxes className="h-8 w-8" />
-              </div>
+              <NoImagePlaceholder />
             )}
           </div>
           <div className="min-w-0 flex-1">
@@ -1393,6 +1391,7 @@ export function ProductsPage() {
   const [productBatches, setProductBatches] = useState<ProductBatch[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [receiveModalOpen, setReceiveModalOpen] = useState(false);
   const [receivingProduct, setReceivingProduct] = useState<Product | null>(null);
   const [savedCategories, setSavedCategories] = useState<string[]>([]);
@@ -1673,18 +1672,13 @@ export function ProductsPage() {
     return getExpiryStatus(nearestBatch?.expiry_date ?? product.expiry_date);
   }
 
-  function getProductStockLabel(product: Product) {
-    const batches = getProductActiveBatches(product.id);
-    return `Tổng ${product.stock} · Kệ ${product.shelf_stock} · Kho ${product.stock - product.shelf_stock}${batches.length > 0 ? ` · ${batches.length} lô` : ""}`;
-  }
-
   function getProductExpiryLabel(product: Product) {
     const nearestBatch = getNearestBatch(product.id);
     if (!nearestBatch) {
       return formatProductDate(product.expiry_date);
     }
 
-    return `${formatProductDate(nearestBatch.expiry_date)} (${nearestBatch.quantity})`;
+    return formatProductDate(nearestBatch.expiry_date);
   }
 
   function getProductExpiryClassName(product: Product) {
@@ -1707,21 +1701,21 @@ export function ProductsPage() {
   const hiddenCount = products.filter((product) => !product.is_active).length;
 
   return (
-    <div className="w-full max-w-[100vw] px-0 sm:px-2">
+    <div className="w-full max-w-[100vw] px-0 pb-24 sm:px-2 sm:pb-0">
       <ConfigNotice />
 
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-coal/10 p-2.5 sm:p-4">
+      <section className="mb-2 flex items-center gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-soft sm:mb-3 sm:p-3">
+        <div className="flex shrink-0 items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600"><strong className="text-base font-black text-slate-950">{products.length}</strong>Mặt hàng</div>
+        <div className="flex shrink-0 items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700"><strong className="text-base font-black text-amber-900">{expiringSoonCount}</strong>Gần hết hạn</div>
+        <div className="flex shrink-0 items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700"><strong className="text-base font-black text-red-900">{expiredCount}</strong>Hết hạn</div>
+        {hiddenCount > 0 ? <div className="flex shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white"><strong className="text-base font-black">{hiddenCount}</strong>Đang ẩn</div> : null}
+      </section>
+
+      <Card className="overflow-hidden rounded-none border-0 bg-transparent p-0 shadow-none sm:rounded-2xl sm:border sm:bg-white sm:shadow-soft">
+        <div className="hidden border-b border-coal/10 px-2 py-2.5 sm:block sm:p-4">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <div className="min-w-0 space-y-2.5">
-              <div className="flex flex-wrap gap-2">
-                <Badge tone="neutral">{products.length} mặt hàng</Badge>
-                {expiringSoonCount > 0 ? <Badge tone="amber">{expiringSoonCount} gần hết hạn</Badge> : null}
-                {expiredCount > 0 ? <Badge tone="red">{expiredCount} hết hạn</Badge> : null}
-                {hiddenCount > 0 ? <Badge tone="red">{hiddenCount} đang ẩn</Badge> : null}
-              </div>
-
-              <div className="relative w-full lg:max-w-2xl">
+              <div className="relative hidden w-full sm:block lg:max-w-2xl">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
                 <Input
                   className="h-10 rounded-xl py-2 pl-9"
@@ -1731,7 +1725,7 @@ export function ProductsPage() {
                 />
               </div>
             </div>
-            <div className="grid auto-cols-fr grid-flow-col gap-1.5 sm:flex sm:w-auto sm:gap-2 lg:justify-end">
+            <div className="hidden auto-cols-fr grid-flow-col gap-1.5 sm:flex sm:w-auto sm:gap-2 lg:justify-end">
               {canCreateProduct ? (
                 <Button
                   className="w-full !bg-moss-700 px-2 !text-white hover:!bg-moss-800 sm:w-auto sm:px-4"
@@ -1789,7 +1783,7 @@ export function ProductsPage() {
             />
           </div>
         ) : (
-          <div className="max-h-[68dvh] overflow-y-auto overscroll-contain p-1.5 sm:p-3">
+          <div className="max-h-[calc(100dvh-12.5rem)] overflow-y-auto overscroll-contain pb-2 sm:max-h-[68dvh] sm:p-3">
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {filteredProducts.map((product) => (
                 <ProductCard
@@ -1799,13 +1793,24 @@ export function ProductsPage() {
                   key={product.id}
                   onSelect={() => openViewModal(product)}
                   product={product}
-                  stockLabel={getProductStockLabel(product)}
                 />
               ))}
             </div>
           </div>
         )}
       </Card>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-2.5 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden">
+        <div className="mx-auto flex max-w-lg items-stretch justify-start gap-2">
+          <Button aria-label="Tìm kiếm" className="h-12 w-12 shrink-0 rounded-xl p-0" onClick={() => setSearchModalOpen(true)} title="Tìm kiếm" variant="secondary"><Search className="h-5 w-5" /></Button>
+          {canCreateProduct ? <Button aria-label="Thêm sản phẩm" className="h-12 w-12 shrink-0 rounded-xl p-0" onClick={openCreateModal} title="Thêm sản phẩm"><PackagePlus className="h-5 w-5" /></Button> : null}
+          {canPrintEan13 ? <Button className="h-12 shrink-0 rounded-xl px-4" disabled={products.length === 0} onClick={() => setEan13LabelsOpen(true)} variant="secondary"><Barcode className="h-4 w-4" />In EAN-13</Button> : null}
+        </div>
+      </div>
+
+      <Modal footer={<div className="grid w-full grid-cols-2 gap-2"><Button onClick={() => setQuery("")} variant="secondary">Xóa tìm kiếm</Button><Button onClick={() => setSearchModalOpen(false)}>Xem kết quả</Button></div>} onClose={() => setSearchModalOpen(false)} open={searchModalOpen} size="sm" title="Tìm sản phẩm">
+        <div className="space-y-3"><div className="relative"><Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-coal/35" /><Input autoFocus className="h-12 rounded-xl pl-11" onChange={(event) => setQuery(event.target.value)} placeholder="Tên, EAN-13 hoặc nhóm hàng..." value={query} /></div><p className="text-sm font-semibold text-slate-500">Tìm thấy {filteredProducts.length} sản phẩm</p></div>
+      </Modal>
 
       <ProductEditorModal
         canCreateCategory={canCreateCategory}

@@ -65,10 +65,6 @@ function customerToForm(customer?: Customer | null): CustomerFormState {
   };
 }
 
-function getCustomerInitial(name: string) {
-  return name.trim().charAt(0).toUpperCase() || "K";
-}
-
 type CustomerFormProps = {
   customer?: Customer | null;
   formId: string;
@@ -179,6 +175,7 @@ export function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const canCreateCustomer = canAccess("customers.create");
@@ -285,7 +282,7 @@ export function CustomersPage() {
   const completeContactCount = customers.filter((customer) => customer.phone || customer.email).length;
 
   return (
-    <PageContainer>
+    <PageContainer className="pb-28 sm:pb-6">
       <section className="rounded-xl bg-white p-4 shadow-soft ring-1 ring-coal/5">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
@@ -302,14 +299,14 @@ export function CustomersPage() {
             </div>
           </div>
           {canCreateCustomer ? (
-            <Button className="h-10 rounded-xl px-3" onClick={openCreateModal}>
+            <Button className="hidden h-10 rounded-xl px-3 sm:inline-flex" onClick={openCreateModal}>
               <UserPlus className="h-4 w-4" />
               Thêm khách hàng
             </Button>
           ) : null}
         </div>
 
-        <div className="relative mt-3 w-full xl:max-w-xl">
+        <div className="relative mt-3 hidden w-full sm:block xl:max-w-xl">
           <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
           <Input
             className="h-10 rounded-xl py-2 pl-11"
@@ -352,9 +349,6 @@ export function CustomersPage() {
                 type="button"
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-moss/12 text-sm font-extrabold text-moss">
-                    {getCustomerInitial(customer.name)}
-                  </div>
                   <div className="min-w-0">
                     <h3 className="truncate text-base font-extrabold text-coal">
                       {customer.name}
@@ -405,6 +399,17 @@ export function CustomersPage() {
         </div>
       )}
 
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden">
+        <div className="mx-auto grid max-w-lg grid-cols-2 gap-2">
+          <Button onClick={() => setSearchModalOpen(true)} variant="secondary"><Search className="h-4 w-4" />Tìm kiếm</Button>
+          {canCreateCustomer ? <Button onClick={openCreateModal}><UserPlus className="h-4 w-4" />Thêm khách hàng</Button> : <span />}
+        </div>
+      </div>
+
+      <Modal footer={<Button onClick={() => setSearchModalOpen(false)} variant="secondary">Đóng</Button>} onClose={() => setSearchModalOpen(false)} open={searchModalOpen} size="sm" title="Tìm khách hàng">
+        <div className="space-y-3"><div className="relative"><Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-coal/35" /><Input autoFocus className="h-12 rounded-xl pl-11" onChange={(event) => setQuery(event.target.value)} placeholder="Tên, số điện thoại hoặc email..." value={query} /></div><p className="text-sm font-semibold text-slate-500">Tìm thấy {filteredCustomers.length} khách hàng</p></div>
+      </Modal>
+
       <Modal
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
@@ -427,9 +432,6 @@ export function CustomersPage() {
         {viewingCustomer ? (
           <div className="space-y-4">
             <div className="flex items-center gap-4 rounded-xl bg-slate-50 p-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-moss/12 text-lg font-extrabold text-moss">
-                {getCustomerInitial(viewingCustomer.name)}
-              </div>
               <div className="min-w-0">
                 <h3 className="truncate text-xl font-extrabold text-slate-950">
                   {viewingCustomer.name}

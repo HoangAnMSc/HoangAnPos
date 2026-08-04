@@ -225,6 +225,11 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
       );
     });
   }, [checks, filter, search, sessionById]);
+  const selectedCheck = checks.find((check) => check.id === expandedId) ?? null;
+  const selectedSession = selectedCheck?.cash_session_id
+    ? sessionById.get(selectedCheck.cash_session_id)
+    : undefined;
+  const selectedVariance = selectedCheck ? getVariance(selectedCheck) : null;
 
   return (
     <Modal
@@ -295,15 +300,13 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
               const session = check.cash_session_id ? sessionById.get(check.cash_session_id) : undefined;
               const variance = getVariance(check);
               const status = getStatus(check, session);
-              const expanded = expandedId === check.id;
               const imageCount = check.evidence_urls.length + (session?.close_evidence_urls.length ?? 0);
 
               return (
-                <article className={`overflow-hidden rounded-2xl border bg-white transition ${expanded ? "border-slate-300 shadow-sm" : "border-slate-200"}`} key={check.id}>
+                <article className="overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-slate-300 hover:bg-slate-50" key={check.id}>
                   <button
-                    aria-expanded={expanded}
                     className="flex w-full items-center gap-3 px-3 py-3 text-left sm:px-4"
-                    onClick={() => setExpandedId(expanded ? null : check.id)}
+                    onClick={() => setExpandedId(check.id)}
                     type="button"
                   >
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
@@ -322,61 +325,37 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
                       </span>
                       {imageCount ? <span className="mt-1 flex items-center justify-end gap-1 text-[10px] font-bold text-slate-400"><ImageIcon className="h-3 w-3" /> {imageCount}</span> : null}
                     </span>
-                    <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${expanded ? "rotate-180" : ""}`} />
+                    <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-slate-400" />
                   </button>
-
-                  {expanded ? (
-                    <div className="space-y-4 border-t border-slate-100 bg-slate-50/70 px-3 py-3 sm:px-4 sm:py-4">
-                      <section>
-                        <div className="mb-2 flex items-center justify-between">
-                          <h4 className="text-xs font-black uppercase tracking-wide text-slate-600">Đối soát đầu ca</h4>
-                          {variance != null && variance !== 0 ? <span className="text-xs font-black tabular-nums text-red-700">Lệch {formatCurrency(variance)}</span> : null}
-                        </div>
-                        <dl className="grid grid-cols-2 gap-2">
-                          <MoneyItem label="Tiền hệ thống" value={Number(check.expected_cash)} />
-                          <MoneyItem label="Tiền thực đếm" value={check.actual_cash == null ? null : Number(check.actual_cash)} />
-                        </dl>
-                      </section>
-
-                      {session ? (
-                        <section>
-                          <div className="mb-2 flex items-center justify-between">
-                            <h4 className="text-xs font-black uppercase tracking-wide text-slate-600">Chốt ca</h4>
-                            <span className={`text-[10px] font-black ${session.status === "closed" ? "text-slate-600" : "text-amber-700"}`}>{session.status === "closed" ? "Đã chốt" : "Đang mở"}</span>
-                          </div>
-                          <dl className="grid grid-cols-2 gap-2">
-                            <MoneyItem label="Tiền hệ thống" value={Number(session.expected_cash)} />
-                            <MoneyItem label="Tiền thực đếm" value={session.counted_cash == null ? null : Number(session.counted_cash)} />
-                          </dl>
-                        </section>
-                      ) : null}
-
-                      <div className="space-y-3">
-                        <EvidenceGallery label="Ảnh lệch đầu ca" urls={check.evidence_urls} />
-                        <EvidenceGallery label="Ảnh lệch khi chốt ca" urls={session?.close_evidence_urls} />
-                      </div>
-                      {canUpdate || canDelete ? (
-                        <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
-                          {canUpdate ? (
-                            <Button onClick={() => openEdit(check)} variant="secondary">
-                              <Edit3 className="h-4 w-4" /> Sửa
-                            </Button>
-                          ) : null}
-                          {canDelete ? (
-                            <Button onClick={() => void removeCheck(check)} variant="danger">
-                              <Trash2 className="h-4 w-4" /> Xóa
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </article>
               );
             })}
           </div>
         )}
       </div>
+      <Modal
+        footer={
+          <div className="flex w-full items-center gap-2">
+            {selectedCheck && canDelete ? <Button onClick={() => void removeCheck(selectedCheck)} variant="danger"><Trash2 className="h-4 w-4" /> Xóa</Button> : null}
+            <div className="ml-auto flex gap-2">
+              <Button onClick={() => setExpandedId(null)} variant="secondary">Đóng</Button>
+              {selectedCheck && canUpdate ? <Button onClick={() => { setExpandedId(null); openEdit(selectedCheck); }}><Edit3 className="h-4 w-4" /> Sửa</Button> : null}
+            </div>
+          </div>
+        }
+        onClose={() => setExpandedId(null)}
+        open={Boolean(selectedCheck)}
+        size="md"
+        title="Chi tiết đối soát"
+      >
+        {selectedCheck ? <div className="space-y-4">
+          <div><h3 className="font-extrabold text-slate-950">{selectedCheck.employee_name}</h3><p className="mt-1 text-xs font-semibold text-slate-500">{formatDateTime(selectedCheck.checked_at ?? selectedCheck.created_at)}</p></div>
+          <section><div className="mb-2 flex items-center justify-between"><h4 className="text-xs font-black uppercase tracking-wide text-slate-600">Đối soát đầu ca</h4>{selectedVariance != null && selectedVariance !== 0 ? <span className="text-xs font-black text-red-700">Lệch {formatCurrency(selectedVariance)}</span> : null}</div><dl className="grid grid-cols-2 gap-2"><MoneyItem label="Tiền hệ thống" value={Number(selectedCheck.expected_cash)} /><MoneyItem label="Tiền thực đếm" value={selectedCheck.actual_cash == null ? null : Number(selectedCheck.actual_cash)} /></dl></section>
+          {selectedSession ? <section><div className="mb-2 flex items-center justify-between"><h4 className="text-xs font-black uppercase tracking-wide text-slate-600">Chốt ca</h4><span className="text-[10px] font-black text-slate-500">{selectedSession.status === "closed" ? "Đã chốt" : "Đang mở"}</span></div><dl className="grid grid-cols-2 gap-2"><MoneyItem label="Tiền hệ thống" value={Number(selectedSession.expected_cash)} /><MoneyItem label="Tiền thực đếm" value={selectedSession.counted_cash == null ? null : Number(selectedSession.counted_cash)} /></dl></section> : null}
+          <EvidenceGallery label="Ảnh lệch đầu ca" urls={selectedCheck.evidence_urls} />
+          <EvidenceGallery label="Ảnh lệch khi chốt ca" urls={selectedSession?.close_evidence_urls} />
+        </div> : null}
+      </Modal>
       <Modal
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">

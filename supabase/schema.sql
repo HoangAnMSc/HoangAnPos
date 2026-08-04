@@ -1286,13 +1286,6 @@ begin
     raise exception 'Cash reconciliation was not found';
   end if;
 
-  if exists (
-    select 1 from public.cash_drawer_sessions
-    where id = check_record.cash_session_id and status = 'open'
-  ) then
-    raise exception 'Cannot delete reconciliation for an open cash session';
-  end if;
-
   delete from public.cash_drawer_checks where id = check_record.id;
 end;
 $$;

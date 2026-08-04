@@ -18,6 +18,7 @@ import {
   fetchManagedUsers,
   updateManagedUser,
   type ManagedUser,
+  AdminUsersApiError,
   type UserInput,
 } from "../services/adminUsers";
 import { fetchRoles } from "../services/roles";
@@ -280,7 +281,10 @@ export function UsersPage() {
       setUsers(nextUsers);
     } catch (requestError) {
       setErrorNotice({
-        detail: "Cần cấu hình SUPABASE_SERVICE_ROLE_KEY trong .env/Vercel để quản lý nhân viên.",
+        detail:
+          requestError instanceof AdminUsersApiError && requestError.status >= 500
+            ? "Kiểm tra SUPABASE_SERVICE_ROLE_KEY trong .env hoặc Environment Variables trên Vercel."
+            : undefined,
         message: getErrorMessage(requestError, "Không tải được danh sách nhân viên."),
         title: "Không tải được nhân viên",
       });

@@ -73,21 +73,7 @@ function createImageLibraryItems(
     if (existing) {
       existing.record = record;
       existing.publicId = existing.publicId || record.public_id || getCloudinaryPublicId(record.url);
-      return;
     }
-
-    items.set(record.url, {
-      bytes: null,
-      cloudinary: null,
-      createdAt: record.created_at,
-      format: null,
-      height: null,
-      products: [],
-      publicId: record.public_id || getCloudinaryPublicId(record.url),
-      record,
-      url: record.url,
-      width: null,
-    });
   });
 
   products.forEach((product) => {
@@ -101,21 +87,7 @@ function createImageLibraryItems(
 
     if (existing) {
       existing.products.push(product);
-      return;
     }
-
-    items.set(imageUrl, {
-      bytes: null,
-      cloudinary: null,
-      createdAt: product.created_at,
-      format: null,
-      height: null,
-      products: [product],
-      publicId: getCloudinaryPublicId(imageUrl),
-      record: null,
-      url: imageUrl,
-      width: null,
-    });
   });
 
   return Array.from(items.values()).sort((firstItem, secondItem) =>
@@ -142,7 +114,7 @@ export function CloudinaryImagesPage() {
       const [nextProducts, nextRecords, nextCloudinaryResources] = await Promise.all([
         fetchProducts(),
         fetchCloudinaryImageRecords(),
-        fetchCloudinaryImageResources().catch(() => []),
+        fetchCloudinaryImageResources(),
       ]);
 
       const nextImages = createImageLibraryItems(nextProducts, nextRecords, nextCloudinaryResources);
