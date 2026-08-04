@@ -203,7 +203,12 @@ export async function closeCashDrawer(
     session_id_input: sessionId,
   });
 
-  if (error) throw error;
+  if (error) {
+    if (/best candidate function|close_note_input|function overloading/i.test(error.message)) {
+      throw new Error("Supabase còn hàm chốt két cũ. Hãy chạy lại toàn bộ supabase/schema.sql rồi thử tan làm lại.");
+    }
+    throw error;
+  }
   return data;
 }
 

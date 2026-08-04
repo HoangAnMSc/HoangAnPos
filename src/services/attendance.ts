@@ -2,7 +2,10 @@ import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { AttendanceRecord } from "../types";
 import type { Database } from "../types/database";
 
-export type AttendanceCashCheck = Database["public"]["Tables"]["cash_drawer_checks"]["Row"];
+export type AttendanceCashCheck =
+  Database["public"]["Tables"]["cash_drawer_checks"]["Row"];
+export type AttendanceCashSession =
+  Database["public"]["Tables"]["cash_drawer_sessions"]["Row"];
 
 function normalizeAttendanceCashCheck(check: AttendanceCashCheck | null) {
   return check ? { ...check, evidence_urls: check.evidence_urls ?? [] } : null;
@@ -50,12 +53,20 @@ function createAttendanceError(error: SupabaseErrorLike) {
     return new Error("Hãy chốt phiên két của bạn trước khi tan làm.");
   }
 
-  if (/previous cash drawer session must be closed before reconciliation/i.test(message)) {
-    return new Error("Két đang thuộc ca của nhân viên khác. Hãy chốt ca và bàn giao két trước khi nhân viên mới đối soát.");
+  if (
+    /previous cash drawer session must be closed before reconciliation/i.test(
+      message,
+    )
+  ) {
+    return new Error(
+      "Két đang thuộc ca của nhân viên khác. Hãy chốt ca và bàn giao két trước khi nhân viên mới đối soát.",
+    );
   }
 
   if (/cash drawer is already open/i.test(message)) {
-    return new Error("Két đã có ca đang mở. Hãy tải lại trang; nếu là ca của người khác, cần chốt bàn giao trước.");
+    return new Error(
+      "Két đã có ca đang mở. Hãy tải lại trang; nếu là ca của người khác, cần chốt bàn giao trước.",
+    );
   }
 
   if (
@@ -64,17 +75,23 @@ function createAttendanceError(error: SupabaseErrorLike) {
     message.includes("clock_in_attendance")
   ) {
     return new Error(
-      "Supabase chưa có hàm chấm công mới. Hãy chạy lại supabase/schema.sql trong Supabase SQL Editor."
+      "Supabase chưa có hàm chấm công mới. Hãy chạy lại supabase/schema.sql trong Supabase SQL Editor.",
     );
   }
 
-  return error instanceof Error ? error : new Error(error.message || "Yeu cau chấm công thất bại.");
+  return error instanceof Error
+    ? error
+    : new Error(error.message || "Yeu cau chấm công thất bại.");
 }
 
 function getMonthRange(monthKey: string) {
   const [yearValue, monthValue] = monthKey.split("-").map(Number);
-  const year = Number.isFinite(yearValue) ? yearValue : new Date().getFullYear();
-  const month = Number.isFinite(monthValue) ? monthValue : new Date().getMonth() + 1;
+  const year = Number.isFinite(yearValue)
+    ? yearValue
+    : new Date().getFullYear();
+  const month = Number.isFinite(monthValue)
+    ? monthValue
+    : new Date().getMonth() + 1;
   const nextYear = month === 12 ? year + 1 : year;
   const nextMonth = month === 12 ? 1 : month + 1;
   const padMonth = (value: number) => String(value).padStart(2, "0");
@@ -92,7 +109,9 @@ function getVietnamDateKey(date = new Date()) {
     timeZone: "Asia/Ho_Chi_Minh",
     year: "numeric",
   }).formatToParts(date);
-  const year = parts.find((part) => part.type === "year")?.value ?? String(date.getFullYear());
+  const year =
+    parts.find((part) => part.type === "year")?.value ??
+    String(date.getFullYear());
   const month = parts.find((part) => part.type === "month")?.value ?? "01";
   const day = parts.find((part) => part.type === "day")?.value ?? "01";
 
@@ -175,10 +194,21 @@ export async function fetchAttendanceCashCheck(attendanceRecordId: string) {
   });
 
   if (error) {
-    if (/schema cache|could not find the function|get_attendance_cash_check/i.test(error.message)) {
-      const fallback = await supabase.from("cash_drawer_checks").select("*").eq("attendance_record_id", attendanceRecordId).limit(1).maybeSingle();
+    if (
+      /schema cache|could not find the function|get_attendance_cash_check/i.test(
+        error.message,
+      )
+    ) {
+      const fallback = await supabase
+        .from("cash_drawer_checks")
+        .select("*")
+        .eq("attendance_record_id", attendanceRecordId)
+        .limit(1)
+        .maybeSingle();
       if (fallback.error) throw fallback.error;
-      return normalizeAttendanceCashCheck(fallback.data as AttendanceCashCheck | null);
+      return normalizeAttendanceCashCheck(
+        fallback.data as AttendanceCashCheck | null,
+      );
     }
     throw error;
   }
@@ -186,10 +216,24 @@ export async function fetchAttendanceCashCheck(attendanceRecordId: string) {
   return normalizeAttendanceCashCheck(data as AttendanceCashCheck | null);
 }
 
+export async function fetchAttendanceCashSession(attendanceRecordId: string) {
+  requireSupabaseConfig();
+  const { data, error } = await supabase.rpc("get_attendance_cash_session", {
+    attendance_record_id_input: attendanceRecordId,
+  });
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    ...data,
+    opening_evidence_urls: data.opening_evidence_urls ?? [],
+    close_evidence_urls: data.close_evidence_urls ?? [],
+  } as AttendanceCashSession;
+}
+
 export async function submitAttendanceCashCheck(
   attendanceRecordId: string,
   actualCash: number,
-  evidenceUrls: string[]
+  evidenceUrls: string[],
 ) {
   requireSupabaseConfig();
 
@@ -203,10 +247,14 @@ export async function submitAttendanceCashCheck(
     throw createAttendanceError(error);
   }
 
-  return normalizeAttendanceCashCheck(data as AttendanceCashCheck) as AttendanceCashCheck;
+  return normalizeAttendanceCashCheck(
+    data as AttendanceCashCheck,
+  ) as AttendanceCashCheck;
 }
 
-export async function fetchAttendanceEmployees(): Promise<AttendanceEmployee[]> {
+export async function fetchAttendanceEmployees(): Promise<
+  AttendanceEmployee[]
+> {
   requireSupabaseConfig();
 
   const { data, error } = await supabase
@@ -225,7 +273,10 @@ export async function fetchAttendanceEmployees(): Promise<AttendanceEmployee[]> 
   }));
 }
 
-export async function fetchAttendanceRecordsForExport(monthKey: string, userIds: string[]) {
+export async function fetchAttendanceRecordsForExport(
+  monthKey: string,
+  userIds: string[],
+) {
   requireSupabaseConfig();
 
   if (userIds.length === 0) {
@@ -266,7 +317,7 @@ export async function clockInAttendance(input: ClockInAttendanceInput) {
 
 export async function clockOutAttendance(
   recordId: string,
-  location?: AttendanceLocationInput | null
+  location?: AttendanceLocationInput | null,
 ) {
   requireSupabaseConfig();
 
@@ -284,7 +335,10 @@ export async function clockOutAttendance(
   return data as AttendanceRecord;
 }
 
-export async function updateAttendanceRecord(recordId: string, input: AttendanceUpdateInput) {
+export async function updateAttendanceRecord(
+  recordId: string,
+  input: AttendanceUpdateInput,
+) {
   requireSupabaseConfig();
 
   const { data, error } = await supabase.rpc("update_attendance_record", {

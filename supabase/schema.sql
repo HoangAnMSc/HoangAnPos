@@ -1,21 +1,7 @@
 create extension if not exists pgcrypto;
 
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  full_name text,
-  phone text,
-  role text not null default 'staff',
-  role_id uuid,
-  is_active boolean not null default false,
-  last_seen_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-alter table public.profiles
-drop constraint if exists profiles_role_check;
-
-create table if not exists public.app_roles (
+-- Fresh-install schema. Run this file only on an empty public schema.
+create table public.app_roles (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   code text not null unique,
@@ -119,86 +105,21 @@ values
       'attendance.history.view'
     ],
     true
-  )
-on conflict (code) do update
-set
-  name = excluded.name,
-  description = excluded.description,
-  permissions = case
-    when public.app_roles.code = 'admin' then excluded.permissions
-    when public.app_roles.code = 'staff' then (
-      select array(
-        select distinct permission
-        from unnest(public.app_roles.permissions || excluded.permissions) as permission_key(permission)
-      )
-    )
-    else public.app_roles.permissions
-  end,
-  is_active = true;
-
--- Existing custom cashier roles also need to open and close their own drawer.
-update public.app_roles
-set permissions = array_append(permissions, 'revenue')
-where 'cash-management' = any(permissions)
-  and not ('revenue' = any(permissions));
-
-update public.app_roles
-set permissions = (
-  select array(
-    select distinct permission
-    from unnest(
-      public.app_roles.permissions || array[
-        'cash-management',
-        'cash-management.session.open',
-        'cash-management.session.close'
-      ]
-    ) as permission_key(permission)
-  )
-)
-where 'pos.checkout' = any(permissions);
-
--- Keep legacy warehouse/inventory permissions while exposing the unified Warehouse page.
-update public.app_roles
-set permissions = array_append(permissions, 'warehouse')
-where not ('warehouse' = any(permissions))
-  and (
-    'inventory' = any(permissions)
-    or 'inventory.count' = any(permissions)
-    or 'inventory.submit' = any(permissions)
-    or 'products.receive-stock' = any(permissions)
-    or 'warehouse.stock-out' = any(permissions)
   );
 
--- Discounts are no longer available in POS or role management.
-update public.app_roles
-set permissions = array_remove(permissions, 'pos.discount')
-where 'pos.discount' = any(permissions);
+create table public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text,
+  phone text unique,
+  role text not null default 'staff',
+  role_id uuid references public.app_roles(id) on delete set null,
+  is_active boolean not null default false,
+  last_seen_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
-alter table public.profiles
-add column if not exists role_id uuid references public.app_roles(id) on delete set null;
-
-alter table public.profiles
-add column if not exists is_active boolean not null default true;
-
-alter table public.profiles
-alter column is_active set default false;
-
-alter table public.profiles
-add column if not exists last_seen_at timestamptz;
-
-update public.profiles p
-set role_id = r.id
-from public.app_roles r
-where p.role_id is null
-  and r.code = p.role;
-
-update public.profiles p
-set role_id = r.id
-from public.app_roles r
-where p.role_id is null
-  and r.code = 'staff';
-
-create table if not exists public.products (
+create table public.products (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   sku text unique,
@@ -211,20 +132,22 @@ create table if not exists public.products (
   stock integer not null default 0 check (stock >= 0),
   shelf_stock integer not null default 0 check (shelf_stock >= 0 and shelf_stock <= stock),
   image_url text,
+  is_reward boolean not null default false,
+  reward_points_cost integer not null default 0 check (reward_points_cost >= 0),
   is_active boolean not null default true,
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create table if not exists public.inventory_audits (
+create table public.inventory_audits (
   id uuid primary key default gen_random_uuid(),
   created_by uuid not null references auth.users(id) on delete restrict,
   staff_name text not null check (char_length(staff_name) between 1 and 160),
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.inventory_audit_lines (
+create table public.inventory_audit_lines (
   id uuid primary key default gen_random_uuid(),
   audit_id uuid not null references public.inventory_audits(id) on delete cascade,
   product_id uuid references public.products(id) on delete set null,
@@ -235,41 +158,20 @@ create table if not exists public.inventory_audit_lines (
   unique (audit_id, product_id)
 );
 
-create index if not exists inventory_audits_created_at_idx
+create index inventory_audits_created_at_idx
 on public.inventory_audits (created_at desc);
 
-create index if not exists inventory_audit_lines_audit_id_idx
-on public.inventory_audit_lines (audit_id);
-
-create table if not exists public.product_categories (
+create table public.product_categories (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create unique index if not exists product_categories_name_lower_idx
+create unique index product_categories_name_lower_idx
 on public.product_categories (lower(name));
 
-alter table public.products
-add column if not exists description text;
-
-alter table public.products
-add column if not exists import_date date;
-
-alter table public.products
-add column if not exists expiry_date date;
-
-alter table public.products
-add column if not exists deleted_at timestamptz;
-
-alter table public.products
-add column if not exists is_reward boolean not null default false;
-
-alter table public.products
-add column if not exists reward_points_cost integer not null default 0 check (reward_points_cost >= 0);
-
-create table if not exists public.cloudinary_images (
+create table public.cloudinary_images (
   id uuid primary key default gen_random_uuid(),
   url text not null unique,
   public_id text,
@@ -280,13 +182,7 @@ create table if not exists public.cloudinary_images (
   updated_at timestamptz not null default now()
 );
 
-alter table public.cloudinary_images
-add column if not exists delete_token text;
-
-alter table public.cloudinary_images
-add column if not exists delete_token_expires_at timestamptz;
-
-create table if not exists public.customers (
+create table public.customers (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   phone text,
@@ -298,98 +194,7 @@ create table if not exists public.customers (
   updated_at timestamptz not null default now()
 );
 
-alter table public.profiles
-add column if not exists phone text;
-
-create unique index if not exists profiles_phone_unique_idx
-on public.profiles(phone)
-where phone is not null;
-
-alter table public.customers
-add column if not exists points integer not null default 0;
-
-create table if not exists public.orders (
-  id uuid primary key default gen_random_uuid(),
-  code text not null unique,
-  customer_id uuid references public.customers(id) on delete set null,
-  cashier_id uuid references auth.users(id) on delete set null,
-  cashier_name text,
-  subtotal numeric(12, 2) not null check (subtotal >= 0),
-  discount numeric(12, 2) not null default 0 check (discount >= 0),
-  total numeric(12, 2) not null check (total >= 0),
-  payment_method text not null default 'cash' check (payment_method in ('cash', 'transfer')),
-  cash_received numeric(12, 2) not null default 0 check (cash_received >= 0),
-  change_amount numeric(12, 2) not null default 0 check (change_amount >= 0),
-  payment_proof_url text,
-  payment_proof_note text,
-  print_count integer not null default 0 check (print_count >= 0),
-  note text,
-  status text not null default 'paid' check (status in ('paid', 'cancelled')),
-  created_at timestamptz not null default now()
-);
-
-alter table public.orders
-add column if not exists payment_method text not null default 'cash';
-
-alter table public.orders
-add column if not exists cashier_name text;
-
-alter table public.orders
-add column if not exists cash_received numeric(12, 2) not null default 0;
-
-alter table public.orders
-add column if not exists change_amount numeric(12, 2) not null default 0;
-
-alter table public.orders
-add column if not exists payment_proof_url text;
-
-alter table public.orders
-add column if not exists payment_proof_note text;
-
-alter table public.orders
-add column if not exists print_count integer not null default 0;
-
-alter table public.orders
-add column if not exists note text;
-
-alter table public.orders
-add column if not exists cancelled_at timestamptz;
-
-alter table public.orders
-add column if not exists cancelled_by uuid references auth.users(id) on delete set null;
-
-alter table public.orders
-add column if not exists cancel_reason text;
-
-alter table public.orders
-add column if not exists points_earned integer not null default 0;
-
-alter table public.orders
-add column if not exists points_redeemed integer not null default 0;
-
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'customers_points_nonnegative_check'
-      and conrelid = 'public.customers'::regclass
-  ) then
-    alter table public.customers
-    add constraint customers_points_nonnegative_check check (points >= 0);
-  end if;
-end;
-$$;
-
-update public.customers customer
-set points = coalesce((
-  select sum(floor(orders.total / 100000))::integer
-  from public.orders
-  where orders.customer_id = customer.id
-    and orders.status = 'paid'
-), 0);
-
-create table if not exists public.cash_drawer_sessions (
+create table public.cash_drawer_sessions (
   id uuid primary key default gen_random_uuid(),
   cashier_id uuid not null references auth.users(id) on delete restrict,
   cashier_name text not null check (char_length(cashier_name) between 1 and 200),
@@ -402,6 +207,7 @@ create table if not exists public.cash_drawer_sessions (
   expected_cash numeric(12, 2) not null default 0 check (expected_cash >= 0),
   counted_cash numeric(12, 2) check (counted_cash >= 0),
   variance numeric(12, 2),
+  cash_adjustment numeric(12, 2) not null default 0,
   status text not null default 'open' check (status in ('open', 'closed')),
   opened_at timestamptz not null default now(),
   closed_at timestamptz,
@@ -419,13 +225,33 @@ create table if not exists public.cash_drawer_sessions (
   )
 );
 
-alter table public.cash_drawer_sessions add column if not exists cash_adjustment numeric(12, 2) not null default 0;
-alter table public.cash_drawer_sessions drop column if exists transfer_adjustment;
+create table public.orders (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  customer_id uuid references public.customers(id) on delete set null,
+  cash_session_id uuid references public.cash_drawer_sessions(id) on delete restrict,
+  cashier_id uuid references auth.users(id) on delete set null,
+  cashier_name text,
+  subtotal numeric(12, 2) not null check (subtotal >= 0),
+  discount numeric(12, 2) not null default 0 check (discount >= 0),
+  total numeric(12, 2) not null check (total >= 0),
+  payment_method text not null default 'cash' check (payment_method in ('cash', 'transfer')),
+  cash_received numeric(12, 2) not null default 0 check (cash_received >= 0),
+  change_amount numeric(12, 2) not null default 0 check (change_amount >= 0),
+  payment_proof_url text,
+  payment_proof_note text,
+  print_count integer not null default 0 check (print_count >= 0),
+  note text,
+  status text not null default 'paid' check (status in ('paid', 'cancelled')),
+  cancelled_at timestamptz,
+  cancelled_by uuid references auth.users(id) on delete set null,
+  cancel_reason text,
+  points_earned integer not null default 0,
+  points_redeemed integer not null default 0,
+  created_at timestamptz not null default now()
+);
 
-alter table public.orders
-add column if not exists cash_session_id uuid references public.cash_drawer_sessions(id) on delete restrict;
-
-create table if not exists public.order_audit_events (
+create table public.order_audit_events (
   id bigint generated by default as identity primary key,
   order_id uuid not null,
   actor_id uuid references auth.users(id) on delete set null,
@@ -435,7 +261,7 @@ create table if not exists public.order_audit_events (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.product_batches (
+create table public.product_batches (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references public.products(id) on delete cascade,
   quantity integer not null check (quantity >= 0),
@@ -446,7 +272,7 @@ create table if not exists public.product_batches (
   updated_at timestamptz not null default now()
 );
 
-create table if not exists public.stock_movements (
+create table public.stock_movements (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references public.products(id) on delete restrict,
   movement_type text not null check (movement_type in ('in', 'out', 'to_shelf', 'to_warehouse')),
@@ -457,38 +283,10 @@ create table if not exists public.stock_movements (
   created_at timestamptz not null default now()
 );
 
-alter table public.stock_movements drop constraint if exists stock_movements_movement_type_check;
-alter table public.stock_movements add constraint stock_movements_movement_type_check
-check (movement_type in ('in', 'out', 'to_shelf', 'to_warehouse'));
+create index stock_movements_created_at_idx on public.stock_movements(created_at desc);
+create index stock_movements_product_id_idx on public.stock_movements(product_id);
 
--- Existing installations start with their current inventory on the shelf so POS remains usable.
-do $$
-begin
-  if not exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'products' and column_name = 'shelf_stock'
-  ) then
-    alter table public.products add column shelf_stock integer not null default 0;
-    update public.products set shelf_stock = stock;
-    alter table public.products add constraint products_shelf_stock_check
-      check (shelf_stock >= 0 and shelf_stock <= stock);
-  end if;
-
-  if not exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'product_batches' and column_name = 'shelf_quantity'
-  ) then
-    alter table public.product_batches add column shelf_quantity integer not null default 0;
-    update public.product_batches set shelf_quantity = quantity;
-    alter table public.product_batches add constraint product_batches_shelf_quantity_check
-      check (shelf_quantity >= 0 and shelf_quantity <= quantity);
-  end if;
-end $$;
-
-create index if not exists stock_movements_created_at_idx on public.stock_movements(created_at desc);
-create index if not exists stock_movements_product_id_idx on public.stock_movements(product_id);
-
-create table if not exists public.order_items (
+create table public.order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
   product_id uuid not null references public.products(id) on delete restrict,
@@ -499,22 +297,11 @@ create table if not exists public.order_items (
   quantity integer not null check (quantity > 0),
   unit_price numeric(12, 2) not null check (unit_price >= 0),
   line_total numeric(12, 2) not null check (line_total >= 0),
+  reward_points_cost integer not null default 0,
   created_at timestamptz not null default now()
 );
 
-alter table public.order_items
-add column if not exists batch_id uuid references public.product_batches(id) on delete set null;
-
-alter table public.order_items
-add column if not exists import_date date;
-
-alter table public.order_items
-add column if not exists expiry_date date;
-
-alter table public.order_items
-add column if not exists reward_points_cost integer not null default 0;
-
-create table if not exists public.payment_settings (
+create table public.payment_settings (
   id boolean primary key default true check (id),
   transfer_qr_url text,
   transfer_note text,
@@ -522,7 +309,7 @@ create table if not exists public.payment_settings (
   updated_at timestamptz not null default now()
 );
 
-create table if not exists public.attendance_records (
+create table public.attendance_records (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   clock_in_at timestamptz not null default now(),
@@ -540,25 +327,8 @@ create table if not exists public.attendance_records (
     check (clock_out_at is null or clock_out_at >= clock_in_at)
 );
 
-alter table public.attendance_records
-add column if not exists clock_in_latitude numeric(10, 7);
 
-alter table public.attendance_records
-add column if not exists clock_in_longitude numeric(10, 7);
-
-alter table public.attendance_records
-add column if not exists clock_in_accuracy_m numeric(10, 2);
-
-alter table public.attendance_records
-add column if not exists clock_out_latitude numeric(10, 7);
-
-alter table public.attendance_records
-add column if not exists clock_out_longitude numeric(10, 7);
-
-alter table public.attendance_records
-add column if not exists clock_out_accuracy_m numeric(10, 2);
-
-create table if not exists public.cash_drawer_checks (
+create table public.cash_drawer_checks (
   id uuid primary key default gen_random_uuid(),
   attendance_record_id uuid not null unique references public.attendance_records(id) on delete cascade,
   employee_id uuid not null references public.profiles(id) on delete cascade,
@@ -587,155 +357,36 @@ create table if not exists public.cash_drawer_checks (
   )
 );
 
-insert into public.product_batches (product_id, quantity, import_date, expiry_date)
-select p.id, p.stock, p.import_date, p.expiry_date
-from public.products p
-where p.stock > 0
-  and not exists (
-    select 1
-    from public.product_batches b
-    where b.product_id = p.id
-  );
-
-create index if not exists products_name_idx on public.products using gin (to_tsvector('simple', name));
-create index if not exists products_deleted_at_idx on public.products(deleted_at);
-create index if not exists cloudinary_images_public_id_idx on public.cloudinary_images(public_id);
-create index if not exists app_roles_code_idx on public.app_roles(code);
-create index if not exists profiles_role_id_idx on public.profiles(role_id);
-create index if not exists profiles_last_seen_at_idx on public.profiles(last_seen_at);
-create index if not exists product_categories_name_idx on public.product_categories(name);
-create index if not exists product_batches_product_id_idx on public.product_batches(product_id);
-create index if not exists customers_name_idx on public.customers using gin (to_tsvector('simple', name));
-create index if not exists orders_customer_id_idx on public.orders(customer_id);
-create index if not exists orders_cashier_id_created_at_idx on public.orders(cashier_id, created_at desc);
-create index if not exists orders_cash_session_id_idx on public.orders(cash_session_id);
-create index if not exists order_items_order_id_idx on public.order_items(order_id);
-create index if not exists cash_drawer_sessions_cashier_opened_idx
+create index products_name_idx on public.products using gin (to_tsvector('simple', name));
+create index products_deleted_at_idx on public.products(deleted_at);
+create index cloudinary_images_public_id_idx on public.cloudinary_images(public_id);
+create index profiles_role_id_idx on public.profiles(role_id);
+create index profiles_last_seen_at_idx on public.profiles(last_seen_at);
+create index product_categories_name_idx on public.product_categories(name);
+create index product_batches_product_id_idx on public.product_batches(product_id);
+create index customers_name_idx on public.customers using gin (to_tsvector('simple', name));
+create index orders_customer_id_idx on public.orders(customer_id);
+create index orders_cashier_id_created_at_idx on public.orders(cashier_id, created_at desc);
+create index orders_cash_session_id_idx on public.orders(cash_session_id);
+create index order_items_order_id_idx on public.order_items(order_id);
+create index cash_drawer_sessions_cashier_opened_idx
 on public.cash_drawer_sessions(cashier_id, opened_at desc);
-drop index if exists public.cash_drawer_sessions_one_open_per_cashier_idx;
-create unique index if not exists cash_drawer_sessions_one_open_global_idx
+create unique index cash_drawer_sessions_one_open_global_idx
 on public.cash_drawer_sessions((1))
 where status = 'open';
-create index if not exists order_audit_events_order_created_idx
+create index order_audit_events_order_created_idx
 on public.order_audit_events(order_id, created_at desc);
 
--- Keep audit history even when a privileged user permanently deletes an order.
-alter table public.order_audit_events
-drop constraint if exists order_audit_events_order_id_fkey;
-
-alter table public.order_audit_events
-drop constraint if exists order_audit_events_event_type_check;
-
-alter table public.order_audit_events
-add constraint order_audit_events_event_type_check
-check (event_type in ('created', 'cancelled', 'printed', 'deleted'));
-create index if not exists attendance_records_user_work_date_idx
+create index attendance_records_user_work_date_idx
 on public.attendance_records(user_id, work_date desc);
-create index if not exists cash_drawer_checks_created_idx
+create index cash_drawer_checks_created_idx
 on public.cash_drawer_checks(created_at desc);
-create unique index if not exists attendance_records_one_open_shift_idx
+create unique index attendance_records_one_open_shift_idx
 on public.attendance_records(user_id)
 where clock_out_at is null;
 
--- Merge old duplicate attendance rows before enforcing one shift per day.
-with duplicate_groups as (
-  select
-    user_id,
-    work_date,
-    (array_agg(id order by clock_in_at asc, created_at asc, id asc))[1] as keep_id,
-    min(clock_in_at) as merged_clock_in_at,
-    max(clock_out_at) as merged_clock_out_at
-  from public.attendance_records
-  group by user_id, work_date
-  having count(*) > 1
-),
-clock_in_locations as (
-  select distinct on (d.user_id, d.work_date)
-    d.user_id,
-    d.work_date,
-    a.clock_in_latitude,
-    a.clock_in_longitude,
-    a.clock_in_accuracy_m
-  from duplicate_groups d
-  join public.attendance_records a
-    on a.user_id = d.user_id
-   and a.work_date = d.work_date
-  where a.clock_in_latitude is not null
-    and a.clock_in_longitude is not null
-  order by d.user_id, d.work_date, a.clock_in_at asc, a.created_at asc, a.id asc
-),
-clock_out_locations as (
-  select distinct on (d.user_id, d.work_date)
-    d.user_id,
-    d.work_date,
-    a.clock_out_latitude,
-    a.clock_out_longitude,
-    a.clock_out_accuracy_m
-  from duplicate_groups d
-  join public.attendance_records a
-    on a.user_id = d.user_id
-   and a.work_date = d.work_date
-  where a.clock_out_latitude is not null
-    and a.clock_out_longitude is not null
-  order by d.user_id, d.work_date, a.clock_out_at desc nulls last, a.updated_at desc, a.id desc
-),
-merged_records as (
-  select
-    d.user_id,
-    d.work_date,
-    d.keep_id,
-    d.merged_clock_in_at,
-    case
-      when d.merged_clock_out_at is not null
-        and d.merged_clock_out_at >= d.merged_clock_in_at
-      then d.merged_clock_out_at
-      else null
-    end as merged_clock_out_at,
-    i.clock_in_latitude,
-    i.clock_in_longitude,
-    i.clock_in_accuracy_m,
-    o.clock_out_latitude,
-    o.clock_out_longitude,
-    o.clock_out_accuracy_m
-  from duplicate_groups d
-  left join clock_in_locations i
-    on i.user_id = d.user_id
-   and i.work_date = d.work_date
-  left join clock_out_locations o
-    on o.user_id = d.user_id
-   and o.work_date = d.work_date
-),
-updated_records as (
-  update public.attendance_records a
-  set
-    clock_in_at = m.merged_clock_in_at,
-    clock_out_at = m.merged_clock_out_at,
-    clock_in_latitude = coalesce(m.clock_in_latitude, a.clock_in_latitude),
-    clock_in_longitude = coalesce(m.clock_in_longitude, a.clock_in_longitude),
-    clock_in_accuracy_m = coalesce(m.clock_in_accuracy_m, a.clock_in_accuracy_m),
-    clock_out_latitude = coalesce(m.clock_out_latitude, a.clock_out_latitude),
-    clock_out_longitude = coalesce(m.clock_out_longitude, a.clock_out_longitude),
-    clock_out_accuracy_m = coalesce(m.clock_out_accuracy_m, a.clock_out_accuracy_m)
-  from merged_records m
-  where a.id = m.keep_id
-  returning a.id
-)
-delete from public.attendance_records a
-using merged_records m, updated_records u
-where a.user_id = m.user_id
-  and a.work_date = m.work_date
-  and a.id <> m.keep_id
-  and u.id = m.keep_id;
-
-create unique index if not exists attendance_records_user_work_date_unique_idx
+create unique index attendance_records_user_work_date_unique_idx
 on public.attendance_records(user_id, work_date);
-
-insert into public.product_categories (name)
-select distinct trim(category)
-from public.products
-where category is not null
-  and trim(category) <> ''
-on conflict do nothing;
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -747,52 +398,42 @@ begin
 end;
 $$;
 
-drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
 before update on public.profiles
 for each row execute function public.set_updated_at();
 
-drop trigger if exists set_app_roles_updated_at on public.app_roles;
 create trigger set_app_roles_updated_at
 before update on public.app_roles
 for each row execute function public.set_updated_at();
 
-drop trigger if exists set_products_updated_at on public.products;
 create trigger set_products_updated_at
 before update on public.products
 for each row execute function public.set_updated_at();
 
-drop trigger if exists set_product_categories_updated_at on public.product_categories;
 create trigger set_product_categories_updated_at
 before update on public.product_categories
 for each row execute function public.set_updated_at();
 
-drop trigger if exists set_cloudinary_images_updated_at on public.cloudinary_images;
 create trigger set_cloudinary_images_updated_at
 before update on public.cloudinary_images
 for each row execute function public.set_updated_at();
 
-drop trigger if exists set_product_batches_updated_at on public.product_batches;
 create trigger set_product_batches_updated_at
 before update on public.product_batches
 for each row execute function public.set_updated_at();
 
-drop trigger if exists set_payment_settings_updated_at on public.payment_settings;
 create trigger set_payment_settings_updated_at
 before update on public.payment_settings
 for each row execute function public.set_updated_at();
 
-drop trigger if exists set_customers_updated_at on public.customers;
 create trigger set_customers_updated_at
 before update on public.customers
 for each row execute function public.set_updated_at();
 
-drop trigger if exists set_attendance_records_updated_at on public.attendance_records;
 create trigger set_attendance_records_updated_at
 before update on public.attendance_records
 for each row execute function public.set_updated_at();
 
-drop trigger if exists set_cash_drawer_sessions_updated_at on public.cash_drawer_sessions;
 create trigger set_cash_drawer_sessions_updated_at
 before update on public.cash_drawer_sessions
 for each row execute function public.set_updated_at();
@@ -825,7 +466,6 @@ begin
 end;
 $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_user();
@@ -1021,9 +661,6 @@ begin
 end;
 $$;
 
-drop function if exists public.clock_in_attendance();
-drop function if exists public.clock_in_attendance(numeric, numeric, numeric);
-drop function if exists public.clock_in_attendance(numeric, numeric, numeric, text);
 
 create or replace function public.clock_in_attendance(
   latitude_input numeric,
@@ -1183,6 +820,26 @@ begin
 
   return check_record;
 end;
+$$;
+
+create or replace function public.get_attendance_cash_session(attendance_record_id_input uuid)
+returns public.cash_drawer_sessions
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select session.*
+  from public.cash_drawer_checks cash_check
+  join public.attendance_records attendance on attendance.id = cash_check.attendance_record_id
+  join public.cash_drawer_sessions session on session.id = cash_check.cash_session_id
+  where cash_check.attendance_record_id = attendance_record_id_input
+    and (
+      attendance.user_id = auth.uid()
+      or public.has_permission('attendance.history.view-all')
+      or public.has_permission('cash-management.view-all')
+    )
+  limit 1;
 $$;
 
 create or replace function public.submit_attendance_cash_check(
@@ -1362,7 +1019,6 @@ begin
 end;
 $$;
 
-drop function if exists public.override_cash_fund_totals(numeric, numeric);
 
 -- One source of truth for the physical cash currently in the drawer.
 -- Cash orders created while no drawer session is open have no cash_session_id,
@@ -1532,8 +1188,6 @@ begin
 end;
 $$;
 
-drop function if exists public.clock_out_attendance(uuid);
-drop function if exists public.clock_out_attendance(uuid, numeric, numeric, numeric);
 
 create or replace function public.clock_out_attendance(
   record_id_input uuid,
@@ -1593,7 +1247,6 @@ begin
 end;
 $$;
 
-drop function if exists public.update_attendance_record(uuid, timestamptz, timestamptz);
 
 create or replace function public.update_attendance_record(
   record_id_input uuid,
@@ -1686,7 +1339,6 @@ begin
 end;
 $$;
 
-drop function if exists public.delete_attendance_record(uuid);
 
 create or replace function public.delete_attendance_record(record_id_input uuid)
 returns void
@@ -1928,9 +1580,6 @@ begin
 end;
 $$;
 
-drop function if exists public.create_pos_order(uuid, text, uuid, numeric, jsonb);
-drop function if exists public.create_pos_order(uuid, numeric, text, uuid, numeric, jsonb, text, text, text);
-drop function if exists public.list_cash_drawer_sessions(integer);
 
 create or replace function public.list_cash_drawer_sessions(limit_input integer default 100)
 returns table (
@@ -2145,23 +1794,22 @@ begin
     raise exception 'Cash drawer is already open';
   end if;
 
-  -- Older versions could create an open drawer for Admin/supporting roles.
-  -- Such roles are not drawer owners and must not block a reconciling staff
-  -- member. Close that legacy session at its current physical balance before
-  -- handing the drawer to the staff member.
-  update public.cash_drawer_sessions legacy_session
+  -- Admin/supporting roles are not drawer owners. If one temporarily opened
+  -- the drawer, close that session at its current balance before handing it
+  -- to the reconciling staff member.
+  update public.cash_drawer_sessions supporting_session
   set
     cash_sales = coalesce((
       select sum(pos_order.total)
       from public.orders pos_order
-      where pos_order.cash_session_id = legacy_session.id
+      where pos_order.cash_session_id = supporting_session.id
         and pos_order.status = 'paid'
         and pos_order.payment_method = 'cash'
     ), 0),
     transfer_sales = coalesce((
       select sum(pos_order.total)
       from public.orders pos_order
-      where pos_order.cash_session_id = legacy_session.id
+      where pos_order.cash_session_id = supporting_session.id
         and pos_order.status = 'paid'
         and pos_order.payment_method = 'transfer'
     ), 0),
@@ -2173,8 +1821,8 @@ begin
     closed_at = now(),
     closed_by = auth.uid(),
     close_evidence_urls = '{}'
-  where legacy_session.status = 'open'
-    and not public.requires_cash_reconciliation(legacy_session.cashier_id);
+  where supporting_session.status = 'open'
+    and not public.requires_cash_reconciliation(supporting_session.cashier_id);
 
   is_first_session_value := not exists (
     select 1 from public.cash_drawer_sessions
@@ -2609,7 +2257,6 @@ begin
 end;
 $$;
 
-drop function if exists public.cancel_pos_order(uuid);
 
 create or replace function public.cancel_pos_order(order_id_input uuid, reason_input text)
 returns public.orders
@@ -2745,7 +2392,6 @@ begin
 end;
 $$;
 
-drop function if exists public.delete_pos_orders(uuid[]);
 
 create or replace function public.delete_pos_orders(order_ids_input uuid[], reason_input text)
 returns integer
@@ -2869,13 +2515,10 @@ alter table public.cash_drawer_sessions enable row level security;
 alter table public.cash_drawer_checks enable row level security;
 alter table public.order_audit_events enable row level security;
 
-drop policy if exists "Users can read own profile" on public.profiles;
 create policy "Users can read own profile"
 on public.profiles for select
 using (auth.uid() = id);
 
-drop policy if exists "Admins can read profiles" on public.profiles;
-drop policy if exists "Users page can read profiles" on public.profiles;
 create policy "Users page can read profiles"
 on public.profiles for select
 using (
@@ -2884,11 +2527,7 @@ using (
   or public.has_permission('attendance.history.view-all')
 );
 
-drop policy if exists "Admins can update profiles" on public.profiles;
-drop policy if exists "Users page can update profiles" on public.profiles;
 
-drop policy if exists "Admins manage app roles" on public.app_roles;
-drop policy if exists "Users can read active roles" on public.app_roles;
 create policy "Users can read active roles"
 on public.app_roles for select
 using (
@@ -2897,12 +2536,10 @@ using (
   or public.has_permission('users')
 );
 
-drop policy if exists "Role managers can create roles" on public.app_roles;
 create policy "Role managers can create roles"
 on public.app_roles for insert
 with check (public.has_permission('roles.create'));
 
-drop policy if exists "Role managers can update roles" on public.app_roles;
 create policy "Role managers can update roles"
 on public.app_roles for update
 using (
@@ -2914,7 +2551,6 @@ with check (
   and (code <> 'admin' or public.is_admin())
 );
 
-drop policy if exists "Role managers can delete roles" on public.app_roles;
 create policy "Role managers can delete roles"
 on public.app_roles for delete
 using (
@@ -2922,8 +2558,6 @@ using (
   and code not in ('admin', 'staff')
 );
 
-drop policy if exists "Admins manage products" on public.products;
-drop policy if exists "Permitted users can read products" on public.products;
 create policy "Permitted users can read products"
 on public.products for select
 using (
@@ -2934,12 +2568,10 @@ using (
   or public.has_permission('cloudinary-images')
 );
 
-drop policy if exists "Warehouse users can read inventory audits" on public.inventory_audits;
 create policy "Warehouse users can read inventory audits"
 on public.inventory_audits for select
 using (public.has_permission('warehouse'));
 
-drop policy if exists "Inventory users can create audits" on public.inventory_audits;
 create policy "Inventory users can create audits"
 on public.inventory_audits for insert
 with check (
@@ -2947,17 +2579,14 @@ with check (
   and created_by = auth.uid()
 );
 
-drop policy if exists "Warehouse users can delete inventory audits" on public.inventory_audits;
 create policy "Warehouse users can delete inventory audits"
 on public.inventory_audits for delete
 using (public.has_permission('warehouse.audit.delete'));
 
-drop policy if exists "Warehouse users can read inventory audit lines" on public.inventory_audit_lines;
 create policy "Warehouse users can read inventory audit lines"
 on public.inventory_audit_lines for select
 using (public.has_permission('warehouse'));
 
-drop policy if exists "Inventory users can create audit lines" on public.inventory_audit_lines;
 create policy "Inventory users can create audit lines"
 on public.inventory_audit_lines for insert
 with check (
@@ -2970,24 +2599,19 @@ with check (
   )
 );
 
-drop policy if exists "Product creators can insert products" on public.products;
 create policy "Product creators can insert products"
 on public.products for insert
 with check (public.has_permission('products.create'));
 
-drop policy if exists "Product editors can update products" on public.products;
 create policy "Product editors can update products"
 on public.products for update
 using (public.has_permission('products.update'))
 with check (public.has_permission('products.update'));
 
-drop policy if exists "Product deleters can delete products" on public.products;
 create policy "Product deleters can delete products"
 on public.products for delete
 using (public.has_permission('products.delete'));
 
-drop policy if exists "Admins manage cloudinary images" on public.cloudinary_images;
-drop policy if exists "Permitted users can read cloudinary images" on public.cloudinary_images;
 create policy "Permitted users can read cloudinary images"
 on public.cloudinary_images for select
 using (
@@ -2996,7 +2620,6 @@ using (
   or public.has_permission('products.update')
 );
 
-drop policy if exists "Permitted users can save cloudinary images" on public.cloudinary_images;
 create policy "Permitted users can save cloudinary images"
 on public.cloudinary_images for insert
 with check (
@@ -3005,7 +2628,6 @@ with check (
   or public.has_permission('products.update')
 );
 
-drop policy if exists "Permitted users can update cloudinary images" on public.cloudinary_images;
 create policy "Permitted users can update cloudinary images"
 on public.cloudinary_images for update
 using (
@@ -3019,31 +2641,24 @@ with check (
   or public.has_permission('products.update')
 );
 
-drop policy if exists "Cloudinary deleters can delete images" on public.cloudinary_images;
 create policy "Cloudinary deleters can delete images"
 on public.cloudinary_images for delete
 using (public.has_permission('cloudinary-images.delete'));
 
-drop policy if exists "Admins manage product categories" on public.product_categories;
-drop policy if exists "Permitted users can read product categories" on public.product_categories;
 create policy "Permitted users can read product categories"
 on public.product_categories for select
 using (public.has_permission('products') or public.has_permission('pos'));
 
-drop policy if exists "Product category creators can insert categories" on public.product_categories;
 create policy "Product category creators can insert categories"
 on public.product_categories for insert
 with check (public.has_permission('products.categories.create'));
 
-drop policy if exists "Product category creators can update categories" on public.product_categories;
 create policy "Product category creators can update categories"
 on public.product_categories for update
 using (public.has_permission('products.categories.create'))
 with check (public.has_permission('products.categories.create'));
 
-drop policy if exists "Admins manage product batches" on public.product_batches;
 
-drop policy if exists "Warehouse users can read stock movements" on public.stock_movements;
 create policy "Warehouse users can read stock movements"
 on public.stock_movements for select
 using (
@@ -3051,7 +2666,6 @@ using (
   or public.has_permission('products.receive-stock')
   or public.has_permission('warehouse.stock-out')
 );
-drop policy if exists "Permitted users can read product batches" on public.product_batches;
 create policy "Permitted users can read product batches"
 on public.product_batches for select
 using (
@@ -3061,7 +2675,6 @@ using (
   or public.has_permission('warehouse')
 );
 
-drop policy if exists "Product stock managers can insert batches" on public.product_batches;
 create policy "Product stock managers can insert batches"
 on public.product_batches for insert
 with check (
@@ -3069,32 +2682,24 @@ with check (
   or public.has_permission('products.receive-stock')
 );
 
-drop policy if exists "Product stock managers can update batches" on public.product_batches;
 
-drop policy if exists "Admins manage payment settings" on public.payment_settings;
-drop policy if exists "Permitted users can read payment settings" on public.payment_settings;
 create policy "Permitted users can read payment settings"
 on public.payment_settings for select
 using (public.has_permission('payment-settings') or public.has_permission('pos'));
 
-drop policy if exists "Payment settings editors can insert settings" on public.payment_settings;
 create policy "Payment settings editors can insert settings"
 on public.payment_settings for insert
 with check (public.has_permission('payment-settings.update'));
 
-drop policy if exists "Payment settings editors can update settings" on public.payment_settings;
 create policy "Payment settings editors can update settings"
 on public.payment_settings for update
 using (public.has_permission('payment-settings.update'))
 with check (public.has_permission('payment-settings.update'));
 
-drop policy if exists "Admins manage customers" on public.customers;
-drop policy if exists "Permitted users can read customers" on public.customers;
 create policy "Permitted users can read customers"
 on public.customers for select
 using (public.has_permission('customers') or public.has_permission('pos'));
 
-drop policy if exists "Customer creators can insert customers" on public.customers;
 create policy "Customer creators can insert customers"
 on public.customers for insert
 with check (
@@ -3102,19 +2707,15 @@ with check (
   or public.has_permission('pos.quick-customer.create')
 );
 
-drop policy if exists "Customer editors can update customers" on public.customers;
 create policy "Customer editors can update customers"
 on public.customers for update
 using (public.has_permission('customers.update'))
 with check (public.has_permission('customers.update'));
 
-drop policy if exists "Customer deleters can delete customers" on public.customers;
 create policy "Customer deleters can delete customers"
 on public.customers for delete
 using (public.has_permission('customers.delete'));
 
-drop policy if exists "Admins manage orders" on public.orders;
-drop policy if exists "Order viewers can read orders" on public.orders;
 create policy "Order viewers can read orders"
 on public.orders for select
 using (
@@ -3122,10 +2723,7 @@ using (
   or public.has_permission('revenue')
 );
 
-drop policy if exists "POS can insert orders" on public.orders;
 
-drop policy if exists "Admins manage order items" on public.order_items;
-drop policy if exists "Order viewers can read order items" on public.order_items;
 create policy "Order viewers can read order items"
 on public.order_items for select
 using (
@@ -3133,9 +2731,7 @@ using (
   or public.has_permission('revenue')
 );
 
-drop policy if exists "POS can insert order items" on public.order_items;
 
-drop policy if exists "Cashiers can read cash drawer sessions" on public.cash_drawer_sessions;
 create policy "Cashiers can read cash drawer sessions"
 on public.cash_drawer_sessions for select
 using (
@@ -3149,7 +2745,6 @@ using (
   )
 );
 
-drop policy if exists "Managers can read order audit events" on public.order_audit_events;
 create policy "Managers can read order audit events"
 on public.order_audit_events for select
 using (
@@ -3157,7 +2752,6 @@ using (
   or public.has_permission('cash-management.view-all')
 );
 
-drop policy if exists "Attendance users can read own records" on public.attendance_records;
 create policy "Attendance users can read own records"
 on public.attendance_records for select
 using (
@@ -3173,7 +2767,6 @@ using (
   )
 );
 
-drop policy if exists "Attendance users can update own records" on public.attendance_records;
 create policy "Attendance users can update own records"
 on public.attendance_records for update
 using (
@@ -3191,7 +2784,6 @@ with check (
   and public.has_permission('attendance.history.update')
 );
 
-drop policy if exists "Attendance users can delete own records" on public.attendance_records;
 create policy "Attendance users can delete own records"
 on public.attendance_records for delete
 using (
@@ -3202,7 +2794,6 @@ using (
   and public.has_permission('attendance.history.delete')
 );
 
-drop policy if exists "Attendance and cash managers can read drawer checks" on public.cash_drawer_checks;
 create policy "Attendance and cash managers can read drawer checks"
 on public.cash_drawer_checks for select
 using (
@@ -3227,6 +2818,16 @@ using (
 );
 
 -- Security-definer RPCs are callable only by signed-in application users.
+revoke all on function public.handle_new_user() from public, anon;
+revoke all on function public.submit_inventory_audit(text, jsonb) from public, anon;
+revoke all on function public.touch_last_seen() from public, anon;
+revoke all on function public.set_app_role_active(uuid, boolean) from public, anon;
+revoke all on function public.clock_in_attendance(numeric, numeric, numeric) from public, anon;
+revoke all on function public.clock_out_attendance(uuid, numeric, numeric, numeric) from public, anon;
+revoke all on function public.update_attendance_record(uuid, timestamptz, timestamptz) from public, anon;
+revoke all on function public.delete_attendance_record(uuid) from public, anon;
+revoke all on function public.current_cash_drawer_balance() from public, anon;
+revoke all on function public.decrement_product_stock(uuid, integer) from public, anon;
 revoke all on function public.is_admin(uuid) from public, anon;
 revoke all on function public.has_permission(text, uuid) from public, anon;
 revoke all on function public.requires_cash_reconciliation(uuid) from public, anon;
@@ -3236,6 +2837,7 @@ revoke all on function public.open_cash_drawer(numeric, text[]) from public, ano
 revoke all on function public.close_cash_drawer(uuid, numeric, text[]) from public, anon;
 revoke all on function public.submit_attendance_cash_check(uuid, numeric, text[]) from public, anon;
 revoke all on function public.get_attendance_cash_check(uuid) from public, anon;
+revoke all on function public.get_attendance_cash_session(uuid) from public, anon;
 revoke all on function public.update_cash_reconciliation(uuid, numeric, text[]) from public, anon;
 revoke all on function public.delete_cash_reconciliation(uuid) from public, anon;
 revoke all on function public.adjust_cash_drawer_balance(numeric) from public, anon;
@@ -3252,6 +2854,13 @@ revoke all on function public.issue_product_stock(uuid, integer, text) from publ
 revoke all on function public.transfer_product_shelf(uuid, uuid, integer, text) from public, anon;
 
 grant execute on function public.is_admin(uuid) to authenticated;
+grant execute on function public.submit_inventory_audit(text, jsonb) to authenticated;
+grant execute on function public.touch_last_seen() to authenticated;
+grant execute on function public.set_app_role_active(uuid, boolean) to authenticated;
+grant execute on function public.clock_in_attendance(numeric, numeric, numeric) to authenticated;
+grant execute on function public.clock_out_attendance(uuid, numeric, numeric, numeric) to authenticated;
+grant execute on function public.update_attendance_record(uuid, timestamptz, timestamptz) to authenticated;
+grant execute on function public.delete_attendance_record(uuid) to authenticated;
 grant execute on function public.has_permission(text, uuid) to authenticated;
 grant execute on function public.requires_cash_reconciliation(uuid) to authenticated;
 grant execute on function public.list_cash_drawer_sessions(integer) to authenticated;
@@ -3260,6 +2869,7 @@ grant execute on function public.open_cash_drawer(numeric, text[]) to authentica
 grant execute on function public.close_cash_drawer(uuid, numeric, text[]) to authenticated;
 grant execute on function public.submit_attendance_cash_check(uuid, numeric, text[]) to authenticated;
 grant execute on function public.get_attendance_cash_check(uuid) to authenticated;
+grant execute on function public.get_attendance_cash_session(uuid) to authenticated;
 grant execute on function public.update_cash_reconciliation(uuid, numeric, text[]) to authenticated;
 grant execute on function public.delete_cash_reconciliation(uuid) to authenticated;
 grant execute on function public.adjust_cash_drawer_balance(numeric) to authenticated;

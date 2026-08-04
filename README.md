@@ -40,10 +40,10 @@ Không đổi `SUPABASE_SERVICE_ROLE_KEY` hoặc các secret Cloudinary thành b
 
 ### 4. Khởi tạo Supabase
 
-Với dự án Supabase mới:
+`supabase/schema.sql` là schema cài mới và tự xóa toàn bộ schema `public` trước khi khởi tạo. Không chạy file này nếu cần giữ dữ liệu.
 
 1. Mở **SQL Editor**.
-2. Chạy toàn bộ file `supabase/schema.sql` đúng một lần.
+2. Chạy toàn bộ file `supabase/schema.sql` đúng một lần. File tự làm sạch schema cũ, không cần chạy lệnh reset riêng.
 3. Mở **Authentication > Users** và tạo tài khoản quản trị đầu tiên.
 4. Lấy UUID của tài khoản vừa tạo và chạy:
 
@@ -53,7 +53,7 @@ set role = 'admin', is_active = true
 where id = 'UUID_TAI_KHOAN'::uuid;
 ```
 
-Nếu database đang chứa schema cũ và không cần giữ dữ liệu, làm sạch schema trước rồi chạy lại `supabase/schema.sql`:
+Các lệnh reset đã nằm ở đầu `schema.sql`:
 
 ```sql
 drop schema if exists public cascade;
@@ -62,7 +62,9 @@ grant all on schema public to postgres, service_role;
 grant usage on schema public to anon, authenticated;
 ```
 
-Lệnh trên xóa toàn bộ bảng, hàm, policy và dữ liệu trong schema `public`. Không chạy nếu cần giữ dữ liệu.
+Các lệnh trên xóa toàn bộ bảng, hàm, policy và dữ liệu trong schema `public`.
+
+Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Staff.
 
 ### 5. Cấu hình email quên mật khẩu
 

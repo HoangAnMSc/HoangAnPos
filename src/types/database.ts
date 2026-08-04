@@ -50,7 +50,7 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "app_roles";
             referencedColumns: ["id"];
-          }
+          },
         ];
       };
       app_roles: {
@@ -180,13 +180,15 @@ export type Database = {
           actor_name?: string;
           created_at?: string;
         };
-        Relationships: [{
-          foreignKeyName: "stock_movements_product_id_fkey";
-          columns: ["product_id"];
-          isOneToOne: false;
-          referencedRelation: "products";
-          referencedColumns: ["id"];
-        }];
+        Relationships: [
+          {
+            foreignKeyName: "stock_movements_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       inventory_audits: {
         Row: {
@@ -251,7 +253,7 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "products";
             referencedColumns: ["id"];
-          }
+          },
         ];
       };
       cloudinary_images: {
@@ -346,7 +348,7 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "products";
             referencedColumns: ["id"];
-          }
+          },
         ];
       };
       customers: {
@@ -482,7 +484,7 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "customers";
             referencedColumns: ["id"];
-          }
+          },
         ];
       };
       cash_drawer_sessions: {
@@ -615,7 +617,7 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "profiles";
             referencedColumns: ["id"];
-          }
+          },
         ];
       };
       order_audit_events: {
@@ -712,7 +714,7 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "products";
             referencedColumns: ["id"];
-          }
+          },
         ];
       };
       payment_settings: {
@@ -792,7 +794,7 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "profiles";
             referencedColumns: ["id"];
-          }
+          },
         ];
       };
     };
@@ -906,7 +908,13 @@ export type Database = {
       };
       get_attendance_cash_check: {
         Args: { attendance_record_id_input: string };
-        Returns: Database["public"]["Tables"]["cash_drawer_checks"]["Row"] | null;
+        Returns:
+          Database["public"]["Tables"]["cash_drawer_checks"]["Row"] | null;
+      };
+      get_attendance_cash_session: {
+        Args: { attendance_record_id_input: string };
+        Returns:
+          Database["public"]["Tables"]["cash_drawer_sessions"]["Row"] | null;
       };
       submit_attendance_cash_check: {
         Args: {
@@ -1018,7 +1026,11 @@ export type Database = {
         };
       };
       issue_product_stock: {
-        Args: { product_id_input: string; quantity_input: number; reason_input: string };
+        Args: {
+          product_id_input: string;
+          quantity_input: number;
+          reason_input: string;
+        };
         Returns: Database["public"]["Tables"]["products"]["Row"];
       };
       transfer_product_shelf: {
