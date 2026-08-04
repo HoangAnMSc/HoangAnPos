@@ -1,113 +1,125 @@
-# Hoang An POS
+# Hoàng An POS
 
-Trang quản trị bán hàng dùng ReactJS, Tailwind CSS, Supabase và Cloudinary.
+Ứng dụng quản lý bán hàng sử dụng React, Vite, Supabase và Cloudinary.
 
-## Tính năng
+## Cài đặt lần đầu
 
-- Đăng nhập bằng Supabase Auth, tự lưu phiên đăng nhập bằng Supabase session.
-- Phân quyền admin qua bảng `profiles.role`.
-- POS: chọn sản phẩm, gắn khách hàng, giảm giá, tạo hóa đơn và trừ tồn kho.
-- Quỹ & đối soát: số cuối ca tự động bàn giao sang ca sau, chỉ một ca được mở trên két, tự động tách tiền mặt/chuyển khoản và lưu mọi chênh lệch theo nhân viên.
-- Khách hàng: thêm, sửa, xóa, tìm kiếm.
-- Sản phẩm: thêm, sửa, xóa, tìm kiếm, upload ảnh lên Cloudinary.
-- Layout và component UI tái sử dụng: button, input, modal, card, badge, empty state.
+### 1. Yêu cầu
 
-## Chạy dự án
+- Node.js 20 trở lên.
+- Một dự án Supabase.
+- Một tài khoản Cloudinary.
+
+### 2. Cài dependency
+
+Sau khi clone hoặc pull dự án về máy mới:
 
 ```bash
-npm install
-npm run dev
+npm ci
 ```
 
-Tạo file `.env` từ `.env.example`:
+`ws` đã được khai báo trong `package.json` và `package-lock.json`, vì vậy không cần cài riêng để sửa lỗi WebSocket trên Node.js 20.
 
-```bash
+Trên Windows, hãy tắt `npm run dev` trước khi chạy `npm ci`; tiến trình Vite đang chạy có thể khóa `esbuild.exe` và gây lỗi `EPERM`.
+
+### 3. Tạo file môi trường
+
+Sao chép `.env.example` thành `.env`, sau đó điền giá trị thật:
+
+```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+VITE_SUPABASE_ANON_KEY=your-anon-or-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
 CLOUDINARY_CLOUD_NAME=your-cloud-name
 CLOUDINARY_API_KEY=your-api-key
 CLOUDINARY_API_SECRET=your-api-secret
 ```
 
-## Supabase
+Không đổi `SUPABASE_SERVICE_ROLE_KEY` hoặc các secret Cloudinary thành biến bắt đầu bằng `VITE_`. Các biến `VITE_` được đưa vào trình duyệt và không được dùng để chứa secret.
 
-1. Mở Supabase SQL Editor.
-2. Chạy toàn bộ file `supabase/schema.sql`.
-3. Tạo user trong Authentication.
-4. Gán quyền admin cho user đầu tiên. Không chạy nguyên chữ `USER_UUID`; hãy thay bằng UUID thật trong Supabase Authentication:
+### 4. Khởi tạo Supabase
+
+Với dự án Supabase mới:
+
+1. Mở **SQL Editor**.
+2. Chạy toàn bộ file `supabase/schema.sql` đúng một lần.
+3. Mở **Authentication > Users** và tạo tài khoản quản trị đầu tiên.
+4. Lấy UUID của tài khoản vừa tạo và chạy:
 
 ```sql
 update public.profiles
 set role = 'admin', is_active = true
-where id = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'::uuid;
+where id = 'UUID_TAI_KHOAN'::uuid;
 ```
 
-Hoặc gán admin theo email để đỡ phải copy UUID:
+Nếu database đang chứa schema cũ và không cần giữ dữ liệu, làm sạch schema trước rồi chạy lại `supabase/schema.sql`:
 
 ```sql
-update public.profiles p
-set role = 'admin', is_active = true
-from auth.users u
-where p.id = u.id
-  and u.email = 'hoanganmsc@gmail.com';
+drop schema if exists public cascade;
+create schema public;
+grant all on schema public to postgres, service_role;
+grant usage on schema public to anon, authenticated;
 ```
 
-Có thể kiểm tra danh sách user và role bằng:
+Lệnh trên xóa toàn bộ bảng, hàm, policy và dữ liệu trong schema `public`. Không chạy nếu cần giữ dữ liệu.
 
-```sql
-select p.id, u.email, p.role
-from public.profiles p
-join auth.users u on u.id = p.id
-order by p.created_at desc;
+### 5. Cấu hình email quên mật khẩu
+
+Trong **Supabase > Authentication > Email Templates > Magic Link**, dùng `{{ .Token }}` để email chứa mã OTP, ví dụ:
+
+```html
+<p>Mã OTP của bạn: {{ .Token }}</p>
 ```
 
-De trang quan ly user tao/sua/xoa duoc tai khoan Auth, can them `SUPABASE_SERVICE_ROLE_KEY` vao `.env` khi chay local va vao Environment Variables tren Vercel. Day la server-side secret, khong doi thanh `VITE_SUPABASE_SERVICE_ROLE_KEY` va khong commit gia tri that len git. Sau khi them tren Vercel, redeploy project de API route doc duoc bien moi truong moi.
+Ứng dụng chỉ gửi OTP qua email. Nhân viên không có email cần nhờ quản lý đặt lại mật khẩu. Khi chạy production, nên cấu hình **Custom SMTP** trong Supabase.
 
-### Cau hinh OTP quen mat khau
+### 6. Dọn Cloudinary cũ
 
-- Trong **Authentication > Email Templates > Magic Link**, dung bien `{{ .Token }}` de email chua ma OTP 6 so, vi du: `<p>Ma OTP cua ban: {{ .Token }}</p>`. Neu template dung `{{ .ConfirmationURL }}`, Supabase se gui lien ket thay vi ma OTP.
-- Quen mat khau chi gui OTP qua email, khong dung SMS va khong can Twilio. Nhan vien khong co email phai nho quan ly dat lai mat khau trong trang Nhan vien.
-- De gui OTP den email nhan vien trong moi truong thuc te, cau hinh **Custom SMTP** trong Supabase thay vi dich vu email mac dinh bi gioi han.
-- OTP khong tao tai khoan moi (`shouldCreateUser: false`). Sau khi xac thuc OTP va doi mat khau, ung dung dang xuat phien OTP de nhan vien dang nhap lai bang mat khau moi.
+Ứng dụng chỉ sử dụng bốn thư mục sau:
 
-Nếu đã có database trước đó, hãy chạy lại `supabase/schema.sql` để cập nhật bảng quỹ, nhật ký kiểm toán, danh sách quyền và các policy bảo mật. Sau cập nhật, mỗi nhân viên phải mở ca tại trang **Quỹ & đối soát** trước khi tạo hóa đơn mới. Tiền thực đếm đầu ca phải khớp số cuối ca trước; chỉ người có quyền **Xác nhận lệch bàn giao** mới được chấp nhận chênh lệch kèm lý do.
+- `hoang-an-pos/products`
+- `hoang-an-pos/payment-qr`
+- `hoang-an-pos/payment-proofs`
+- `hoang-an-pos/cash-reconciliation`
 
-### Phân quyền đối soát két trước khi bán
+Các thư mục được tạo tự động khi có ảnh đầu tiên. Trong Cloudinary Media Library, có thể xóa thủ công nội dung và thư mục cũ sau:
 
-- Gán quyền **Bắt buộc đối soát két trước khi bán** cho vai trò nhân viên phải vào ca, xác nhận tiền đầu ca và chốt két.
-- Không gán quyền này cho vai trò Chủ hoặc người chỉ bán phụ. Các vai trò đó vẫn cần quyền **Bán hàng / tạo hóa đơn**, nhưng không bị POS yêu cầu mở ca két.
-- Tài khoản Admin luôn được miễn bước đối soát. Nếu đang có két của nhân viên mở, hóa đơn bán phụ của Chủ/Admin vẫn được cộng vào két đang mở để đối soát đúng doanh thu.
-- Sau khi cập nhật mã nguồn, chạy lại `supabase/schema.sql` trong Supabase SQL Editor để áp dụng ràng buộc ở database.
-- Quyền **Xem lịch sử đối soát** hiển thị nút chuông lịch sử trên trang Quỹ & đối soát. Kết hợp thêm **Xem đối soát toàn bộ nhân viên** nếu vai trò được phép xem lịch sử của cả đội.
+- `hoang-an-pos/invoices`
+- `hoang-an-pos/receipts`
+- `hoang-an-pos/attendance`
 
-## Cloudinary
+Mọi ảnh upload được chuyển thành WebP và nén mạnh ở mức `q_20`.
 
-Ảnh được upload bằng chữ ký ngắn hạn do API đã xác thực tạo ra; không dùng unsigned upload preset. Ảnh sản phẩm được lưu trong folder `hoang-an-pos/products`.
-
-De xoa anh truc tiep tren Cloudinary tu trang quan ly anh, deploy Supabase Edge Function:
+### 7. Chạy ứng dụng
 
 ```bash
-supabase functions deploy delete-cloudinary-image
-supabase secrets set CLOUDINARY_CLOUD_NAME=your-cloud-name
-supabase secrets set CLOUDINARY_API_KEY=your-api-key
-supabase secrets set CLOUDINARY_API_SECRET=your-api-secret
+npm run dev
 ```
 
-Neu deploy tren Vercel, app dung API route `api/cloudinary-images.js` de liet ke toan bo anh Cloudinary va xoa anh. Khai bao 3 bien moi truong server-side trong Vercel:
+## Triển khai Vercel
 
-```bash
+Khai báo đầy đủ các biến sau trong **Project Settings > Environment Variables**:
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-or-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 CLOUDINARY_CLOUD_NAME=your-cloud-name
 CLOUDINARY_API_KEY=your-api-key
 CLOUDINARY_API_SECRET=your-api-secret
 ```
 
-API key và secret chỉ được đặt ở môi trường server, tuyệt đối không đặt tên biến bắt đầu bằng `VITE_` và không commit giá trị thật.
+Sau khi thay đổi biến môi trường, hãy redeploy. API quản lý nhân viên và API Cloudinary cần các biến server-side ở trên.
 
-## Scripts
+## Các lệnh thường dùng
 
 ```bash
 npm run dev
 npm run lint
 npm run build
+npm run preview
 ```
+
+- Dùng `npm ci` sau khi clone/pull trên máy khác.
+- Chỉ dùng `npm install` khi chủ động thêm, xóa hoặc cập nhật dependency và cần cập nhật `package-lock.json`.

@@ -10,7 +10,7 @@ export type CashDrawerSession = {
   expected_opening_cash: number;
   opening_cash: number;
   opening_variance: number;
-  opening_note: string | null;
+  opening_evidence_urls: string[];
   cash_sales: number;
   transfer_sales: number;
   expected_cash: number;
@@ -20,7 +20,7 @@ export type CashDrawerSession = {
   opened_at: string;
   closed_at: string | null;
   closed_by: string | null;
-  close_note: string | null;
+  close_evidence_urls: string[];
 };
 
 export type CashDrawerHandover = {
@@ -104,15 +104,10 @@ export async function fetchOwnOpenCashDrawerSession() {
     throw authError ?? new Error("Phiên đăng nhập đã hết hạn.");
   }
 
-  const { data, error } = await supabase
-    .from("cash_drawer_sessions")
-    .select("*")
-    .eq("cashier_id", authData.user.id)
-    .eq("status", "open")
-    .maybeSingle();
-
-  if (error) throw error;
-  return data as CashDrawerSession | null;
+  const sessions = await fetchCashDrawerSessions();
+  return sessions.find(
+    (session) => session.cashier_id === authData.user.id && session.status === "open"
+  ) ?? null;
 }
 
 export async function fetchCashDrawerHandover() {
@@ -128,11 +123,11 @@ export async function fetchCashDrawerHandover() {
   }) as CashDrawerHandover;
 }
 
-export async function openCashDrawer(openingCash: number, openingNote: string | null) {
+export async function openCashDrawer(openingCash: number, evidenceUrls: string[] = []) {
   requireSupabaseConfig();
   const { data, error } = await supabase.rpc("open_cash_drawer", {
     opening_cash_input: Math.max(openingCash, 0),
-    opening_note_input: openingNote,
+    evidence_urls_input: evidenceUrls,
   });
 
   if (error) throw error;
@@ -165,7 +160,7 @@ export async function ensureCashDrawerSessionForCheckout() {
 
   const { data: latestCheck, error: checkError } = await supabase
     .from("cash_drawer_checks")
-    .select("actual_cash, reason, checked_at")
+    .select("actual_cash, evidence_urls, checked_at")
     .eq("employee_id", authData.user.id)
     .not("checked_at", "is", null)
     .order("checked_at", { ascending: false })
@@ -182,17 +177,17 @@ export async function ensureCashDrawerSessionForCheckout() {
     );
   }
 
-  await openCashDrawer(Number(latestCheck.actual_cash), latestCheck.reason ?? null);
+  await openCashDrawer(Number(latestCheck.actual_cash), latestCheck.evidence_urls ?? []);
 }
 
 export async function closeCashDrawer(
   sessionId: string,
   countedCash: number,
-  closeNote: string | null
+  evidenceUrls: string[]
 ) {
   requireSupabaseConfig();
   const { data, error } = await supabase.rpc("close_cash_drawer", {
-    close_note_input: closeNote,
+    evidence_urls_input: evidenceUrls,
     counted_cash_input: Math.max(countedCash, 0),
     session_id_input: sessionId,
   });
@@ -224,4 +219,27 @@ export async function fetchCashDrawerChecks(limit = 500) {
 
   if (error) throw error;
   return (data ?? []) as CashDrawerCheck[];
+}
+
+export async function updateCashReconciliation(
+  checkId: string,
+  actualCash: number,
+  evidenceUrls: string[]
+) {
+  requireSupabaseConfig();
+  const { data, error } = await supabase.rpc("update_cash_reconciliation", {
+    actual_cash_input: Math.max(actualCash, 0),
+    check_id_input: checkId,
+    evidence_urls_input: evidenceUrls,
+  });
+  if (error) throw error;
+  return data as CashDrawerCheck;
+}
+
+export async function deleteCashReconciliation(checkId: string) {
+  requireSupabaseConfig();
+  const { error } = await supabase.rpc("delete_cash_reconciliation", {
+    check_id_input: checkId,
+  });
+  if (error) throw error;
 }

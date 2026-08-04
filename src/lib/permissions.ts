@@ -111,7 +111,7 @@ export const permissionGroups = [
       {
         key: "cash-management.handover.override",
         label: "Xác nhận lệch bàn giao",
-        description: "Cho phép quản lý mở ca khi tiền thực nhận khác số tiền ca trước bàn giao; bắt buộc ghi lý do.",
+        description: "Cho phép quản lý mở ca khi tiền thực nhận khác số tiền ca trước bàn giao; bắt buộc tải ảnh bằng chứng.",
       },
       {
         key: "cash-management.history.view",
@@ -122,6 +122,16 @@ export const permissionGroups = [
         key: "cash-management.view-all",
         label: "Xem đối soát toàn bộ nhân viên",
         description: "Mở rộng lịch sử và dữ liệu đối soát sang toàn bộ nhân viên.",
+      },
+      {
+        key: "cash-management.reconciliation.update",
+        label: "Sửa lịch sử đối soát",
+        description: "Chỉnh số tiền thực đếm và ảnh bằng chứng của bản ghi đối soát.",
+      },
+      {
+        key: "cash-management.reconciliation.delete",
+        label: "Xóa lịch sử đối soát",
+        description: "Xóa bản ghi đối soát đã hoàn tất khỏi lịch sử.",
       },
     ],
   },
@@ -396,6 +406,15 @@ export function normalizeRolePermissions(permissions: string[]) {
 
   if (selected.has("cash-management.view-all")) {
     selected.add("cash-management.history.view");
+  }
+
+  if (
+    selected.has("cash-management.reconciliation.update") ||
+    selected.has("cash-management.reconciliation.delete")
+  ) {
+    selected.add("cash-management");
+    selected.add("cash-management.history.view");
+    selected.add("cash-management.view-all");
   }
 
   if (selected.has("cash-management.reconciliation.required")) {

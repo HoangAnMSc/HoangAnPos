@@ -493,7 +493,7 @@ export type Database = {
           expected_opening_cash: number;
           opening_cash: number;
           opening_variance: number;
-          opening_note: string | null;
+          opening_evidence_urls: string[];
           cash_sales: number;
           transfer_sales: number;
           expected_cash: number;
@@ -503,7 +503,7 @@ export type Database = {
           opened_at: string;
           closed_at: string | null;
           closed_by: string | null;
-          close_note: string | null;
+          close_evidence_urls: string[];
           created_at: string;
           updated_at: string;
         };
@@ -514,7 +514,7 @@ export type Database = {
           expected_opening_cash?: number;
           opening_cash?: number;
           opening_variance?: number;
-          opening_note?: string | null;
+          opening_evidence_urls?: string[];
           cash_sales?: number;
           transfer_sales?: number;
           expected_cash?: number;
@@ -524,7 +524,7 @@ export type Database = {
           opened_at?: string;
           closed_at?: string | null;
           closed_by?: string | null;
-          close_note?: string | null;
+          close_evidence_urls?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -535,7 +535,7 @@ export type Database = {
           expected_opening_cash?: number;
           opening_cash?: number;
           opening_variance?: number;
-          opening_note?: string | null;
+          opening_evidence_urls?: string[];
           cash_sales?: number;
           transfer_sales?: number;
           expected_cash?: number;
@@ -545,7 +545,7 @@ export type Database = {
           opened_at?: string;
           closed_at?: string | null;
           closed_by?: string | null;
-          close_note?: string | null;
+          close_evidence_urls?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -561,7 +561,7 @@ export type Database = {
           expected_cash: number;
           actual_cash: number | null;
           is_match: boolean | null;
-          reason: string | null;
+          evidence_urls: string[];
           checked_at: string | null;
           created_at: string;
         };
@@ -574,7 +574,7 @@ export type Database = {
           expected_cash?: number;
           actual_cash?: number | null;
           is_match?: boolean | null;
-          reason?: string | null;
+          evidence_urls?: string[];
           checked_at?: string | null;
           created_at?: string;
         };
@@ -587,7 +587,7 @@ export type Database = {
           expected_cash?: number;
           actual_cash?: number | null;
           is_match?: boolean | null;
-          reason?: string | null;
+          evidence_urls?: string[];
           checked_at?: string | null;
           created_at?: string;
         };
@@ -808,7 +808,7 @@ export type Database = {
           expected_opening_cash: number;
           opening_cash: number;
           opening_variance: number;
-          opening_note: string | null;
+          opening_evidence_urls: string[];
           cash_sales: number;
           transfer_sales: number;
           expected_cash: number;
@@ -818,7 +818,7 @@ export type Database = {
           opened_at: string;
           closed_at: string | null;
           closed_by: string | null;
-          close_note: string | null;
+          close_evidence_urls: string[];
         }[];
       };
       get_cash_drawer_handover: {
@@ -831,7 +831,7 @@ export type Database = {
         }[];
       };
       open_cash_drawer: {
-        Args: { opening_cash_input: number; opening_note_input?: string | null };
+        Args: { opening_cash_input: number; evidence_urls_input?: string[] };
         Returns: {
           id: string;
           cashier_id: string;
@@ -839,7 +839,7 @@ export type Database = {
           expected_opening_cash: number;
           opening_cash: number;
           opening_variance: number;
-          opening_note: string | null;
+          opening_evidence_urls: string[];
           cash_sales: number;
           transfer_sales: number;
           expected_cash: number;
@@ -849,7 +849,7 @@ export type Database = {
           opened_at: string;
           closed_at: string | null;
           closed_by: string | null;
-          close_note: string | null;
+          close_evidence_urls: string[];
           created_at: string;
           updated_at: string;
         };
@@ -858,7 +858,7 @@ export type Database = {
         Args: {
           session_id_input: string;
           counted_cash_input: number;
-          close_note_input?: string | null;
+          evidence_urls_input?: string[];
         };
         Returns: {
           id: string;
@@ -867,7 +867,7 @@ export type Database = {
           expected_opening_cash: number;
           opening_cash: number;
           opening_variance: number;
-          opening_note: string | null;
+          opening_evidence_urls: string[];
           cash_sales: number;
           transfer_sales: number;
           expected_cash: number;
@@ -877,7 +877,7 @@ export type Database = {
           opened_at: string;
           closed_at: string | null;
           closed_by: string | null;
-          close_note: string | null;
+          close_evidence_urls: string[];
           created_at: string;
           updated_at: string;
         };
@@ -905,7 +905,7 @@ export type Database = {
         Args: {
           attendance_record_id_input: string;
           actual_cash_input: number;
-          reason_input?: string | null;
+          evidence_urls_input?: string[];
         };
         Returns: {
           id: string;
@@ -916,10 +916,22 @@ export type Database = {
           expected_cash: number;
           actual_cash: number | null;
           is_match: boolean | null;
-          reason: string | null;
+          evidence_urls: string[];
           checked_at: string | null;
           created_at: string;
         };
+      };
+      update_cash_reconciliation: {
+        Args: {
+          check_id_input: string;
+          actual_cash_input: number;
+          evidence_urls_input?: string[];
+        };
+        Returns: Database["public"]["Tables"]["cash_drawer_checks"]["Row"];
+      };
+      delete_cash_reconciliation: {
+        Args: { check_id_input: string };
+        Returns: undefined;
       };
       clock_in_attendance: {
         Args: {

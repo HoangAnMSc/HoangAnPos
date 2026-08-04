@@ -47,6 +47,8 @@ values
       'cash-management.handover.override',
       'cash-management.history.view',
       'cash-management.view-all',
+      'cash-management.reconciliation.update',
+      'cash-management.reconciliation.delete',
       'customers',
       'customers.create',
       'customers.update',
@@ -388,7 +390,7 @@ create table if not exists public.cash_drawer_sessions (
   expected_opening_cash numeric(12, 2) not null default 0 check (expected_opening_cash >= 0),
   opening_cash numeric(12, 2) not null default 0 check (opening_cash >= 0),
   opening_variance numeric(12, 2) not null default 0,
-  opening_note text,
+  opening_evidence_urls text[] not null default '{}',
   cash_sales numeric(12, 2) not null default 0 check (cash_sales >= 0),
   transfer_sales numeric(12, 2) not null default 0 check (transfer_sales >= 0),
   expected_cash numeric(12, 2) not null default 0 check (expected_cash >= 0),
@@ -398,46 +400,18 @@ create table if not exists public.cash_drawer_sessions (
   opened_at timestamptz not null default now(),
   closed_at timestamptz,
   closed_by uuid references auth.users(id) on delete set null,
-  close_note text,
+  close_evidence_urls text[] not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  constraint cash_drawer_sessions_opening_variance_check check (
+    opening_variance = opening_cash - expected_opening_cash
+  ),
   constraint cash_drawer_sessions_close_state_check check (
     (status = 'open' and closed_at is null and counted_cash is null and variance is null)
     or
     (status = 'closed' and closed_at is not null and counted_cash is not null and variance is not null)
   )
 );
-
-alter table public.cash_drawer_sessions
-add column if not exists expected_opening_cash numeric(12, 2) not null default 0;
-
-alter table public.cash_drawer_sessions
-add column if not exists opening_variance numeric(12, 2) not null default 0;
-
-alter table public.cash_drawer_sessions
-add column if not exists opening_note text;
-
--- Rows created before continuous handover was introduced start from their own declared opening balance.
-update public.cash_drawer_sessions
-set expected_opening_cash = opening_cash
-where expected_opening_cash = 0
-  and opening_cash > 0
-  and opening_variance = 0
-  and opening_note is null;
-
-alter table public.cash_drawer_sessions
-drop constraint if exists cash_drawer_sessions_expected_opening_cash_check;
-
-alter table public.cash_drawer_sessions
-add constraint cash_drawer_sessions_expected_opening_cash_check
-check (expected_opening_cash >= 0);
-
-alter table public.cash_drawer_sessions
-drop constraint if exists cash_drawer_sessions_opening_variance_check;
-
-alter table public.cash_drawer_sessions
-add constraint cash_drawer_sessions_opening_variance_check
-check (opening_variance = opening_cash - expected_opening_cash);
 
 alter table public.orders
 add column if not exists cash_session_id uuid references public.cash_drawer_sessions(id) on delete restrict;
@@ -584,7 +558,7 @@ create table if not exists public.cash_drawer_checks (
   expected_cash numeric(12, 2) not null default 0 check (expected_cash >= 0),
   actual_cash numeric(12, 2) check (actual_cash >= 0),
   is_match boolean,
-  reason text,
+  evidence_urls text[] not null default '{}',
   checked_at timestamptz,
   created_at timestamptz not null default now(),
   constraint cash_drawer_checks_result_check check (
@@ -592,14 +566,14 @@ create table if not exists public.cash_drawer_checks (
       checked_at is null
       and actual_cash is null
       and is_match is null
-      and reason is null
+      and cardinality(evidence_urls) = 0
     )
     or
     (
       checked_at is not null
       and actual_cash is not null
       and is_match = (actual_cash = expected_cash)
-      and (is_match or nullif(btrim(reason), '') is not null)
+      and (is_match or cardinality(evidence_urls) between 1 and 5)
     )
   )
 );
@@ -1168,7 +1142,7 @@ $$;
 create or replace function public.submit_attendance_cash_check(
   attendance_record_id_input uuid,
   actual_cash_input numeric,
-  reason_input text default null
+  evidence_urls_input text[] default '{}'
 )
 returns public.cash_drawer_checks
 language plpgsql
@@ -1177,7 +1151,6 @@ set search_path = public
 as $$
 declare
   check_record public.cash_drawer_checks;
-  normalized_reason text := nullif(btrim(reason_input), '');
   opened_session public.cash_drawer_sessions;
 begin
   if auth.uid() is null then
@@ -1203,25 +1176,124 @@ begin
     raise exception 'Cash drawer check is not available';
   end if;
 
-  if actual_cash_input <> check_record.expected_cash and normalized_reason is null then
-    raise exception 'Reason is required when cash does not match';
+  if actual_cash_input <> check_record.expected_cash
+    and cardinality(coalesce(evidence_urls_input, '{}')) not between 1 and 5 then
+    raise exception 'Between 1 and 5 evidence images are required when cash does not match';
   end if;
 
   select *
   into opened_session
-  from public.open_cash_drawer(actual_cash_input, normalized_reason);
+  from public.open_cash_drawer(actual_cash_input, evidence_urls_input);
 
   update public.cash_drawer_checks
   set
     cash_session_id = opened_session.id,
     actual_cash = actual_cash_input,
     is_match = (actual_cash_input = expected_cash),
-    reason = case when actual_cash_input = expected_cash then null else normalized_reason end,
+    evidence_urls = case when actual_cash_input = expected_cash then '{}' else coalesce(evidence_urls_input, '{}') end,
     checked_at = now()
   where id = check_record.id
   returning * into check_record;
 
   return check_record;
+end;
+$$;
+
+create or replace function public.update_cash_reconciliation(
+  check_id_input uuid,
+  actual_cash_input numeric,
+  evidence_urls_input text[] default '{}'
+)
+returns public.cash_drawer_checks
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  check_record public.cash_drawer_checks;
+  session_record public.cash_drawer_sessions;
+begin
+  if auth.uid() is null or not public.has_permission('cash-management.reconciliation.update') then
+    raise exception 'Permission denied';
+  end if;
+
+  if actual_cash_input is null or actual_cash_input < 0 then
+    raise exception 'Actual cash is required';
+  end if;
+
+  select * into check_record
+  from public.cash_drawer_checks
+  where id = check_id_input
+  for update;
+
+  if not found then
+    raise exception 'Cash reconciliation was not found';
+  end if;
+
+  if actual_cash_input <> check_record.expected_cash
+    and cardinality(coalesce(evidence_urls_input, '{}')) not between 1 and 5 then
+    raise exception 'Between 1 and 5 evidence images are required when cash does not match';
+  end if;
+
+  update public.cash_drawer_checks
+  set actual_cash = actual_cash_input,
+      is_match = (actual_cash_input = expected_cash),
+      evidence_urls = case when actual_cash_input = expected_cash then '{}' else evidence_urls_input end,
+      checked_at = coalesce(checked_at, now())
+  where id = check_record.id
+  returning * into check_record;
+
+  if check_record.cash_session_id is not null then
+    select * into session_record
+    from public.cash_drawer_sessions
+    where id = check_record.cash_session_id
+    for update;
+
+    if found then
+      update public.cash_drawer_sessions
+      set opening_cash = actual_cash_input,
+          opening_variance = actual_cash_input - expected_opening_cash,
+          opening_evidence_urls = case when actual_cash_input = expected_opening_cash then '{}' else evidence_urls_input end,
+          expected_cash = case when status = 'closed' then actual_cash_input + cash_sales else expected_cash end,
+          variance = case when status = 'closed' then counted_cash - (actual_cash_input + cash_sales) else variance end
+      where id = session_record.id;
+    end if;
+  end if;
+
+  return check_record;
+end;
+$$;
+
+create or replace function public.delete_cash_reconciliation(check_id_input uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  check_record public.cash_drawer_checks;
+begin
+  if auth.uid() is null or not public.has_permission('cash-management.reconciliation.delete') then
+    raise exception 'Permission denied';
+  end if;
+
+  select * into check_record
+  from public.cash_drawer_checks
+  where id = check_id_input
+  for update;
+
+  if not found then
+    raise exception 'Cash reconciliation was not found';
+  end if;
+
+  if exists (
+    select 1 from public.cash_drawer_sessions
+    where id = check_record.cash_session_id and status = 'open'
+  ) then
+    raise exception 'Cannot delete reconciliation for an open cash session';
+  end if;
+
+  delete from public.cash_drawer_checks where id = check_record.id;
 end;
 $$;
 
@@ -1422,7 +1494,7 @@ begin
       expected_cash = expected_cash_value,
       actual_cash = null,
       is_match = null,
-      reason = null,
+      evidence_urls = '{}',
       checked_at = null
     where attendance_record_id = attendance_record.id;
   end if;
@@ -1685,7 +1757,7 @@ returns table (
   expected_opening_cash numeric,
   opening_cash numeric,
   opening_variance numeric,
-  opening_note text,
+  opening_evidence_urls text[],
   cash_sales numeric,
   transfer_sales numeric,
   expected_cash numeric,
@@ -1695,7 +1767,7 @@ returns table (
   opened_at timestamptz,
   closed_at timestamptz,
   closed_by uuid,
-  close_note text
+  close_evidence_urls text[]
 )
 language plpgsql
 security definer
@@ -1714,7 +1786,7 @@ begin
     session.expected_opening_cash,
     session.opening_cash,
     session.opening_variance,
-    session.opening_note,
+    session.opening_evidence_urls,
     case when session.status = 'closed' then session.cash_sales else sales.cash_sales end,
     case when session.status = 'closed' then session.transfer_sales else sales.transfer_sales end,
     case
@@ -1727,7 +1799,7 @@ begin
     session.opened_at,
     session.closed_at,
     session.closed_by,
-    session.close_note
+    session.close_evidence_urls
   from public.cash_drawer_sessions session
   cross join lateral (
     select
@@ -1860,12 +1932,9 @@ begin
 end;
 $$;
 
-drop function if exists public.open_cash_drawer(numeric);
-drop function if exists public.open_cash_drawer(numeric, text);
-
-create function public.open_cash_drawer(
+create or replace function public.open_cash_drawer(
   opening_cash_input numeric,
-  opening_note_input text default null
+  evidence_urls_input text[] default '{}'
 )
 returns public.cash_drawer_sessions
 language plpgsql
@@ -1922,8 +1991,8 @@ begin
         raise exception 'Opening cash does not match the previous handover balance';
       end if;
 
-      if nullif(trim(opening_note_input), '') is null then
-        raise exception 'A handover note is required when opening cash has a variance';
+      if cardinality(coalesce(evidence_urls_input, '{}')) not between 1 and 5 then
+        raise exception 'Between 1 and 5 evidence images are required when opening cash has a variance';
       end if;
     end if;
   end if;
@@ -1949,7 +2018,7 @@ begin
     expected_opening_cash,
     opening_cash,
     opening_variance,
-    opening_note
+    opening_evidence_urls
   )
   values (
     auth.uid(),
@@ -1957,7 +2026,7 @@ begin
     expected_opening_cash_value,
     opening_cash_input,
     opening_variance_value,
-    nullif(left(trim(opening_note_input), 1000), '')
+    case when opening_variance_value = 0 then '{}' else coalesce(evidence_urls_input, '{}') end
   )
   returning * into session_record;
 
@@ -1971,7 +2040,7 @@ $$;
 create or replace function public.close_cash_drawer(
   session_id_input uuid,
   counted_cash_input numeric,
-  close_note_input text default null
+  evidence_urls_input text[] default '{}'
 )
 returns public.cash_drawer_sessions
 language plpgsql
@@ -2018,8 +2087,8 @@ begin
   expected_cash_value := session_record.opening_cash + cash_sales_value;
   variance_value := counted_cash_input - expected_cash_value;
 
-  if variance_value <> 0 and nullif(trim(close_note_input), '') is null then
-    raise exception 'A close note is required when cash has a variance';
+  if variance_value <> 0 and cardinality(coalesce(evidence_urls_input, '{}')) not between 1 and 5 then
+    raise exception 'Between 1 and 5 evidence images are required when cash has a variance';
   end if;
 
   update public.cash_drawer_sessions
@@ -2032,7 +2101,7 @@ begin
     status = 'closed',
     closed_at = now(),
     closed_by = auth.uid(),
-    close_note = nullif(left(trim(close_note_input), 1000), '')
+    close_evidence_urls = case when variance_value = 0 then '{}' else coalesce(evidence_urls_input, '{}') end
   where public.cash_drawer_sessions.id = session_record.id
   returning * into session_record;
 
@@ -2957,9 +3026,11 @@ revoke all on function public.has_permission(text, uuid) from public, anon;
 revoke all on function public.requires_cash_reconciliation(uuid) from public, anon;
 revoke all on function public.list_cash_drawer_sessions(integer) from public, anon;
 revoke all on function public.get_cash_drawer_handover() from public, anon;
-revoke all on function public.open_cash_drawer(numeric, text) from public, anon;
-revoke all on function public.close_cash_drawer(uuid, numeric, text) from public, anon;
-revoke all on function public.submit_attendance_cash_check(uuid, numeric, text) from public, anon;
+revoke all on function public.open_cash_drawer(numeric, text[]) from public, anon;
+revoke all on function public.close_cash_drawer(uuid, numeric, text[]) from public, anon;
+revoke all on function public.submit_attendance_cash_check(uuid, numeric, text[]) from public, anon;
+revoke all on function public.update_cash_reconciliation(uuid, numeric, text[]) from public, anon;
+revoke all on function public.delete_cash_reconciliation(uuid) from public, anon;
 revoke all on function public.list_attendance_history(date) from public, anon;
 revoke all on function public.create_pos_order(uuid, numeric, text, uuid, numeric, jsonb, text, text, text, text) from public, anon;
 revoke all on function public.cancel_pos_order(uuid, text) from public, anon;
@@ -2977,9 +3048,11 @@ grant execute on function public.has_permission(text, uuid) to authenticated;
 grant execute on function public.requires_cash_reconciliation(uuid) to authenticated;
 grant execute on function public.list_cash_drawer_sessions(integer) to authenticated;
 grant execute on function public.get_cash_drawer_handover() to authenticated;
-grant execute on function public.open_cash_drawer(numeric, text) to authenticated;
-grant execute on function public.close_cash_drawer(uuid, numeric, text) to authenticated;
-grant execute on function public.submit_attendance_cash_check(uuid, numeric, text) to authenticated;
+grant execute on function public.open_cash_drawer(numeric, text[]) to authenticated;
+grant execute on function public.close_cash_drawer(uuid, numeric, text[]) to authenticated;
+grant execute on function public.submit_attendance_cash_check(uuid, numeric, text[]) to authenticated;
+grant execute on function public.update_cash_reconciliation(uuid, numeric, text[]) to authenticated;
+grant execute on function public.delete_cash_reconciliation(uuid) to authenticated;
 grant execute on function public.list_attendance_history(date) to authenticated;
 grant execute on function public.create_pos_order(uuid, numeric, text, uuid, numeric, jsonb, text, text, text, text) to authenticated;
 grant execute on function public.cancel_pos_order(uuid, text) to authenticated;

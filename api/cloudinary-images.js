@@ -80,6 +80,8 @@ export default async function handler(request, response) {
           "products.update",
           "pos.payment-proof.upload",
           "payment-settings.update",
+          "attendance.clock",
+          "cash-management.reconciliation.update",
         ]
       : request.method === "POST"
       ? ["cloudinary-images.delete"]
@@ -115,10 +117,7 @@ export default async function handler(request, response) {
     const scopes = {
       invoices: {
         permissions: ["orders"],
-        prefixes: [
-          "hoang-an-pos/invoices/payment-proofs/",
-          "hoang-an-pos/payment-proofs/",
-        ],
+        prefixes: ["hoang-an-pos/payment-proofs/"],
       },
       "payment-qr": {
         permissions: ["payment-settings.update"],
@@ -147,9 +146,12 @@ export default async function handler(request, response) {
 
   if (signingUpload) {
     const folderPermissions = {
-      "hoang-an-pos/invoices/payment-proofs": ["pos.payment-proof.upload"],
       "hoang-an-pos/payment-proofs": ["pos.payment-proof.upload"],
       "hoang-an-pos/payment-qr": ["payment-settings.update"],
+      "hoang-an-pos/cash-reconciliation": [
+        "attendance.clock",
+        "cash-management.reconciliation.update",
+      ],
       "hoang-an-pos/products": [
         "cloudinary-images.upload",
         "products.create",
@@ -170,12 +172,17 @@ export default async function handler(request, response) {
     }
 
     const timestamp = Math.floor(Date.now() / 1000).toString();
+    const format = "webp";
+    const transformation = "q_20";
+    const assetFolder = folder;
+    const publicIdPrefix = folder;
     sendJson(response, 200, {
+      assetFolder,
       apiKey: config.apiKey,
       cloudName: config.cloudName,
       folder,
       ok: true,
-      signature: createSignature({ folder, timestamp }, config.apiSecret),
+      signature: createSignature({ asset_folder: assetFolder, format, public_id_prefix: publicIdPrefix, timestamp, transformation }, config.apiSecret),
       timestamp,
     });
     return;

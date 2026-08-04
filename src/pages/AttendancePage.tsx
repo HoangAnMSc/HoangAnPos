@@ -17,7 +17,9 @@ import {
   Save,
   Search,
   Trash2,
+  UploadCloud,
   UsersRound,
+  X,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
@@ -25,7 +27,6 @@ import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
-import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import {
   downloadAttendanceExcel,
@@ -33,7 +34,7 @@ import {
 } from "../lib/attendanceExport";
 import { getErrorMessage } from "../lib/errors";
 import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
-import { normalizeNullableText } from "../lib/text";
+import { uploadAttendanceReconciliationImage } from "../lib/cloudinary";
 import {
   closeCashDrawer,
   fetchOwnOpenCashDrawerSession,
@@ -75,6 +76,57 @@ type AttendanceCashDetailProps = {
   cashCheck: AttendanceCashCheck | null;
   loading: boolean;
 };
+
+type EvidenceImagePickerProps = {
+  disabled?: boolean;
+  files: File[];
+  onChange: (files: File[]) => void;
+};
+
+function EvidenceImagePicker({ disabled, files, onChange }: EvidenceImagePickerProps) {
+  const previews = useMemo(() => files.map((file) => URL.createObjectURL(file)), [files]);
+
+  useEffect(() => () => previews.forEach((url) => URL.revokeObjectURL(url)), [previews]);
+
+  function addFiles(fileList: FileList | null) {
+    if (!fileList) return;
+    const images = Array.from(fileList).filter((file) => file.type.startsWith("image/"));
+    onChange([...files, ...images].slice(0, 5));
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-extrabold text-coal">Ảnh bằng chứng</span>
+        <span className="text-xs font-bold text-coal/45">{files.length}/5 ảnh</span>
+      </div>
+      {files.length ? (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+          {previews.map((preview, index) => (
+            <div className="relative aspect-square overflow-hidden rounded-xl bg-slate-100" key={`${files[index].name}-${index}`}>
+              <img alt={`Bằng chứng ${index + 1}`} className="h-full w-full object-cover" src={preview} />
+              <button className="absolute right-1 top-1 rounded-full bg-black/70 p-1 text-white" disabled={disabled} onClick={() => onChange(files.filter((_, itemIndex) => itemIndex !== index))} type="button">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {files.length < 5 ? (
+        <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-amber-300 bg-white px-4 py-3 text-sm font-extrabold text-amber-800 ${disabled ? "pointer-events-none opacity-60" : ""}`}>
+          <UploadCloud className="h-4 w-4" /> Chọn ảnh ({5 - files.length} ảnh còn lại)
+          <input accept="image/*" className="sr-only" disabled={disabled} multiple onChange={(event) => { addFiles(event.target.files); event.target.value = ""; }} type="file" />
+        </label>
+      ) : null}
+      <p className="text-xs font-semibold text-coal/45">Bắt buộc 1–5 ảnh khi tiền bị lệch. Ảnh sẽ được nén mạnh và lưu dạng WebP.</p>
+    </div>
+  );
+}
+
+function EvidenceImages({ urls }: { urls: string[] | null | undefined }) {
+  if (!urls?.length) return null;
+  return <div className="mt-2 flex flex-wrap gap-2">{urls.map((url, index) => <a href={url} key={url} rel="noreferrer" target="_blank"><img alt={`Ảnh bằng chứng ${index + 1}`} className="h-16 w-16 rounded-lg object-cover ring-1 ring-slate-200" src={url} /></a>)}</div>;
+}
 
 function AttendanceCashDetail({ cashCheck, loading }: AttendanceCashDetailProps) {
   if (loading) {
@@ -125,12 +177,12 @@ function AttendanceCashDetail({ cashCheck, loading }: AttendanceCashDetailProps)
           </dd>
         </div>
       </dl>
-      {variance !== null || cashCheck.reason ? (
+      {variance !== null || cashCheck.evidence_urls.length ? (
         <div className="border-t border-slate-200 px-4 py-3 text-xs font-semibold text-slate-600">
           {variance !== null ? (
             <p>Chênh lệch: <strong className={variance === 0 ? "text-emerald-700" : "text-red-700"}>{formatCurrency(variance)}</strong></p>
           ) : null}
-          {cashCheck.reason ? <p className="mt-1 leading-5 text-red-700">Lý do: {cashCheck.reason}</p> : null}
+          <EvidenceImages urls={cashCheck.evidence_urls} />
         </div>
       ) : null}
     </section>
@@ -418,11 +470,11 @@ export function AttendancePage() {
   const [cashCheckError, setCashCheckError] = useState("");
   const [cashMismatch, setCashMismatch] = useState(false);
   const [cashModalOpen, setCashModalOpen] = useState(false);
-  const [cashReason, setCashReason] = useState("");
+  const [cashEvidenceFiles, setCashEvidenceFiles] = useState<File[]>([]);
   const [cashSaving, setCashSaving] = useState(false);
   const [confirmClockOutOpen, setConfirmClockOutOpen] = useState(false);
   const [clockOutCashActual, setClockOutCashActual] = useState("");
-  const [clockOutCashNote, setClockOutCashNote] = useState("");
+  const [clockOutEvidenceFiles, setClockOutEvidenceFiles] = useState<File[]>([]);
   const [clockOutCashSession, setClockOutCashSession] = useState<CashDrawerSession | null>(null);
   const [clockOutCashLoading, setClockOutCashLoading] = useState(false);
   const [deletingId, setDeletingId] = useState("");
@@ -643,7 +695,7 @@ export function AttendancePage() {
             setCashModalOpen(true);
             setCashMismatch(false);
             setCashActual("");
-            setCashReason("");
+            setCashEvidenceFiles([]);
           }
         } catch (cashCheckRequestError) {
           setError(
@@ -671,7 +723,7 @@ export function AttendancePage() {
   async function openClockOutConfirmation() {
     setConfirmClockOutOpen(true);
     setClockOutCashActual("");
-    setClockOutCashNote("");
+    setClockOutEvidenceFiles([]);
     setClockOutCashSession(null);
 
     if (!requiresCashReconciliation) {
@@ -697,7 +749,7 @@ export function AttendancePage() {
     }
     setConfirmClockOutOpen(false);
     setClockOutCashActual("");
-    setClockOutCashNote("");
+    setClockOutEvidenceFiles([]);
     setClockOutCashSession(null);
   }
 
@@ -728,8 +780,8 @@ export function AttendancePage() {
       setError("Nhập số tiền thực tế đang có trong két.");
       return;
     }
-    if (clockOutCashSession && actualCash !== expectedCash && !clockOutCashNote.trim()) {
-      setError("Tiền thực tế đang lệch hệ thống. Hãy nhập lý do chênh lệch trước khi tan ca.");
+    if (clockOutCashSession && actualCash !== expectedCash && clockOutEvidenceFiles.length === 0) {
+      setError("Tiền thực tế đang lệch hệ thống. Hãy tải lên ít nhất 1 ảnh bằng chứng trước khi tan ca.");
       return;
     }
 
@@ -739,10 +791,13 @@ export function AttendancePage() {
 
     try {
       if (requiresCashReconciliation && clockOutCashSession) {
+        const evidenceUrls = actualCash === expectedCash
+          ? []
+          : await Promise.all(clockOutEvidenceFiles.map(uploadAttendanceReconciliationImage));
         await closeCashDrawer(
           clockOutCashSession.id,
           actualCash,
-          normalizeNullableText(clockOutCashNote)
+          evidenceUrls
         );
       }
       let location: AttendanceLocationInput | null = null;
@@ -910,7 +965,7 @@ export function AttendancePage() {
     }
   }
 
-  async function saveCashCheck(actualCash: number, reason: string | null) {
+  async function saveCashCheck(actualCash: number, evidenceFiles: File[]) {
     if (!cashCheck || cashSaving) {
       return;
     }
@@ -918,20 +973,21 @@ export function AttendancePage() {
     setCashSaving(true);
     setCashCheckError("");
     try {
+      const evidenceUrls = await Promise.all(evidenceFiles.map(uploadAttendanceReconciliationImage));
       const savedCashCheck = await submitAttendanceCashCheck(
         cashCheck.attendance_record_id,
         actualCash,
-        reason
+        evidenceUrls
       );
       setCashCheck(savedCashCheck);
       setCashModalOpen(false);
       setCashMismatch(false);
       setCashActual("");
-      setCashReason("");
+      setCashEvidenceFiles([]);
       setSuccess(
         actualCash === Number(cashCheck.expected_cash)
           ? "Đã xác nhận tiền trong két khớp với hệ thống."
-          : "Đã ghi nhận số tiền thực tế và lý do chênh lệch."
+          : "Đã ghi nhận số tiền thực tế và ảnh bằng chứng chênh lệch."
       );
     } catch (requestError) {
       setCashCheckError(getErrorMessage(requestError, "Không lưu được đối soát tiền két."));
@@ -945,7 +1001,7 @@ export function AttendancePage() {
       return;
     }
 
-    void saveCashCheck(Number(cashCheck.expected_cash), null);
+    void saveCashCheck(Number(cashCheck.expected_cash), []);
   }
 
   function handleSubmitCashMismatch() {
@@ -964,12 +1020,12 @@ export function AttendancePage() {
       return;
     }
 
-    if (!cashReason.trim()) {
-      setCashCheckError("Nhập lý do khi số tiền trong két không khớp.");
+    if (cashEvidenceFiles.length === 0) {
+      setCashCheckError("Tải lên ít nhất 1 ảnh khi số tiền trong két không khớp.");
       return;
     }
 
-    void saveCashCheck(actualCash, normalizeNullableText(cashReason));
+    void saveCashCheck(actualCash, cashEvidenceFiles);
   }
 
   function toggleAllExportEmployees() {
@@ -1249,7 +1305,7 @@ export function AttendancePage() {
                         <dd className="mt-1 text-sm font-black tabular-nums text-coal">{formatCurrency(Number(cashCheck.actual_cash ?? 0))}</dd>
                       </div>
                     </dl>
-                    {cashCheck.reason ? <p className="border-t border-red-200 px-3 py-2.5 text-xs font-semibold leading-5 text-red-800">Lý do: {cashCheck.reason}</p> : null}
+                    {cashCheck.evidence_urls?.length ? <div className="border-t border-red-200 px-3 py-2.5"><EvidenceImages urls={cashCheck.evidence_urls} /></div> : null}
                   </section>
                 ) : null}
               </>
@@ -1628,7 +1684,7 @@ export function AttendancePage() {
               <div className="space-y-4">
                 <div className="flex gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  Nhập đúng số tiền đã đếm trong két và lý do chênh lệch.
+                  Nhập đúng số tiền đã đếm trong két và tải ảnh bằng chứng chênh lệch.
                 </div>
                 <Input
                   className="text-base font-extrabold tabular-nums"
@@ -1640,13 +1696,7 @@ export function AttendancePage() {
                   placeholder="Nhập số tiền thực tế"
                   value={formatIntegerInput(cashActual)}
                 />
-                <Textarea
-                  label="Lý do không khớp"
-                  onChange={(event) => setCashReason(event.target.value)}
-                  placeholder="Ví dụ: thiếu tiền lẻ bàn giao, chi phí chưa ghi nhận..."
-                  rows={3}
-                  value={cashReason}
-                />
+                <EvidenceImagePicker disabled={cashSaving} files={cashEvidenceFiles} onChange={setCashEvidenceFiles} />
               </div>
             ) : (
               <p className="text-center text-sm font-semibold leading-6 text-coal/60">
@@ -1939,7 +1989,7 @@ export function AttendancePage() {
                 </div>
               ) : null}
               {clockOutCashActual.trim() && Number(clockOutCashActual) !== Number(clockOutCashSession.expected_cash) ? (
-                <Textarea label="Lý do chênh lệch" onChange={(event) => setClockOutCashNote(event.target.value)} placeholder="Bắt buộc khi tiền thực tế không khớp hệ thống" value={clockOutCashNote} />
+                <EvidenceImagePicker disabled={submitting} files={clockOutEvidenceFiles} onChange={setClockOutEvidenceFiles} />
               ) : null}
             </section>
           ) : requiresCashReconciliation ? (

@@ -174,14 +174,14 @@ export async function fetchAttendanceCashCheck(attendanceRecordId: string) {
 export async function submitAttendanceCashCheck(
   attendanceRecordId: string,
   actualCash: number,
-  reason: string | null
+  evidenceUrls: string[]
 ) {
   requireSupabaseConfig();
 
   const { data, error } = await supabase.rpc("submit_attendance_cash_check", {
     actual_cash_input: Math.max(actualCash, 0),
     attendance_record_id_input: attendanceRecordId,
-    reason_input: reason,
+    evidence_urls_input: evidenceUrls,
   });
 
   if (error) {

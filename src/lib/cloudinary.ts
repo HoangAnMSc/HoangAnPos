@@ -4,8 +4,8 @@ import { requireSupabaseConfig, supabase } from "./supabase";
 const cloudName =
   import.meta.env.CLOUDINARY_CLOUD_NAME || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 export const productImageFolder = "hoang-an-pos/products";
-export const invoicePaymentProofFolder = "hoang-an-pos/invoices/payment-proofs";
-const legacyInvoicePaymentProofFolder = "hoang-an-pos/payment-proofs";
+export const invoicePaymentProofFolder = "hoang-an-pos/payment-proofs";
+export const attendanceReconciliationFolder = "hoang-an-pos/cash-reconciliation";
 export const isCloudinaryConfigured = Boolean(cloudName);
 
 export type CloudinaryImageScope = "invoices" | "payment-qr" | "products";
@@ -33,6 +33,7 @@ type CloudinaryDeleteResponse = {
 };
 
 type CloudinaryUploadSignature = {
+  assetFolder: string;
   apiKey: string;
   cloudName: string;
   folder: string;
@@ -62,23 +63,17 @@ export async function uploadProductImageAsset(file: File) {
 }
 
 export async function uploadPaymentProof(file: File) {
-  try {
-    const upload = await uploadImage(file, invoicePaymentProofFolder);
-    return upload.url;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-
-    if (!/upload folder is not allowed/i.test(message)) {
-      throw error;
-    }
-
-    const upload = await uploadImage(file, legacyInvoicePaymentProofFolder);
-    return upload.url;
-  }
+  const upload = await uploadImage(file, invoicePaymentProofFolder);
+  return upload.url;
 }
 
 export async function uploadPaymentQr(file: File) {
   const upload = await uploadImage(file, "hoang-an-pos/payment-qr");
+  return upload.url;
+}
+
+export async function uploadAttendanceReconciliationImage(file: File) {
+  const upload = await uploadImage(file, attendanceReconciliationFolder);
   return upload.url;
 }
 
@@ -279,7 +274,10 @@ async function uploadImage(file: File, folder: string): Promise<CloudinaryImageU
   const formData = new FormData();
   formData.append("file", file);
   formData.append("api_key", signatureData.apiKey);
-  formData.append("folder", signatureData.folder || folder);
+  formData.append("asset_folder", signatureData.assetFolder || signatureData.folder || folder);
+  formData.append("public_id_prefix", signatureData.assetFolder || signatureData.folder || folder);
+  formData.append("format", "webp");
+  formData.append("transformation", "q_20");
   formData.append("signature", signatureData.signature);
   formData.append("timestamp", signatureData.timestamp);
 
