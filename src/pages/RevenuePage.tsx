@@ -41,55 +41,6 @@ function shortDate(value: string) {
   }).format(new Date(value));
 }
 
-function SummaryCard({
-  featured = false,
-  icon: Icon,
-  label,
-  value,
-  tone = "moss",
-  wideMobile = false,
-}: {
-  featured?: boolean;
-  icon: typeof Banknote;
-  label: string;
-  value: string;
-  tone?: "moss" | "blue" | "amber" | "slate";
-  wideMobile?: boolean;
-}) {
-  const tones = {
-    amber: "bg-amber-50 text-amber-700",
-    blue: "bg-blue-50 text-blue-700",
-    moss: "bg-moss-50 text-moss-700",
-    slate: "bg-slate-100 text-slate-700",
-  };
-  return (
-    <div
-      className={`${featured || wideMobile ? "col-span-2 lg:col-span-1" : ""} min-w-0 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-soft sm:p-4`}
-    >
-      <div
-        className={`flex items-center ${featured || wideMobile ? "gap-2.5" : "gap-2 sm:gap-3"}`}
-      >
-        <span
-          className={`flex ${featured || wideMobile ? "h-9 w-9 sm:h-10 sm:w-10" : "h-8 w-8 sm:h-10 sm:w-10"} shrink-0 items-center justify-center rounded-lg sm:rounded-xl ${tones[tone]}`}
-        >
-          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[9px] font-extrabold uppercase leading-tight tracking-wide text-slate-500 sm:text-xs">
-            {label}
-          </p>
-          <p
-            className="mt-0.5 whitespace-nowrap text-sm font-black tracking-tight tabular-nums text-slate-950 sm:mt-1 sm:text-xl"
-            title={value}
-          >
-            {value}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function RevenuePage() {
   const { canAccess } = useAuth();
   const { setHeaderCashBalance } = useOutletContext<AdminOutletContext>();
@@ -278,9 +229,14 @@ export function RevenuePage() {
       <ConfigNotice />
       <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-soft sm:p-5">
         <div className="mb-2.5 flex items-center justify-between gap-3">
-          <h2 className="font-display text-base font-bold text-coal sm:text-xl">
-            Thời gian
-          </h2>
+          <div>
+            <h2 className="font-display text-base font-bold text-coal sm:text-xl">
+              Thời gian
+            </h2>
+            <p className="text-[11px] font-semibold text-slate-500">
+              {periodLabel}
+            </p>
+          </div>
           {canExport ? (
             <Button
               className="!min-h-9 !px-2.5 !py-1.5"
@@ -292,31 +248,41 @@ export function RevenuePage() {
             </Button>
           ) : null}
         </div>
-        <div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <label className="text-[11px] font-bold text-slate-500">
-              Kỳ xem
-              <select
-              className="mt-0.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-2.5 text-sm font-bold text-slate-800"
-                onChange={(e) =>
-                  setQuickPeriod(e.target.value as typeof quickPeriod)
+        <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
+          {(
+            [
+              ["today", "Hôm nay"],
+              ["first-half", "6T đầu"],
+              ["second-half", "6T cuối"],
+              ["", "Tùy chọn"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              className={`min-h-9 rounded-lg px-1.5 text-[11px] font-extrabold transition sm:text-xs ${quickPeriod === value ? "bg-white text-coal shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-800"}`}
+              key={label}
+              onClick={() => {
+                setQuickPeriod(value);
+                if (value) {
+                  setSelectedMonth("");
+                  setSelectedDay("");
                 }
-                value={quickPeriod}
-              >
-                <option value="">Theo ngày tháng</option>
-                <option value="today">Hôm nay</option>
-                <option value="first-half">6 tháng đầu năm</option>
-                <option value="second-half">6 tháng cuối năm</option>
-              </select>
-            </label>
-          <label className="text-[11px] font-bold text-slate-500">
+              }}
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {quickPeriod !== "today" ? (
+          <div
+            className={`mt-2 grid gap-2 ${quickPeriod ? "grid-cols-1" : "grid-cols-3"}`}
+          >
+            <label className="text-[10px] font-bold text-slate-500">
               Năm
               <select
-              className="mt-0.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-2.5 text-sm font-bold text-slate-800"
-                disabled={quickPeriod === "today"}
+                className="mt-0.5 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-800"
                 onChange={(e) => {
                   setSelectedYear(e.target.value);
-                  setQuickPeriod("");
                 }}
                 value={selectedYear}
               >
@@ -327,45 +293,48 @@ export function RevenuePage() {
                 ))}
               </select>
             </label>
-          <label className="text-[11px] font-bold text-slate-500">
-              Tháng
-              <select
-              className="mt-0.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-2.5 text-sm font-bold text-slate-800 disabled:bg-slate-100"
-                disabled={Boolean(quickPeriod)}
-                onChange={(e) => {
-                  setSelectedMonth(e.target.value);
-                  setSelectedDay("");
-                }}
-                value={selectedMonth}
-              >
-                <option value="">Tháng</option>
-                {Array.from({ length: 12 }, (_, index) => index + 1).map(
-                  (month) => (
-                    <option key={month} value={month}>
-                      {month}
+            {!quickPeriod ? (
+              <label className="text-[10px] font-bold text-slate-500">
+                Tháng
+                <select
+                  className="mt-0.5 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-800"
+                  onChange={(e) => {
+                    setSelectedMonth(e.target.value);
+                    setSelectedDay("");
+                  }}
+                  value={selectedMonth}
+                >
+                  <option value="">Tháng</option>
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map(
+                    (month) => (
+                      <option key={month} value={month}>
+                        {month}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+            ) : null}
+            {!quickPeriod ? (
+              <label className="text-[10px] font-bold text-slate-500">
+                Ngày
+                <select
+                  className="mt-0.5 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold text-slate-800 disabled:bg-slate-100"
+                  disabled={!selectedMonth}
+                  onChange={(e) => setSelectedDay(e.target.value)}
+                  value={selectedDay}
+                >
+                  <option value="">Ngày</option>
+                  {availableDays.map((day) => (
+                    <option key={day} value={day}>
+                      {day}
                     </option>
-                  ),
-                )}
-              </select>
-            </label>
-          <label className="text-[11px] font-bold text-slate-500">
-              Ngày
-              <select
-              className="mt-0.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-2.5 text-sm font-bold text-slate-800 disabled:bg-slate-100"
-                disabled={Boolean(quickPeriod) || !selectedMonth}
-                onChange={(e) => setSelectedDay(e.target.value)}
-                value={selectedDay}
-              >
-                <option value="">Ngày</option>
-                {availableDays.map((day) => (
-                  <option key={day} value={day}>
-                    {day}
-                  </option>
-                ))}
-              </select>
-            </label>
+                  ))}
+                </select>
+              </label>
+            ) : null}
           </div>
-        </div>
+        ) : null}
       </section>
 
       {canAccess("cash-management") ? (
@@ -381,32 +350,45 @@ export function RevenuePage() {
         </div>
       ) : (
         <>
-        <section className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            <SummaryCard
-              featured
-              icon={TrendingUp}
-              label="Tổng doanh thu"
-              value={formatCurrency(totals.revenue)}
-            />
-            <SummaryCard
-              icon={Banknote}
-              label="Tiền mặt"
-              value={formatCurrency(totals.cash)}
-              tone="moss"
-            />
-            <SummaryCard
-              icon={Landmark}
-              label="Chuyển khoản"
-              value={formatCurrency(totals.transfer)}
-              tone="blue"
-            />
-            <SummaryCard
-              wideMobile
-              icon={ReceiptText}
-              label="Giao dịch"
-              value={`${filteredOrders.length} hóa đơn`}
-              tone="slate"
-            />
+          <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-4 text-white shadow-lift sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
+                  <TrendingUp className="h-5 w-5 text-emerald-300" />
+                </span>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-300">
+                    Tổng doanh thu
+                  </p>
+                  <p className="mt-0.5 text-2xl font-black tracking-tight tabular-nums sm:text-3xl">
+                    {formatCurrency(totals.revenue)}
+                  </p>
+                </div>
+              </div>
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-200 ring-1 ring-white/10">
+                <ReceiptText className="h-3.5 w-3.5" /> {filteredOrders.length}
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-white/10 p-3 ring-1 ring-white/10">
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-200">
+                  <Banknote className="h-3.5 w-3.5" />
+                  Tiền mặt
+                </p>
+                <p className="mt-1 whitespace-nowrap text-sm font-black tabular-nums sm:text-lg">
+                  {formatCurrency(totals.cash)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-white/10 p-3 ring-1 ring-white/10">
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-sky-200">
+                  <Landmark className="h-3.5 w-3.5" />
+                  Chuyển khoản
+                </p>
+                <p className="mt-1 whitespace-nowrap text-sm font-black tabular-nums sm:text-lg">
+                  {formatCurrency(totals.transfer)}
+                </p>
+              </div>
+            </div>
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
