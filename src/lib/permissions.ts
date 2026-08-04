@@ -10,7 +10,6 @@ import {
   Warehouse,
   UsersRound,
   UserCog,
-  WalletCards,
 } from "lucide-react";
 
 type PermissionAction = {
@@ -77,22 +76,18 @@ export const permissionGroups = [
     label: "Doanh thu",
     path: "/revenue",
     icon: ChartNoAxesCombined,
-    description: "Theo dõi doanh thu và lập sổ S1a-HKD từ hóa đơn bán hàng.",
+    description: "Theo dõi doanh thu, quỹ và lịch sử đối soát nhân viên.",
     actions: [
       {
         key: "revenue.export",
         label: "In / xuất sổ doanh thu",
         description: "In hoặc xuất dữ liệu sổ doanh thu S1a-HKD.",
       },
-    ],
-  },
-  {
-    key: "cash-management",
-    label: "Quỹ & đối soát",
-    path: "/cash-management",
-    icon: WalletCards,
-    description: "Mở ca, chốt két và đối chiếu tiền mặt với doanh thu của từng nhân viên.",
-    actions: [
+      {
+        key: "cash-management",
+        label: "Truy cập quỹ và đối soát",
+        description: "Cho phép dùng dữ liệu két và các chức năng đối soát trong trang Doanh thu.",
+      },
       {
         key: "cash-management.session.open",
         label: "Mở ca bán hàng",
@@ -122,6 +117,11 @@ export const permissionGroups = [
         key: "cash-management.view-all",
         label: "Xem đối soát toàn bộ nhân viên",
         description: "Mở rộng lịch sử và dữ liệu đối soát sang toàn bộ nhân viên.",
+      },
+      {
+        key: "cash-management.balance.adjust",
+        label: "Điều chỉnh tiền mặt",
+        description: "Cho phép quản lý sửa riêng tiền mặt thực tế; không thay đổi doanh thu hoặc chuyển khoản từ hóa đơn.",
       },
       {
         key: "cash-management.reconciliation.update",

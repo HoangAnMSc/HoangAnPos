@@ -14,11 +14,6 @@ const CloudinaryImagesPage = lazy(() =>
     default: module.CloudinaryImagesPage,
   }))
 );
-const CashManagementPage = lazy(() =>
-  import("./pages/CashManagementPage").then((module) => ({
-    default: module.CashManagementPage,
-  }))
-);
 const CustomersPage = lazy(() =>
   import("./pages/CustomersPage").then((module) => ({ default: module.CustomersPage }))
 );
@@ -83,7 +78,7 @@ export function App() {
             <Route path="pos" element={<PosPage />} />
             <Route path="orders" element={<OrdersPage />} />
             <Route path="revenue" element={<RevenuePage />} />
-            <Route path="cash-management" element={<CashManagementPage />} />
+            <Route path="cash-management" element={<Navigate replace to="/revenue" />} />
             <Route path="customers" element={<CustomersPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="cloudinary-images" element={<CloudinaryImagesPage />} />

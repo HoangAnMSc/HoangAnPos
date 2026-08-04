@@ -124,7 +124,7 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
   const [editFiles, setEditFiles] = useState<File[]>([]);
   const [editError, setEditError] = useState("");
   const [saving, setSaving] = useState(false);
-  const canViewHistory = canAccess("cash-management.history.view");
+  const canViewHistory = canAccess("cash-management.history.view") || canAccess("cash-management.reconciliation.update") || canAccess("cash-management.reconciliation.delete");
   const canViewAll = canAccess("cash-management.view-all");
   const canUpdate = canAccess("cash-management.reconciliation.update");
   const canDelete = canAccess("cash-management.reconciliation.delete");
@@ -144,7 +144,8 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
       return;
     }
     const mismatch = actualCash !== Number(editingCheck.expected_cash);
-    const totalImages = editingCheck.evidence_urls.length + editFiles.length;
+    const existingImages = editingCheck.evidence_urls ?? [];
+    const totalImages = existingImages.length + editFiles.length;
     if (mismatch && (totalImages < 1 || totalImages > 5)) {
       setEditError("Khi tiền lệch cần có từ 1 đến 5 ảnh bằng chứng.");
       return;
@@ -157,7 +158,7 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
       await updateCashReconciliation(
         editingCheck.id,
         actualCash,
-        mismatch ? [...editingCheck.evidence_urls, ...uploadedUrls] : []
+        mismatch ? [...existingImages, ...uploadedUrls] : []
       );
       setEditingCheck(null);
       await loadHistory();
@@ -199,7 +200,10 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
   }, [canViewHistory]);
 
   useEffect(() => {
-    if (open && canViewHistory) void loadHistory();
+    if (!open || !canViewHistory) return;
+    void loadHistory();
+    const interval = window.setInterval(() => void loadHistory(), 10_000);
+    return () => window.clearInterval(interval);
   }, [canViewHistory, loadHistory, open]);
 
   const sessionById = useMemo(
@@ -300,7 +304,7 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
               const session = check.cash_session_id ? sessionById.get(check.cash_session_id) : undefined;
               const variance = getVariance(check);
               const status = getStatus(check, session);
-              const imageCount = check.evidence_urls.length + (session?.close_evidence_urls.length ?? 0);
+              const imageCount = (check.evidence_urls?.length ?? 0) + (session?.close_evidence_urls?.length ?? 0);
 
               return (
                 <article className="overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-slate-300 hover:bg-slate-50" key={check.id}>
@@ -384,10 +388,10 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs font-bold text-slate-600">
                   <span>Ảnh bằng chứng</span>
-                  <span>{editingCheck.evidence_urls.length + editFiles.length}/5 ảnh</span>
+                  <span>{(editingCheck.evidence_urls?.length ?? 0) + editFiles.length}/5 ảnh</span>
                 </div>
                 <EvidenceGallery label="Ảnh hiện có" urls={editingCheck.evidence_urls} />
-                {editingCheck.evidence_urls.length + editFiles.length < 5 ? (
+                {(editingCheck.evidence_urls?.length ?? 0) + editFiles.length < 5 ? (
                   <label className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-extrabold text-slate-700 hover:bg-slate-50">
                     Thêm ảnh
                     <input
@@ -396,7 +400,7 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
                       disabled={saving}
                       multiple
                       onChange={(event) => {
-                        const remaining = 5 - editingCheck.evidence_urls.length;
+                        const remaining = 5 - (editingCheck.evidence_urls?.length ?? 0);
                         setEditFiles(Array.from(event.target.files ?? []).slice(0, remaining));
                         event.target.value = "";
                       }}

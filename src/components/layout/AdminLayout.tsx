@@ -1,12 +1,18 @@
-import { Bell, Image as ImageIcon, LogOut, Menu, PanelLeftClose, UserRound } from "lucide-react";
+import { Banknote, Bell, Image as ImageIcon, LogOut, Menu, PanelLeftClose, UserRound } from "lucide-react";
 import { useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { appPermissions } from "../../lib/permissions";
+import { formatCurrency } from "../../lib/format";
 import { Button } from "../ui/Button";
+
+export type AdminOutletContext = {
+  setHeaderCashBalance: (value: number | null) => void;
+};
 
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [headerCashBalance, setHeaderCashBalance] = useState<number | null>(null);
   const { canAccess, profile, role, signOut, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -16,11 +22,12 @@ export function AdminLayout() {
   const visibleNavigation = appPermissions.filter((item) => canAccess(item.key));
   const currentPermission = appPermissions.find((item) => item.path === location.pathname);
   const isWarehouseRoute = location.pathname === "/warehouse";
-  const isCashManagementRoute = location.pathname === "/cash-management";
+  const isStatisticsRoute = location.pathname === "/revenue";
   const isOrdersRoute = location.pathname === "/orders";
   const canOpenPageHistory =
     isWarehouseRoute ||
-    (isCashManagementRoute && canAccess("cash-management.history.view"));
+    (isStatisticsRoute && (canAccess("cash-management.history.view") || canAccess("cash-management.reconciliation.update") || canAccess("cash-management.reconciliation.delete")));
+  const canAdjustCash = isStatisticsRoute && canAccess("cash-management.balance.adjust");
   const pageHistoryOpen =
     canOpenPageHistory && new URLSearchParams(location.search).get("history") === "1";
   const transferImagesOpen =
@@ -41,6 +48,12 @@ export function AdminLayout() {
   function openTransferImages() {
     const nextParams = new URLSearchParams(location.search);
     nextParams.set("transfer-images", "1");
+    void navigate(`${location.pathname}?${nextParams.toString()}`);
+  }
+
+  function openCashAdjustment() {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.set("adjust", "1");
     void navigate(`${location.pathname}?${nextParams.toString()}`);
   }
 
@@ -133,13 +146,13 @@ export function AdminLayout() {
               <Menu className="h-6 w-6" />
             </button>
             <main className="min-h-screen bg-[#f7f8f5] text-coal">
-              <Outlet />
+              <Outlet context={{ setHeaderCashBalance }} />
             </main>
           </>
         ) : (
           <>
-            <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
-              <div className="flex items-center gap-4">
+            <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3 lg:px-8">
+              <div className="flex items-center gap-2 sm:gap-4">
                 <button
                   className="rounded-xl bg-white p-3 text-coal shadow-soft ring-1 ring-slate-200 lg:hidden"
                   onClick={() => setSidebarOpen(true)}
@@ -148,7 +161,7 @@ export function AdminLayout() {
                   <Menu className="h-6 w-6" />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <h2 className="font-display text-xl font-bold sm:text-2xl">{page.label}</h2>
+                  <h2 className="truncate font-display text-xl font-bold sm:text-2xl">{page.label}</h2>
                   <p className="mt-0.5 hidden truncate text-sm text-coal/55 sm:block">
                     {page.description}
                   </p>
@@ -171,12 +184,30 @@ export function AdminLayout() {
                     <span className="hidden text-sm font-extrabold sm:inline">Ảnh CK</span>
                   </button>
                 ) : null}
+                {isStatisticsRoute ? (
+                  <button
+                    aria-haspopup={canAdjustCash ? "dialog" : undefined}
+                    aria-label={canAdjustCash ? "Điều chỉnh tiền két" : "Tiền két hiện tại"}
+                    className={`ml-auto flex h-11 min-w-0 max-w-[145px] flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-50 px-2.5 text-emerald-900 ring-1 ring-emerald-200 sm:max-w-none sm:flex-none sm:justify-start sm:px-3 ${canAdjustCash ? "cursor-pointer transition hover:bg-emerald-100 active:scale-[0.98]" : "cursor-default"}`}
+                    onClick={canAdjustCash ? openCashAdjustment : undefined}
+                    title={headerCashBalance == null ? "Đang tải tiền két" : `Tiền két: ${formatCurrency(headerCashBalance)}`}
+                    type="button"
+                  >
+                    <Banknote className="h-5 w-5 shrink-0 text-emerald-700" />
+                    <div className="min-w-0 leading-tight">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">Tiền két</p>
+                      <p className="truncate text-xs font-black tabular-nums sm:text-sm">
+                        {headerCashBalance == null ? "Đang tải…" : formatCurrency(headerCashBalance)}
+                      </p>
+                    </div>
+                  </button>
+                ) : null}
                 {canOpenPageHistory ? (
                   <button
                     aria-expanded={pageHistoryOpen}
                     aria-haspopup="dialog"
                     aria-label={historyLabel}
-                    className={`relative ml-auto flex h-11 w-11 flex-none items-center justify-center rounded-xl ring-1 transition ${
+                    className={`relative ${canAdjustCash ? "" : "ml-auto"} flex h-11 w-11 flex-none items-center justify-center rounded-xl ring-1 transition ${
                       pageHistoryOpen
                         ? "bg-coal text-white ring-coal"
                         : "bg-white text-coal shadow-soft ring-slate-200 hover:bg-slate-50"
@@ -192,7 +223,7 @@ export function AdminLayout() {
             </header>
 
             <main className="pt-5 sm:pt-6">
-              <Outlet />
+              <Outlet context={{ setHeaderCashBalance }} />
             </main>
           </>
         )}

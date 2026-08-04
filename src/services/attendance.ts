@@ -4,6 +4,10 @@ import type { Database } from "../types/database";
 
 export type AttendanceCashCheck = Database["public"]["Tables"]["cash_drawer_checks"]["Row"];
 
+function normalizeAttendanceCashCheck(check: AttendanceCashCheck | null) {
+  return check ? { ...check, evidence_urls: check.evidence_urls ?? [] } : null;
+}
+
 export type AttendanceHistoryRecord = AttendanceRecord & {
   employee_name: string;
 };
@@ -44,6 +48,14 @@ function createAttendanceError(error: SupabaseErrorLike) {
 
   if (/close cash drawer before clocking out/i.test(message)) {
     return new Error("Hãy chốt phiên két của bạn trước khi tan làm.");
+  }
+
+  if (/previous cash drawer session must be closed before reconciliation/i.test(message)) {
+    return new Error("Két đang thuộc ca của nhân viên khác. Hãy chốt ca và bàn giao két trước khi nhân viên mới đối soát.");
+  }
+
+  if (/cash drawer is already open/i.test(message)) {
+    return new Error("Két đã có ca đang mở. Hãy tải lại trang; nếu là ca của người khác, cần chốt bàn giao trước.");
   }
 
   if (
@@ -158,17 +170,20 @@ export async function fetchAllAttendanceRecords(monthKey: string) {
 export async function fetchAttendanceCashCheck(attendanceRecordId: string) {
   requireSupabaseConfig();
 
-  const { data, error } = await supabase
-    .from("cash_drawer_checks")
-    .select("*")
-    .eq("attendance_record_id", attendanceRecordId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("get_attendance_cash_check", {
+    attendance_record_id_input: attendanceRecordId,
+  });
 
   if (error) {
+    if (/schema cache|could not find the function|get_attendance_cash_check/i.test(error.message)) {
+      const fallback = await supabase.from("cash_drawer_checks").select("*").eq("attendance_record_id", attendanceRecordId).limit(1).maybeSingle();
+      if (fallback.error) throw fallback.error;
+      return normalizeAttendanceCashCheck(fallback.data as AttendanceCashCheck | null);
+    }
     throw error;
   }
 
-  return data as AttendanceCashCheck | null;
+  return normalizeAttendanceCashCheck(data as AttendanceCashCheck | null);
 }
 
 export async function submitAttendanceCashCheck(
@@ -188,7 +203,7 @@ export async function submitAttendanceCashCheck(
     throw createAttendanceError(error);
   }
 
-  return data as AttendanceCashCheck;
+  return normalizeAttendanceCashCheck(data as AttendanceCashCheck) as AttendanceCashCheck;
 }
 
 export async function fetchAttendanceEmployees(): Promise<AttendanceEmployee[]> {

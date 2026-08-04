@@ -99,6 +99,9 @@ export async function createSale({
     throw new Error("Supabase không trả về hóa đơn sau khi thanh toán.");
   }
 
+  window.dispatchEvent(new Event("pos-financial-sync"));
+  try { window.localStorage.setItem("pos-financial-sync", String(Date.now())); } catch { /* Storage may be unavailable in private mode. */ }
+
   return result.data;
 }
 

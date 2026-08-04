@@ -1392,6 +1392,7 @@ export function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [expiryFilter, setExpiryFilter] = useState<"all" | "soon" | "expired">("all");
   const [receiveModalOpen, setReceiveModalOpen] = useState(false);
   const [receivingProduct, setReceivingProduct] = useState<Product | null>(null);
   const [savedCategories, setSavedCategories] = useState<string[]>([]);
@@ -1642,11 +1643,7 @@ export function ProductsPage() {
   }
 
   const normalizedQuery = query.trim().toLowerCase();
-  const filteredProducts = products.filter((product) =>
-    [product.name, product.sku, product.category, getProductEan13Value(product)]
-      .filter(Boolean)
-      .some((value) => value!.toLowerCase().includes(normalizedQuery))
-  );
+  const filteredProducts = products.filter((product) => [product.name, product.sku, product.category, getProductEan13Value(product)].filter(Boolean).some((value) => value!.toLowerCase().includes(normalizedQuery)) && (expiryFilter === "all" || getProductExpiryStatus(product) === expiryFilter));
   const libraryImages = Array.from(
     new Set([
       ...cloudinaryLibraryImages,
@@ -1705,9 +1702,9 @@ export function ProductsPage() {
       <ConfigNotice />
 
       <section className="mb-2 flex items-center gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-soft sm:mb-3 sm:p-3">
-        <div className="flex shrink-0 items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600"><strong className="text-base font-black text-slate-950">{products.length}</strong>Mặt hàng</div>
-        <div className="flex shrink-0 items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700"><strong className="text-base font-black text-amber-900">{expiringSoonCount}</strong>Gần hết hạn</div>
-        <div className="flex shrink-0 items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700"><strong className="text-base font-black text-red-900">{expiredCount}</strong>Hết hạn</div>
+        <button className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${expiryFilter === "all" ? "bg-slate-900 text-white ring-2 ring-slate-300" : "bg-slate-100 text-slate-600"}`} onClick={() => setExpiryFilter("all")} type="button"><strong className="text-base font-black">{products.length}</strong>Mặt hàng</button>
+        <button className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-amber-700 ${expiryFilter === "soon" ? "bg-amber-100 ring-2 ring-amber-400" : "bg-amber-50"}`} onClick={() => setExpiryFilter((value) => value === "soon" ? "all" : "soon")} type="button"><strong className="text-base font-black text-amber-900">{expiringSoonCount}</strong>Gần hết hạn</button>
+        <button className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-red-700 ${expiryFilter === "expired" ? "bg-red-100 ring-2 ring-red-400" : "bg-red-50"}`} onClick={() => setExpiryFilter((value) => value === "expired" ? "all" : "expired")} type="button"><strong className="text-base font-black text-red-900">{expiredCount}</strong>Hết hạn</button>
         {hiddenCount > 0 ? <div className="flex shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white"><strong className="text-base font-black">{hiddenCount}</strong>Đang ẩn</div> : null}
       </section>
 

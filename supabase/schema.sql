@@ -47,6 +47,7 @@ values
       'cash-management.handover.override',
       'cash-management.history.view',
       'cash-management.view-all',
+      'cash-management.balance.adjust',
       'cash-management.reconciliation.update',
       'cash-management.reconciliation.delete',
       'customers',
@@ -136,6 +137,11 @@ set
   is_active = true;
 
 -- Existing custom cashier roles also need to open and close their own drawer.
+update public.app_roles
+set permissions = array_append(permissions, 'revenue')
+where 'cash-management' = any(permissions)
+  and not ('revenue' = any(permissions));
+
 update public.app_roles
 set permissions = (
   select array(
@@ -412,6 +418,9 @@ create table if not exists public.cash_drawer_sessions (
     (status = 'closed' and closed_at is not null and counted_cash is not null and variance is not null)
   )
 );
+
+alter table public.cash_drawer_sessions add column if not exists cash_adjustment numeric(12, 2) not null default 0;
+alter table public.cash_drawer_sessions drop column if exists transfer_adjustment;
 
 alter table public.orders
 add column if not exists cash_session_id uuid references public.cash_drawer_sessions(id) on delete restrict;
@@ -1091,13 +1100,9 @@ begin
     limit 1;
 
     if found then
-      expected_cash_value := drawer_session.opening_cash + coalesce((
-        select sum(pos_order.total)
-        from public.orders pos_order
-        where pos_order.cash_session_id = drawer_session.id
-          and pos_order.status = 'paid'
-          and pos_order.payment_method = 'cash'
-      ), 0);
+      -- Keep attendance reconciliation identical to the drawer balance shown
+      -- in the Revenue header (opening cash + cash invoices + adjustments).
+      expected_cash_value := public.current_cash_drawer_balance();
     else
       select *
       into drawer_session
@@ -1106,11 +1111,7 @@ begin
       order by closed_at desc, id desc
       limit 1;
 
-      if found then
-        expected_cash_value := coalesce(drawer_session.counted_cash, 0);
-      else
-        expected_cash_value := 0;
-      end if;
+      expected_cash_value := public.current_cash_drawer_balance();
     end if;
 
     select coalesce(nullif(btrim(profile.full_name), ''), 'Nhân viên ' || left(profile.id::text, 8))
@@ -1136,6 +1137,51 @@ begin
   end if;
 
   return attendance_record;
+end;
+$$;
+
+create or replace function public.get_attendance_cash_check(attendance_record_id_input uuid)
+returns public.cash_drawer_checks
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  check_record public.cash_drawer_checks;
+begin
+  select cash_check.*
+  into check_record
+  from public.cash_drawer_checks cash_check
+  join public.attendance_records attendance on attendance.id = cash_check.attendance_record_id
+  where cash_check.attendance_record_id = attendance_record_id_input
+    and (
+      attendance.user_id = auth.uid()
+      or public.has_permission('attendance.history.view-all')
+      or public.has_permission('cash-management.view-all')
+    )
+  limit 1;
+
+  if not found then
+    return null;
+  end if;
+
+  -- Pending checks always show the same live drawer amount as the Revenue
+  -- header. Completed historical checks remain immutable.
+  if check_record.checked_at is null then
+    update public.cash_drawer_checks
+    set expected_cash = public.current_cash_drawer_balance(),
+        cash_session_id = (
+          select session.id
+          from public.cash_drawer_sessions session
+          where session.status = 'open'
+          order by session.opened_at desc, session.id desc
+          limit 1
+        )
+    where id = check_record.id
+    returning * into check_record;
+  end if;
+
+  return check_record;
 end;
 $$;
 
@@ -1176,6 +1222,14 @@ begin
     raise exception 'Cash drawer check is not available';
   end if;
 
+  if check_record.checked_at is not null then
+    return check_record;
+  end if;
+
+  -- Recheck at submit time so an invoice created after opening the modal is
+  -- included in both the displayed drawer and the reconciliation.
+  check_record.expected_cash := public.current_cash_drawer_balance();
+
   if actual_cash_input <> check_record.expected_cash
     and cardinality(coalesce(evidence_urls_input, '{}')) not between 1 and 5 then
     raise exception 'Between 1 and 5 evidence images are required when cash does not match';
@@ -1183,14 +1237,32 @@ begin
 
   select *
   into opened_session
-  from public.open_cash_drawer(actual_cash_input, evidence_urls_input);
+  from public.cash_drawer_sessions
+  where status = 'open'
+    and public.requires_cash_reconciliation(cashier_id)
+  order by opened_at desc, id desc
+  limit 1
+  for update;
+
+  if found then
+    if opened_session.cashier_id <> auth.uid() then
+      raise exception 'Previous cash drawer session must be closed before reconciliation';
+    end if;
+    -- Retrying the confirmation for the employee's own open drawer is safe;
+    -- do not attempt to create a second session.
+  else
+    select *
+    into opened_session
+    from public.open_cash_drawer(actual_cash_input, evidence_urls_input);
+  end if;
 
   update public.cash_drawer_checks
   set
     cash_session_id = opened_session.id,
+    expected_cash = check_record.expected_cash,
     actual_cash = actual_cash_input,
-    is_match = (actual_cash_input = expected_cash),
-    evidence_urls = case when actual_cash_input = expected_cash then '{}' else coalesce(evidence_urls_input, '{}') end,
+    is_match = (actual_cash_input = check_record.expected_cash),
+    evidence_urls = case when actual_cash_input = check_record.expected_cash then '{}' else coalesce(evidence_urls_input, '{}') end,
     checked_at = now()
   where id = check_record.id
   returning * into check_record;
@@ -1287,6 +1359,124 @@ begin
   end if;
 
   delete from public.cash_drawer_checks where id = check_record.id;
+end;
+$$;
+
+drop function if exists public.override_cash_fund_totals(numeric, numeric);
+
+-- One source of truth for the physical cash currently in the drawer.
+-- Cash orders created while no drawer session is open have no cash_session_id,
+-- so they must be added after the latest closed handover.
+create or replace function public.current_cash_drawer_balance()
+returns numeric
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with latest_open as (
+    select session.*
+    from public.cash_drawer_sessions session
+    where session.status = 'open'
+    order by session.opened_at desc, session.id desc
+    limit 1
+  ),
+  latest_closed as (
+    select session.*
+    from public.cash_drawer_sessions session
+    where session.status = 'closed'
+    order by session.closed_at desc, session.id desc
+    limit 1
+  )
+  select coalesce(
+    (
+      select opened.opening_cash
+        + opened.cash_adjustment
+        + coalesce((
+          select sum(pos_order.total)
+          from public.orders pos_order
+          where pos_order.cash_session_id = opened.id
+            and pos_order.status = 'paid'
+            and pos_order.payment_method = 'cash'
+        ), 0)
+      from latest_open opened
+    ),
+    (
+      select coalesce(closed.counted_cash, closed.expected_cash, 0)
+        + closed.cash_adjustment
+        + coalesce((
+          select sum(pos_order.total)
+          from public.orders pos_order
+          where pos_order.cash_session_id is null
+            and pos_order.status = 'paid'
+            and pos_order.payment_method = 'cash'
+            and pos_order.created_at > closed.closed_at
+        ), 0)
+      from latest_closed closed
+    ),
+    (
+      select coalesce(sum(pos_order.total), 0)
+      from public.orders pos_order
+      where pos_order.cash_session_id is null
+        and pos_order.status = 'paid'
+        and pos_order.payment_method = 'cash'
+    ),
+    0
+  )::numeric;
+$$;
+
+create or replace function public.adjust_cash_drawer_balance(cash_amount_input numeric)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_session_id uuid;
+  base_cash numeric := 0;
+begin
+  if auth.uid() is null or not (
+    public.has_permission('cash-management.balance.adjust')
+    or public.has_permission('cash-management.view-all')
+    or public.is_admin(auth.uid())
+  ) then
+    raise exception 'Permission denied';
+  end if;
+  if cash_amount_input < 0 then
+    raise exception 'Cash balance cannot be negative';
+  end if;
+
+  if exists (
+    select 1 from public.cash_drawer_sessions
+    where status = 'open' and public.requires_cash_reconciliation(cashier_id)
+  ) then
+    raise exception 'Close the open cash drawer before adjusting fund totals';
+  end if;
+
+  select id into target_session_id
+  from public.cash_drawer_sessions
+  where status = 'closed' or (status = 'open' and not public.requires_cash_reconciliation(cashier_id))
+  order by (status = 'open') desc, closed_at desc, opened_at desc, id desc
+  limit 1;
+
+  if target_session_id is null then
+    if cash_amount_input = 0 then
+      return;
+    end if;
+    raise exception 'No cash drawer session is available to adjust';
+  end if;
+
+  update public.cash_drawer_sessions
+  set cash_adjustment = 0
+  where id is not null;
+
+  -- Recalculate after clearing old adjustments. This keeps a manual amount
+  -- stable while future cash invoices continue increasing the drawer.
+  base_cash := public.current_cash_drawer_balance();
+
+  update public.cash_drawer_sessions
+  set cash_adjustment = cash_amount_input - base_cash
+  where id = target_session_id;
 end;
 $$;
 
@@ -1783,8 +1973,8 @@ begin
     case when session.status = 'closed' then session.cash_sales else sales.cash_sales end,
     case when session.status = 'closed' then session.transfer_sales else sales.transfer_sales end,
     case
-      when session.status = 'closed' then session.expected_cash
-      else session.opening_cash + sales.cash_sales
+      when session.status = 'closed' then session.expected_cash + session.cash_adjustment
+      else session.opening_cash + sales.cash_sales + session.cash_adjustment
     end,
     session.counted_cash,
     session.variance,
@@ -1832,13 +2022,7 @@ begin
 
   return query
   select
-    coalesce((
-      select closed_session.counted_cash
-      from public.cash_drawer_sessions closed_session
-      where closed_session.status = 'closed'
-      order by closed_session.closed_at desc, closed_session.id desc
-      limit 1
-    ), 0)::numeric as expected_opening_cash,
+    public.current_cash_drawer_balance()::numeric as expected_opening_cash,
     exists (
       select 1
       from public.cash_drawer_sessions open_session
@@ -1956,18 +2140,46 @@ begin
     select 1
     from public.cash_drawer_sessions
     where status = 'open'
+      and public.requires_cash_reconciliation(cashier_id)
   ) then
     raise exception 'Cash drawer is already open';
   end if;
 
-  select closed_session.counted_cash
-  into expected_opening_cash_value
-  from public.cash_drawer_sessions closed_session
-  where closed_session.status = 'closed'
-  order by closed_session.closed_at desc, closed_session.id desc
-  limit 1;
+  -- Older versions could create an open drawer for Admin/supporting roles.
+  -- Such roles are not drawer owners and must not block a reconciling staff
+  -- member. Close that legacy session at its current physical balance before
+  -- handing the drawer to the staff member.
+  update public.cash_drawer_sessions legacy_session
+  set
+    cash_sales = coalesce((
+      select sum(pos_order.total)
+      from public.orders pos_order
+      where pos_order.cash_session_id = legacy_session.id
+        and pos_order.status = 'paid'
+        and pos_order.payment_method = 'cash'
+    ), 0),
+    transfer_sales = coalesce((
+      select sum(pos_order.total)
+      from public.orders pos_order
+      where pos_order.cash_session_id = legacy_session.id
+        and pos_order.status = 'paid'
+        and pos_order.payment_method = 'transfer'
+    ), 0),
+    expected_cash = public.current_cash_drawer_balance(),
+    counted_cash = public.current_cash_drawer_balance(),
+    variance = 0,
+    cash_adjustment = 0,
+    status = 'closed',
+    closed_at = now(),
+    closed_by = auth.uid(),
+    close_evidence_urls = '{}'
+  where legacy_session.status = 'open'
+    and not public.requires_cash_reconciliation(legacy_session.cashier_id);
 
-  is_first_session_value := expected_opening_cash_value is null;
+  is_first_session_value := not exists (
+    select 1 from public.cash_drawer_sessions
+  );
+  expected_opening_cash_value := public.current_cash_drawer_balance();
 
   if is_first_session_value then
     if not public.has_permission('cash-management.handover.override') then
@@ -2078,7 +2290,7 @@ begin
   where cash_session_id = session_record.id;
 
   expected_cash_value := session_record.opening_cash + cash_sales_value;
-  variance_value := counted_cash_input - expected_cash_value;
+  variance_value := counted_cash_input - (expected_cash_value + session_record.cash_adjustment);
 
   if variance_value <> 0 and cardinality(coalesce(evidence_urls_input, '{}')) not between 1 and 5 then
     raise exception 'Between 1 and 5 evidence images are required when cash has a variance';
@@ -2088,7 +2300,8 @@ begin
   set
     cash_sales = cash_sales_value,
     transfer_sales = transfer_sales_value,
-    expected_cash = expected_cash_value,
+    expected_cash = expected_cash_value + session_record.cash_adjustment,
+    cash_adjustment = 0,
     counted_cash = counted_cash_input,
     variance = variance_value,
     status = 'closed',
@@ -3022,8 +3235,10 @@ revoke all on function public.get_cash_drawer_handover() from public, anon;
 revoke all on function public.open_cash_drawer(numeric, text[]) from public, anon;
 revoke all on function public.close_cash_drawer(uuid, numeric, text[]) from public, anon;
 revoke all on function public.submit_attendance_cash_check(uuid, numeric, text[]) from public, anon;
+revoke all on function public.get_attendance_cash_check(uuid) from public, anon;
 revoke all on function public.update_cash_reconciliation(uuid, numeric, text[]) from public, anon;
 revoke all on function public.delete_cash_reconciliation(uuid) from public, anon;
+revoke all on function public.adjust_cash_drawer_balance(numeric) from public, anon;
 revoke all on function public.list_attendance_history(date) from public, anon;
 revoke all on function public.create_pos_order(uuid, numeric, text, uuid, numeric, jsonb, text, text, text, text) from public, anon;
 revoke all on function public.cancel_pos_order(uuid, text) from public, anon;
@@ -3044,8 +3259,10 @@ grant execute on function public.get_cash_drawer_handover() to authenticated;
 grant execute on function public.open_cash_drawer(numeric, text[]) to authenticated;
 grant execute on function public.close_cash_drawer(uuid, numeric, text[]) to authenticated;
 grant execute on function public.submit_attendance_cash_check(uuid, numeric, text[]) to authenticated;
+grant execute on function public.get_attendance_cash_check(uuid) to authenticated;
 grant execute on function public.update_cash_reconciliation(uuid, numeric, text[]) to authenticated;
 grant execute on function public.delete_cash_reconciliation(uuid) to authenticated;
+grant execute on function public.adjust_cash_drawer_balance(numeric) to authenticated;
 grant execute on function public.list_attendance_history(date) to authenticated;
 grant execute on function public.create_pos_order(uuid, numeric, text, uuid, numeric, jsonb, text, text, text, text) to authenticated;
 grant execute on function public.cancel_pos_order(uuid, text) to authenticated;

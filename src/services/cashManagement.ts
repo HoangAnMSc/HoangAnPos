@@ -3,6 +3,10 @@ import type { Database, Json } from "../types/database";
 
 export type CashDrawerCheck = Database["public"]["Tables"]["cash_drawer_checks"]["Row"];
 
+function normalizeCashDrawerCheck(check: CashDrawerCheck): CashDrawerCheck {
+  return { ...check, evidence_urls: check.evidence_urls ?? [] };
+}
+
 export type CashDrawerSession = {
   id: string;
   cashier_id: string;
@@ -108,6 +112,13 @@ export async function fetchOwnOpenCashDrawerSession() {
   return sessions.find(
     (session) => session.cashier_id === authData.user.id && session.status === "open"
   ) ?? null;
+}
+
+export async function fetchRequiresCashReconciliation(userId: string) {
+  requireSupabaseConfig();
+  const { data, error } = await supabase.rpc("requires_cash_reconciliation", { user_id: userId });
+  if (error) throw error;
+  return data === true;
 }
 
 export async function fetchCashDrawerHandover() {
@@ -218,7 +229,7 @@ export async function fetchCashDrawerChecks(limit = 500) {
     .limit(limit);
 
   if (error) throw error;
-  return (data ?? []) as CashDrawerCheck[];
+  return ((data ?? []) as CashDrawerCheck[]).map(normalizeCashDrawerCheck);
 }
 
 export async function updateCashReconciliation(
@@ -233,7 +244,7 @@ export async function updateCashReconciliation(
     evidence_urls_input: evidenceUrls,
   });
   if (error) throw error;
-  return data as CashDrawerCheck;
+  return normalizeCashDrawerCheck(data as CashDrawerCheck);
 }
 
 export async function deleteCashReconciliation(checkId: string) {
@@ -242,4 +253,15 @@ export async function deleteCashReconciliation(checkId: string) {
     check_id_input: checkId,
   });
   if (error) throw error;
+}
+
+export async function adjustCashDrawerBalance(cashAmount: number) {
+  requireSupabaseConfig();
+  const { error } = await supabase.rpc("adjust_cash_drawer_balance", {
+    cash_amount_input: Math.max(cashAmount, 0),
+  });
+  if (error) {
+    if (/close the open cash drawer/i.test(error.message)) throw new Error("Hãy chốt ca và hoàn tất đối soát két trước khi điều chỉnh quỹ.");
+    throw error;
+  }
 }

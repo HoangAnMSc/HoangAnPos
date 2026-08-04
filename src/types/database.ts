@@ -496,6 +496,7 @@ export type Database = {
           opening_evidence_urls: string[];
           cash_sales: number;
           transfer_sales: number;
+          cash_adjustment: number;
           expected_cash: number;
           counted_cash: number | null;
           variance: number | null;
@@ -517,6 +518,7 @@ export type Database = {
           opening_evidence_urls?: string[];
           cash_sales?: number;
           transfer_sales?: number;
+          cash_adjustment?: number;
           expected_cash?: number;
           counted_cash?: number | null;
           variance?: number | null;
@@ -538,6 +540,7 @@ export type Database = {
           opening_evidence_urls?: string[];
           cash_sales?: number;
           transfer_sales?: number;
+          cash_adjustment?: number;
           expected_cash?: number;
           counted_cash?: number | null;
           variance?: number | null;
@@ -901,6 +904,10 @@ export type Database = {
           updated_at: string;
         }[];
       };
+      get_attendance_cash_check: {
+        Args: { attendance_record_id_input: string };
+        Returns: Database["public"]["Tables"]["cash_drawer_checks"]["Row"] | null;
+      };
       submit_attendance_cash_check: {
         Args: {
           attendance_record_id_input: string;
@@ -931,6 +938,10 @@ export type Database = {
       };
       delete_cash_reconciliation: {
         Args: { check_id_input: string };
+        Returns: undefined;
+      };
+      adjust_cash_drawer_balance: {
+        Args: { cash_amount_input: number };
         Returns: undefined;
       };
       clock_in_attendance: {

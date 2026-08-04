@@ -153,6 +153,7 @@ function AttendanceCashDetail({ cashCheck, loading }: AttendanceCashDetailProps)
     : cashCheck.is_match === false
       ? "bg-red-100 text-red-700"
       : "bg-amber-100 text-amber-700";
+  const evidenceUrls = cashCheck.evidence_urls ?? [];
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200">
@@ -177,12 +178,12 @@ function AttendanceCashDetail({ cashCheck, loading }: AttendanceCashDetailProps)
           </dd>
         </div>
       </dl>
-      {variance !== null || cashCheck.evidence_urls.length ? (
+      {variance !== null || evidenceUrls.length ? (
         <div className="border-t border-slate-200 px-4 py-3 text-xs font-semibold text-slate-600">
           {variance !== null ? (
             <p>Chênh lệch: <strong className={variance === 0 ? "text-emerald-700" : "text-red-700"}>{formatCurrency(variance)}</strong></p>
           ) : null}
-          <EvidenceImages urls={cashCheck.evidence_urls} />
+          <EvidenceImages urls={evidenceUrls} />
         </div>
       ) : null}
     </section>

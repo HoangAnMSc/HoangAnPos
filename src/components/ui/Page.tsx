@@ -37,6 +37,7 @@ export function PageContainer({
 type PageToolbarProps = {
   action?: React.ReactNode;
   children?: React.ReactNode;
+  className?: string;
   description?: string;
   eyebrow?: string;
   title: string;
@@ -45,12 +46,13 @@ type PageToolbarProps = {
 export function PageToolbar({
   action,
   children,
+  className,
   description,
   eyebrow,
   title,
 }: PageToolbarProps) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
+    <section className={clsx("rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5", className)}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           {eyebrow ? (
