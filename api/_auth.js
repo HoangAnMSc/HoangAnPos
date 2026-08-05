@@ -52,25 +52,38 @@ export async function userHasAnyPermission(admin, user, permissions) {
 
   const { data: profile, error } = await admin
     .from("profiles")
-    .select("role, is_active, app_roles(code, is_active, permissions)")
+    .select("role, role_id, is_active")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (error || !profile || profile.is_active === false) {
+  if (error) {
+    throw new Error(`Khong doc duoc profiles bang service role: ${error.message}`);
+  }
+
+  if (!profile || profile.is_active === false) {
     return false;
   }
 
-  const role = Array.isArray(profile.app_roles)
-    ? profile.app_roles[0] ?? null
-    : profile.app_roles ?? null;
-
-  if (profile.role === "admin" || role?.code === "admin") {
+  if (profile.role === "admin") {
     return true;
   }
 
-  if (!role?.is_active) {
+  if (!profile.role_id) {
     return false;
   }
+
+  const { data: role, error: roleError } = await admin
+    .from("app_roles")
+    .select("code, is_active, permissions")
+    .eq("id", profile.role_id)
+    .maybeSingle();
+
+  if (roleError) {
+    throw new Error(`Khong doc duoc app_roles bang service role: ${roleError.message}`);
+  }
+
+  if (!role || !role.is_active) return false;
+  if (role.code === "admin") return true;
 
   return permissions.some((permission) => role.permissions?.includes(permission));
 }
@@ -80,15 +93,29 @@ export async function userIsSuperAdmin(admin, user) {
 
   const { data: profile, error } = await admin
     .from("profiles")
-    .select("role, is_active, app_roles(code, is_active)")
+    .select("role, role_id, is_active")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (error || !profile || profile.is_active === false) return false;
-  const role = Array.isArray(profile.app_roles)
-    ? profile.app_roles[0] ?? null
-    : profile.app_roles ?? null;
-  return profile.role === "admin" || (role?.code === "admin" && role.is_active !== false);
+  if (error) {
+    throw new Error(`Khong doc duoc profiles bang service role: ${error.message}`);
+  }
+
+  if (!profile || profile.is_active === false) return false;
+  if (profile.role === "admin") return true;
+  if (!profile.role_id) return false;
+
+  const { data: role, error: roleError } = await admin
+    .from("app_roles")
+    .select("code, is_active")
+    .eq("id", profile.role_id)
+    .maybeSingle();
+
+  if (roleError) {
+    throw new Error(`Khong doc duoc app_roles bang service role: ${roleError.message}`);
+  }
+
+  return role?.code === "admin" && role.is_active !== false;
 }
 
 export async function authorizeApiRequest(request, permissions) {
@@ -122,7 +149,20 @@ export async function authorizeApiRequest(request, permissions) {
     };
   }
 
-  const allowed = await userHasAnyPermission(admin, data.user, permissions);
+  let allowed;
+
+  try {
+    allowed = await userHasAnyPermission(admin, data.user, permissions);
+  } catch (permissionError) {
+    return {
+      message:
+        permissionError instanceof Error
+          ? permissionError.message
+          : "Khong kiem tra duoc quyen tai khoan.",
+      ok: false,
+      status: 500,
+    };
+  }
 
   if (!allowed) {
     return {

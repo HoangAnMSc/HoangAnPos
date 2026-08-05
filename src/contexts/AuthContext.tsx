@@ -183,8 +183,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw result.error;
     }
 
+    if (!result.data.user) {
+      throw new Error("Không tạo được phiên đăng nhập.");
+    }
+
     setProfileLoading(true);
-    setUser(result.data.user);
+
+    try {
+      const nextProfile = await loadProfile(result.data.user.id);
+      const nextRole = nextProfile?.app_roles ?? null;
+      const isLegacyAdmin =
+        nextProfile?.role === "admin" || result.data.user.app_metadata?.role === "admin";
+
+      if (!nextProfile) {
+        throw new Error(
+          "Tài khoản chưa có hồ sơ trong schema mới. Hãy chạy lại supabase/schema.sql."
+        );
+      }
+
+      if (!nextProfile.is_active) {
+        throw new Error("Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.");
+      }
+
+      if (!isLegacyAdmin && (!nextRole || !nextRole.is_active)) {
+        throw new Error("Tài khoản chưa được gán vai trò đang hoạt động.");
+      }
+
+      setProfile(nextProfile);
+      setUser(result.data.user);
+    } catch (error) {
+      await supabase.auth.signOut();
+      setProfile(null);
+      setUser(null);
+      throw error;
+    } finally {
+      setProfileLoading(false);
+    }
   }, []);
 
   const requestPasswordResetOtp = useCallback(async (email: string) => {

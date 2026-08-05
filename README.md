@@ -49,9 +49,15 @@ Không đổi `SUPABASE_SERVICE_ROLE_KEY` hoặc các secret Cloudinary thành b
 
 ```sql
 update public.profiles
-set role = 'admin', is_active = true
+set
+  role = 'admin',
+  role_id = (select id from public.app_roles where code = 'admin'),
+  is_active = true
 where id = 'UUID_TAI_KHOAN'::uuid;
 ```
+
+Logic khôi phục hồ sơ tài khoản cũ và gán `role_id` đã nằm chung trong
+`supabase/schema.sql`; không cần chạy thêm file SQL riêng.
 
 Các lệnh reset đã nằm ở đầu `schema.sql`:
 

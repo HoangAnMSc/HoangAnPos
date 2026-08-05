@@ -470,6 +470,27 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_user();
 
+-- Creating the public schema does not fire the auth.users insert trigger for
+-- accounts that already exist. Backfill them so authentication and role checks
+-- keep working after a public-schema rebuild.
+insert into public.profiles (id, full_name, phone, role, is_active)
+select
+  u.id,
+  coalesce(u.raw_user_meta_data ->> 'full_name', u.email, u.phone),
+  u.phone,
+  case when lower(coalesce(u.email, '')) = 'hoanganmsc@gmail.com' then 'admin' else 'staff' end,
+  true
+from auth.users u
+on conflict (id) do nothing;
+
+update public.profiles p
+set
+  role_id = r.id,
+  role = r.code
+from public.app_roles r
+where r.code = p.role
+  and p.role_id is null;
+
 create or replace function public.is_admin(user_id uuid default auth.uid())
 returns boolean
 language sql
@@ -2884,3 +2905,16 @@ grant execute on function public.clear_products_image_url(text) to authenticated
 grant execute on function public.receive_product_stock(uuid, integer, date, date) to authenticated;
 grant execute on function public.issue_product_stock(uuid, integer, text) to authenticated;
 grant execute on function public.transfer_product_shelf(uuid, uuid, integer, text) to authenticated;
+
+-- Recreating the public schema also removes Supabase's table grants. Server-side
+-- APIs use the service-role client and must retain direct access to public data.
+grant all privileges on all tables in schema public to service_role;
+grant all privileges on all sequences in schema public to service_role;
+grant execute on all functions in schema public to service_role;
+
+alter default privileges in schema public
+grant all privileges on tables to service_role;
+alter default privileges in schema public
+grant all privileges on sequences to service_role;
+alter default privileges in schema public
+grant execute on functions to service_role;
