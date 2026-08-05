@@ -9,6 +9,12 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      product_settings: {
+        Row: { id: string; enable_color: boolean; enable_size: boolean; custom_attributes: Json; card_settings: Json; updated_at: string };
+        Insert: { id?: string; enable_color?: boolean; enable_size?: boolean; custom_attributes?: Json; card_settings?: Json; updated_at?: string };
+        Update: { id?: string; enable_color?: boolean; enable_size?: boolean; custom_attributes?: Json; card_settings?: Json; updated_at?: string };
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: string;
@@ -103,6 +109,7 @@ export type Database = {
           is_active: boolean;
           is_reward: boolean;
           reward_points_cost: number;
+          attributes: Json;
           deleted_at: string | null;
           created_at: string;
           updated_at: string;
@@ -123,6 +130,7 @@ export type Database = {
           is_active?: boolean;
           is_reward?: boolean;
           reward_points_cost?: number;
+          attributes?: Json;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -143,6 +151,7 @@ export type Database = {
           is_active?: boolean;
           is_reward?: boolean;
           reward_points_cost?: number;
+          attributes?: Json;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;

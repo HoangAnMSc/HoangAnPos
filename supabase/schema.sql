@@ -1,6 +1,13 @@
 create extension if not exists pgcrypto;
 
--- Fresh-install schema. Run this file only on an empty public schema.
+-- FRESH INSTALL ONLY: this rebuilds the entire public schema and deletes all
+-- existing application data. Authentication users in auth.users are preserved
+-- and are backfilled into public.profiles below.
+drop schema if exists public cascade;
+create schema public;
+grant all on schema public to postgres, service_role;
+grant usage on schema public to anon, authenticated;
+
 create table public.app_roles (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -119,6 +126,17 @@ create table public.profiles (
   updated_at timestamptz not null default now()
 );
 
+create table public.product_settings (
+  id text primary key default 'default',
+  enable_color boolean not null default false,
+  enable_size boolean not null default false,
+  custom_attributes jsonb not null default '[]'::jsonb,
+  card_settings jsonb not null default '{"showImage":true,"showPrice":true,"showShelfStock":true,"showExpiry":true,"showCategory":false,"imageFit":"cover"}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.product_settings (id) values ('default');
+
 create table public.products (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -134,6 +152,7 @@ create table public.products (
   image_url text,
   is_reward boolean not null default false,
   reward_points_cost integer not null default 0 check (reward_points_cost >= 0),
+  attributes jsonb not null default '{}'::jsonb,
   is_active boolean not null default true,
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
@@ -400,6 +419,10 @@ $$;
 
 create trigger set_profiles_updated_at
 before update on public.profiles
+for each row execute function public.set_updated_at();
+
+create trigger set_product_settings_updated_at
+before update on public.product_settings
 for each row execute function public.set_updated_at();
 
 create trigger set_app_roles_updated_at
@@ -2519,6 +2542,7 @@ end;
 $$;
 
 alter table public.profiles enable row level security;
+alter table public.product_settings enable row level security;
 alter table public.app_roles enable row level security;
 alter table public.products enable row level security;
 alter table public.inventory_audits enable row level security;
@@ -2535,6 +2559,19 @@ alter table public.attendance_records enable row level security;
 alter table public.cash_drawer_sessions enable row level security;
 alter table public.cash_drawer_checks enable row level security;
 alter table public.order_audit_events enable row level security;
+
+create policy "Product users can read settings"
+on public.product_settings for select
+using (public.has_permission('products'));
+
+create policy "Product managers can save settings"
+on public.product_settings for insert
+with check (public.has_permission('products.update'));
+
+create policy "Product managers can update settings"
+on public.product_settings for update
+using (public.has_permission('products.update'))
+with check (public.has_permission('products.update'));
 
 create policy "Users can read own profile"
 on public.profiles for select
@@ -2912,9 +2949,21 @@ grant all privileges on all tables in schema public to service_role;
 grant all privileges on all sequences in schema public to service_role;
 grant execute on all functions in schema public to service_role;
 
+-- Browser clients use the authenticated database role. Table grants allow the
+-- request to reach PostgreSQL; the RLS policies above still decide which rows
+-- and operations each signed-in user may access.
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+
 alter default privileges in schema public
 grant all privileges on tables to service_role;
 alter default privileges in schema public
 grant all privileges on sequences to service_role;
 alter default privileges in schema public
 grant execute on functions to service_role;
+alter default privileges in schema public
+grant select, insert, update, delete on tables to authenticated;
+alter default privileges in schema public
+grant usage, select on sequences to authenticated;
+
+notify pgrst, 'reload schema';

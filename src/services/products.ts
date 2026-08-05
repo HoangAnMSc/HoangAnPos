@@ -1,5 +1,6 @@
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { Product, ProductBatch } from "../types";
+import type { Json } from "../types/database";
 
 const missingCategoryTableMessage =
   "Cơ sở dữ liệu chưa có bảng product_categories. Hãy chạy lại supabase/schema.sql rồi thử lại.";
@@ -14,10 +15,12 @@ export type ProductInput = {
   import_date?: string | null;
   expiry_date?: string | null;
   stock: number;
+  shelf_stock?: number;
   image_url?: string | null;
   is_active: boolean;
   is_reward: boolean;
   reward_points_cost: number;
+  attributes?: Json;
 };
 
 export type ReceiveStockInput = {

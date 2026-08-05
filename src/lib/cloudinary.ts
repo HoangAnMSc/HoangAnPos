@@ -2,10 +2,12 @@ import { authenticatedFetch } from "./apiClient";
 import { requireSupabaseConfig, supabase } from "./supabase";
 
 const cloudName =
-  import.meta.env.CLOUDINARY_CLOUD_NAME || import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+  import.meta.env.CLOUDINARY_CLOUD_NAME ||
+  import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 export const productImageFolder = "hoang-an-pos/products";
 export const invoicePaymentProofFolder = "hoang-an-pos/payment-proofs";
-export const attendanceReconciliationFolder = "hoang-an-pos/cash-reconciliation";
+export const attendanceReconciliationFolder =
+  "hoang-an-pos/cash-reconciliation";
 export const isCloudinaryConfigured = Boolean(cloudName);
 
 export type CloudinaryImageScope = "invoices" | "payment-qr" | "products";
@@ -40,6 +42,7 @@ type CloudinaryUploadSignature = {
   ok: boolean;
   signature: string;
   timestamp: string;
+  resourceType?: "image" | "video";
 };
 
 export type CloudinaryImageResource = {
@@ -60,6 +63,10 @@ export async function uploadProductImage(file: File) {
 
 export async function uploadProductImageAsset(file: File) {
   return uploadImage(file, productImageFolder);
+}
+
+export async function uploadProductVideoAsset(file: File) {
+  return uploadMedia(file, productImageFolder, "video");
 }
 
 export async function uploadPaymentProof(file: File) {
@@ -94,8 +101,11 @@ export function getCloudinaryPublicId(imageUrl: string) {
 
     const rawPath = url.pathname.slice(markerIndex + marker.length);
     const segments = rawPath.split("/").filter(Boolean).map(decodeURIComponent);
-    const versionIndex = segments.findIndex((segment) => /^v\d+$/.test(segment));
-    const publicIdSegments = versionIndex >= 0 ? segments.slice(versionIndex + 1) : segments;
+    const versionIndex = segments.findIndex((segment) =>
+      /^v\d+$/.test(segment),
+    );
+    const publicIdSegments =
+      versionIndex >= 0 ? segments.slice(versionIndex + 1) : segments;
 
     if (publicIdSegments.length === 0) {
       return null;
@@ -103,7 +113,7 @@ export function getCloudinaryPublicId(imageUrl: string) {
 
     const lastSegment = publicIdSegments[publicIdSegments.length - 1].replace(
       /\.[a-z0-9]+$/i,
-      ""
+      "",
     );
 
     return [...publicIdSegments.slice(0, -1), lastSegment].join("/");
@@ -114,7 +124,10 @@ export function getCloudinaryPublicId(imageUrl: string) {
 
 export async function deleteCloudinaryProductImage(
   imageUrl: string,
-  options?: { deleteToken?: string | null; deleteTokenExpiresAt?: string | null }
+  options?: {
+    deleteToken?: string | null;
+    deleteTokenExpiresAt?: string | null;
+  },
 ) {
   const publicId = getCloudinaryPublicId(imageUrl);
 
@@ -122,7 +135,10 @@ export async function deleteCloudinaryProductImage(
     throw new Error("Không nhận diện được public_id của ảnh Cloudinary.");
   }
 
-  if (options?.deleteToken && isDeleteTokenUsable(options.deleteTokenExpiresAt)) {
+  if (
+    options?.deleteToken &&
+    isDeleteTokenUsable(options.deleteTokenExpiresAt)
+  ) {
     try {
       return await deleteCloudinaryImageByToken(options.deleteToken);
     } catch {
@@ -153,14 +169,19 @@ async function deleteCloudinaryImageByToken(deleteToken: string) {
   const formData = new FormData();
   formData.append("token", deleteToken);
 
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/delete_by_token`, {
-    body: formData,
-    method: "POST",
-  });
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/delete_by_token`,
+    {
+      body: formData,
+      method: "POST",
+    },
+  );
   const data = (await response.json()) as CloudinaryDeleteResponse;
 
   if (!response.ok || data.result !== "ok") {
-    throw new Error(data.message || "Delete token của Cloudinary không còn hiệu lực.");
+    throw new Error(
+      data.message || "Delete token của Cloudinary không còn hiệu lực.",
+    );
   }
 
   return { ok: true, result: data.result };
@@ -187,8 +208,12 @@ async function deleteCloudinaryImageViaAppApi(publicId: string) {
   return data;
 }
 
-export async function fetchCloudinaryImageResources(scope: CloudinaryImageScope = "products") {
-  const response = await authenticatedFetch(`/api/cloudinary-images?scope=${encodeURIComponent(scope)}`);
+export async function fetchCloudinaryImageResources(
+  scope: CloudinaryImageScope = "products",
+) {
+  const response = await authenticatedFetch(
+    `/api/cloudinary-images?scope=${encodeURIComponent(scope)}`,
+  );
   const contentType = response.headers.get("content-type") ?? "";
 
   if (!contentType.includes("application/json")) {
@@ -211,12 +236,13 @@ export async function fetchCloudinaryImageResources(scope: CloudinaryImageScope 
 async function deleteCloudinaryImageViaSupabase(publicId: string) {
   requireSupabaseConfig();
 
-  const { data, error } = await supabase.functions.invoke<CloudinaryDeleteResponse>(
-    "delete-cloudinary-image",
-    {
-      body: { publicId },
-    }
-  );
+  const { data, error } =
+    await supabase.functions.invoke<CloudinaryDeleteResponse>(
+      "delete-cloudinary-image",
+      {
+        body: { publicId },
+      },
+    );
 
   if (error) {
     throw new Error(error.message || "Xóa ảnh Cloudinary thất bại.");
@@ -229,34 +255,54 @@ async function deleteCloudinaryImageViaSupabase(publicId: string) {
   return data;
 }
 
-async function uploadImage(file: File, folder: string): Promise<CloudinaryImageUpload> {
+async function uploadImage(
+  file: File,
+  folder: string,
+): Promise<CloudinaryImageUpload> {
+  return uploadMedia(file, folder, "image");
+}
+
+async function uploadMedia(
+  file: File,
+  folder: string,
+  resourceType: "image" | "video",
+): Promise<CloudinaryImageUpload> {
   if (!cloudName) {
     throw new Error(
-      "Chưa cấu hình Cloudinary. Hãy điền CLOUDINARY_CLOUD_NAME trong file .env."
+      "Chưa cấu hình Cloudinary. Hãy điền CLOUDINARY_CLOUD_NAME trong file .env.",
     );
   }
 
-  const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-  if (!allowedImageTypes.has(file.type)) {
-    throw new Error("File đã chọn không phải là ảnh hợp lệ.");
+  const allowedTypes =
+    resourceType === "image"
+      ? new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
+      : new Set(["video/mp4", "video/webm", "video/quicktime"]);
+  if (!allowedTypes.has(file.type)) {
+    throw new Error(
+      resourceType === "image"
+        ? "File đã chọn không phải là ảnh hợp lệ."
+        : "Video chỉ hỗ trợ MP4, WebM hoặc MOV.",
+    );
   }
 
   if (file.size === 0) {
     throw new Error("File ảnh đang trống.");
   }
 
-  if (file.size > 10 * 1024 * 1024) {
-    throw new Error("Ảnh không được lớn hơn 10 MB.");
+  const maxSize = resourceType === "image" ? 10 : 100;
+  if (file.size > maxSize * 1024 * 1024) {
+    throw new Error(
+      `${resourceType === "image" ? "Ảnh" : "Video"} không được lớn hơn ${maxSize} MB.`,
+    );
   }
 
   const signatureResponse = await authenticatedFetch("/api/cloudinary-images", {
-    body: JSON.stringify({ action: "sign-upload", folder }),
+    body: JSON.stringify({ action: "sign-upload", folder, resourceType }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });
   const signatureData = (await signatureResponse.json().catch(() => null)) as
-    | (Partial<CloudinaryUploadSignature> & { message?: string })
-    | null;
+    (Partial<CloudinaryUploadSignature> & { message?: string }) | null;
 
   if (
     !signatureResponse.ok ||
@@ -266,31 +312,46 @@ async function uploadImage(file: File, folder: string): Promise<CloudinaryImageU
     !signatureData.signature ||
     !signatureData.timestamp
   ) {
-    throw new Error(signatureData?.message || "Không lấy được chữ ký tải ảnh an toàn.");
+    throw new Error(
+      signatureData?.message || "Không lấy được chữ ký tải ảnh an toàn.",
+    );
   }
 
   const formData = new FormData();
   formData.append("file", file);
   formData.append("api_key", signatureData.apiKey);
-  formData.append("asset_folder", signatureData.assetFolder || signatureData.folder || folder);
-  formData.append("public_id_prefix", signatureData.assetFolder || signatureData.folder || folder);
-  formData.append("format", "webp");
-  formData.append("transformation", "q_20");
+  formData.append(
+    "asset_folder",
+    signatureData.assetFolder || signatureData.folder || folder,
+  );
+  formData.append(
+    "public_id_prefix",
+    signatureData.assetFolder || signatureData.folder || folder,
+  );
+  if (resourceType === "image") {
+    formData.append("format", "webp");
+    formData.append("transformation", "q_20");
+  }
   formData.append("signature", signatureData.signature);
   formData.append("timestamp", signatureData.timestamp);
 
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${signatureData.cloudName}/image/upload`, {
-    method: "POST",
-    body: formData,
-  });
-  const data = (await response.json().catch(() => null)) as CloudinaryUploadResponse | null;
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${signatureData.cloudName}/${resourceType}/upload`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+  const data = (await response
+    .json()
+    .catch(() => null)) as CloudinaryUploadResponse | null;
 
   if (!response.ok) {
     const cloudinaryMessage = data?.error?.message?.trim();
     throw new Error(
       cloudinaryMessage
         ? `Cloudinary: ${cloudinaryMessage}`
-        : `Tải ảnh lên Cloudinary thất bại (HTTP ${response.status}).`
+        : `Tải ảnh lên Cloudinary thất bại (HTTP ${response.status}).`,
     );
   }
 

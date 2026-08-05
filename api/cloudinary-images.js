@@ -10,14 +10,14 @@ function sendJson(response, statusCode, body) {
 
 function createSignature(parameters, apiSecret) {
   const payload = Object.entries(parameters)
-    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .filter(
+      ([, value]) => value !== undefined && value !== null && value !== "",
+    )
     .sort(([first], [second]) => first.localeCompare(second))
     .map(([key, value]) => `${key}=${value}`)
     .join("&");
 
-  return createHash("sha1")
-    .update(`${payload}${apiSecret}`)
-    .digest("hex");
+  return createHash("sha1").update(`${payload}${apiSecret}`).digest("hex");
 }
 
 async function readJsonBody(request) {
@@ -27,7 +27,8 @@ async function readJsonBody(request) {
     let body = "";
     request.on("data", (chunk) => {
       body += String(chunk ?? "");
-      if (body.length > 1_000_000) reject(new Error("Request body is too large."));
+      if (body.length > 1_000_000)
+        reject(new Error("Request body is too large."));
     });
     request.on("end", () => {
       try {
@@ -70,7 +71,8 @@ export default async function handler(request, response) {
     }
   }
 
-  const signingUpload = request.method === "POST" && body.action === "sign-upload";
+  const signingUpload =
+    request.method === "POST" && body.action === "sign-upload";
   const auth = await authorizeApiRequest(
     request,
     signingUpload
@@ -84,14 +86,14 @@ export default async function handler(request, response) {
           "cash-management.reconciliation.update",
         ]
       : request.method === "POST"
-      ? ["cloudinary-images.delete"]
-      : [
-          "cloudinary-images",
-          "orders",
-          "payment-settings.update",
-          "products.create",
-          "products.update",
-        ]
+        ? ["cloudinary-images.delete"]
+        : [
+            "cloudinary-images",
+            "orders",
+            "payment-settings.update",
+            "products.create",
+            "products.update",
+          ],
   );
 
   if (!auth.ok) {
@@ -103,7 +105,8 @@ export default async function handler(request, response) {
 
   if (!config) {
     sendJson(response, 500, {
-      message: "Missing CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, or CLOUDINARY_API_SECRET.",
+      message:
+        "Missing CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, or CLOUDINARY_API_SECRET.",
       ok: false,
     });
     return;
@@ -113,7 +116,10 @@ export default async function handler(request, response) {
     const rawScope = Array.isArray(request.query?.scope)
       ? request.query.scope[0]
       : request.query?.scope;
-    const scope = typeof rawScope === "string" && rawScope.trim() ? rawScope.trim() : "products";
+    const scope =
+      typeof rawScope === "string" && rawScope.trim()
+        ? rawScope.trim()
+        : "products";
     const scopes = {
       invoices: {
         permissions: ["orders"],
@@ -124,19 +130,35 @@ export default async function handler(request, response) {
         prefixes: ["hoang-an-pos/payment-qr/"],
       },
       products: {
-        permissions: ["cloudinary-images", "products.create", "products.update"],
+        permissions: [
+          "cloudinary-images",
+          "products.create",
+          "products.update",
+        ],
         prefixes: ["hoang-an-pos/products/"],
       },
     };
     const requestedScope = scopes[scope];
 
     if (!requestedScope) {
-      sendJson(response, 400, { message: "Image scope is not allowed.", ok: false });
+      sendJson(response, 400, {
+        message: "Image scope is not allowed.",
+        ok: false,
+      });
       return;
     }
 
-    if (!(await userHasAnyPermission(auth.admin, auth.user, requestedScope.permissions))) {
-      sendJson(response, 403, { message: "Permission denied for this image scope.", ok: false });
+    if (
+      !(await userHasAnyPermission(
+        auth.admin,
+        auth.user,
+        requestedScope.permissions,
+      ))
+    ) {
+      sendJson(response, 403, {
+        message: "Permission denied for this image scope.",
+        ok: false,
+      });
       return;
     }
 
@@ -162,27 +184,51 @@ export default async function handler(request, response) {
     const allowedPermissions = folderPermissions[folder];
 
     if (!allowedPermissions) {
-      sendJson(response, 400, { message: "Upload folder is not allowed.", ok: false });
+      sendJson(response, 400, {
+        message: "Upload folder is not allowed.",
+        ok: false,
+      });
       return;
     }
 
-    if (!(await userHasAnyPermission(auth.admin, auth.user, allowedPermissions))) {
-      sendJson(response, 403, { message: "Permission denied for this upload folder.", ok: false });
+    if (
+      !(await userHasAnyPermission(auth.admin, auth.user, allowedPermissions))
+    ) {
+      sendJson(response, 403, {
+        message: "Permission denied for this upload folder.",
+        ok: false,
+      });
       return;
     }
 
     const timestamp = Math.floor(Date.now() / 1000).toString();
+    const resourceType = body.resourceType === "video" ? "video" : "image";
     const format = "webp";
     const transformation = "q_20";
     const assetFolder = folder;
     const publicIdPrefix = folder;
+    const signatureParams =
+      resourceType === "image"
+        ? {
+            asset_folder: assetFolder,
+            format,
+            public_id_prefix: publicIdPrefix,
+            timestamp,
+            transformation,
+          }
+        : {
+            asset_folder: assetFolder,
+            public_id_prefix: publicIdPrefix,
+            timestamp,
+          };
     sendJson(response, 200, {
       assetFolder,
       apiKey: config.apiKey,
       cloudName: config.cloudName,
       folder,
       ok: true,
-      signature: createSignature({ asset_folder: assetFolder, format, public_id_prefix: publicIdPrefix, timestamp, transformation }, config.apiSecret),
+      resourceType,
+      signature: createSignature(signatureParams, config.apiSecret),
       timestamp,
     });
     return;
@@ -193,7 +239,8 @@ export default async function handler(request, response) {
     return;
   }
 
-  const publicId = typeof body.publicId === "string" ? body.publicId.trim() : "";
+  const publicId =
+    typeof body.publicId === "string" ? body.publicId.trim() : "";
 
   if (!publicId) {
     sendJson(response, 400, { message: "Missing publicId.", ok: false });
@@ -203,7 +250,11 @@ export default async function handler(request, response) {
   await deleteCloudinaryImage(response, config, publicId);
 }
 
-async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }, allowedPrefixes) {
+async function listCloudinaryImages(
+  response,
+  { apiKey, apiSecret, cloudName },
+  allowedPrefixes,
+) {
   const resources = [];
   let nextCursor = "";
 
@@ -224,7 +275,7 @@ async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }, 
           headers: {
             Authorization: createBasicAuthHeader(apiKey, apiSecret),
           },
-        }
+        },
       );
       const data = await cloudinaryResponse.json();
 
@@ -240,8 +291,10 @@ async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }, 
         ...(data.resources ?? []).filter(
           (resource) =>
             !allowedPrefixes ||
-            allowedPrefixes.some((prefix) => resource.public_id?.startsWith(prefix))
-        )
+            allowedPrefixes.some((prefix) =>
+              resource.public_id?.startsWith(prefix),
+            ),
+        ),
       );
       nextCursor = data.next_cursor ?? "";
     } while (nextCursor);
@@ -249,15 +302,25 @@ async function listCloudinaryImages(response, { apiKey, apiSecret, cloudName }, 
     sendJson(response, 200, { ok: true, resources });
   } catch (error) {
     sendJson(response, 500, {
-      message: error instanceof Error ? error.message : "Cloudinary list request failed.",
+      message:
+        error instanceof Error
+          ? error.message
+          : "Cloudinary list request failed.",
       ok: false,
     });
   }
 }
 
-async function deleteCloudinaryImage(response, { apiKey, apiSecret, cloudName }, publicId) {
+async function deleteCloudinaryImage(
+  response,
+  { apiKey, apiSecret, cloudName },
+  publicId,
+) {
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const signature = createSignature({ invalidate: true, public_id: publicId, timestamp }, apiSecret);
+  const signature = createSignature(
+    { invalidate: true, public_id: publicId, timestamp },
+    apiSecret,
+  );
   const formData = new FormData();
   formData.append("api_key", apiKey);
   formData.append("invalidate", "true");
@@ -271,7 +334,7 @@ async function deleteCloudinaryImage(response, { apiKey, apiSecret, cloudName },
       {
         body: formData,
         method: "POST",
-      }
+      },
     );
     const data = await cloudinaryResponse.json();
 
@@ -290,7 +353,10 @@ async function deleteCloudinaryImage(response, { apiKey, apiSecret, cloudName },
     });
   } catch (error) {
     sendJson(response, 500, {
-      message: error instanceof Error ? error.message : "Cloudinary delete request failed.",
+      message:
+        error instanceof Error
+          ? error.message
+          : "Cloudinary delete request failed.",
       ok: false,
     });
   }
