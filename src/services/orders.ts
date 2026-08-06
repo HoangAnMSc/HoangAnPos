@@ -49,6 +49,9 @@ function toOrderError(error: unknown) {
     [/insufficient stock for selected date/i, "Số lượng trong lô đã chọn không còn đủ."],
     [/insufficient stock for product/i, "Tồn kho sản phẩm không còn đủ để thanh toán."],
     [/insufficient shelf stock for selected date/i, "Số lượng trên kệ của lô đã chọn không còn đủ."],
+    [/product variant selection is required/i, "Cần chọn biến thể trước khi thanh toán."],
+    [/selected product variant is not available/i, "Biến thể đã chọn không còn tồn tại."],
+    [/insufficient shelf stock for selected product variant/i, "Số lượng trên kệ của biến thể đã chọn không còn đủ."],
     [/insufficient shelf stock for product/i, "Số lượng trên kệ không còn đủ. Hãy chuyển thêm hàng từ kho lên kệ."],
     [/cash received is lower than total/i, "Số tiền khách đưa chưa đủ để thanh toán."],
   ];
@@ -82,6 +85,10 @@ export async function createSale({
       batch_id: item.batch?.id ?? null,
       product_id: item.product.id,
       quantity: item.quantity,
+      variant_key: item.variant?.key ?? null,
+      variant_label: item.variant?.label ?? null,
+      variant_values: item.variant?.values ?? null,
+      variant_source_values: item.variant?.source_values ?? null,
     })),
     note_input: note ?? null,
     payment_method_input: paymentMethod,
@@ -111,7 +118,7 @@ export async function fetchOrders() {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "*, customers(name, phone, address, points), order_items(id, product_id, batch_id, import_date, expiry_date, product_name, quantity, unit_price, line_total, reward_points_cost, created_at)"
+      "*, customers(name, phone, address, points), order_items(id, product_id, batch_id, import_date, expiry_date, product_name, variant_key, variant_label, variant_values, variant_source_values, quantity, unit_price, line_total, reward_points_cost, created_at)"
     )
     .order("created_at", { ascending: false });
 

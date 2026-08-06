@@ -313,6 +313,10 @@ create table public.order_items (
   import_date date,
   expiry_date date,
   product_name text not null,
+  variant_key text,
+  variant_label text,
+  variant_values jsonb,
+  variant_source_values jsonb,
   quantity integer not null check (quantity > 0),
   unit_price numeric(12, 2) not null check (unit_price >= 0),
   line_total numeric(12, 2) not null check (line_total >= 0),
@@ -2007,6 +2011,88 @@ begin
 end;
 $$;
 
+create or replace function public.adjust_product_variant_stock(
+  product_id_input uuid,
+  variant_values_input jsonb,
+  stock_delta_input integer,
+  shelf_delta_input integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_shelf integer;
+  current_stock integer;
+  next_shelf integer;
+  next_stock integer;
+  product_attributes jsonb;
+  variant_record jsonb;
+begin
+  if variant_values_input is null or jsonb_typeof(variant_values_input) <> 'object' then
+    return;
+  end if;
+
+  select attributes
+  into product_attributes
+  from public.products
+  where id = product_id_input
+  for update;
+
+  if not found then
+    raise exception 'Product is not available';
+  end if;
+
+  select value
+  into variant_record
+  from jsonb_array_elements(coalesce(product_attributes -> '_variants', '[]'::jsonb))
+  where value -> 'values' = variant_values_input
+  limit 1;
+
+  if variant_record is null then
+    return;
+  end if;
+
+  current_stock := greatest(coalesce((variant_record ->> 'stock')::integer, 0), 0);
+  current_shelf := greatest(coalesce((variant_record ->> 'shelf_stock')::integer, 0), 0);
+  next_stock := current_stock + coalesce(stock_delta_input, 0);
+  next_shelf := current_shelf + coalesce(shelf_delta_input, 0);
+
+  if next_stock < 0 or next_shelf < 0 or next_shelf > next_stock then
+    raise exception 'Insufficient shelf stock for selected product variant';
+  end if;
+
+  update public.products
+  set attributes = jsonb_set(
+    product_attributes,
+    '{_variants}',
+    (
+      select coalesce(
+        jsonb_agg(
+          case
+            when value -> 'values' = variant_values_input then
+              jsonb_set(
+                jsonb_set(value, '{stock}', to_jsonb(next_stock), true),
+                '{shelf_stock}',
+                to_jsonb(next_shelf),
+                true
+              )
+            else value
+          end
+        ),
+        '[]'::jsonb
+      )
+      from jsonb_array_elements(coalesce(product_attributes -> '_variants', '[]'::jsonb))
+    ),
+    true
+  )
+  where id = product_id_input;
+end;
+$$;
+
+revoke all on function public.adjust_product_variant_stock(uuid, jsonb, integer, integer) from public, anon, authenticated;
+
 create or replace function public.create_pos_order(
   cashier_id_input uuid,
   cash_received_input numeric,
@@ -2028,9 +2114,12 @@ declare
   item jsonb;
   line_quantity integer;
   line_total numeric(12, 2);
+  line_unit_price numeric(12, 2);
   order_record public.orders;
   product_record public.products;
   batch_record public.product_batches;
+  variant_record jsonb;
+  variant_source jsonb;
   subtotal_value numeric(12, 2) := 0;
   reward_subtotal_value numeric(12, 2) := 0;
   discount_value numeric(12, 2) := greatest(coalesce(discount_input, 0), 0);
@@ -2110,6 +2199,64 @@ begin
       raise exception 'Insufficient shelf stock for product %', product_record.name;
     end if;
 
+    variant_record := null;
+    if jsonb_typeof(product_record.attributes -> '_variantAttributeIds') = 'array'
+      and jsonb_array_length(product_record.attributes -> '_variantAttributeIds') > 0 then
+      if jsonb_typeof(item -> 'variant_values') <> 'object' then
+        raise exception 'Product variant selection is required for product %', product_record.name;
+      end if;
+    end if;
+
+    if jsonb_typeof(item -> 'variant_source_values') = 'array' then
+      for variant_source in
+        select value from jsonb_array_elements(item -> 'variant_source_values') as value
+      loop
+        if not exists (
+          select 1
+          from jsonb_array_elements(coalesce(product_record.attributes -> '_variants', '[]'::jsonb)) as saved(value)
+          where saved.value -> 'values' = variant_source
+        ) then
+          raise exception 'Selected product variant is not available';
+        end if;
+      end loop;
+
+      for variant_record in
+        with candidates as (
+          select
+            saved.value as record,
+            (select count(*) from jsonb_object_keys(source.value)) as specificity
+          from jsonb_array_elements(item -> 'variant_source_values') with ordinality as source(value, position)
+          join jsonb_array_elements(coalesce(product_record.attributes -> '_variants', '[]'::jsonb)) as saved(value)
+            on saved.value -> 'values' = source.value
+          where saved.value ? 'stock' and saved.value ? 'shelf_stock'
+            and exists (
+              select 1 from public.product_settings settings
+              where settings.card_settings -> 'linkedAttributeIds' ? 'stock'
+                and settings.card_settings -> 'linkedAttributeIds' ? 'shelf_stock'
+            )
+        )
+        select record from candidates
+        where specificity = (select max(specificity) from candidates)
+      loop
+        if greatest(coalesce((variant_record ->> 'shelf_stock')::integer, 0), 0) < line_quantity then
+          raise exception 'Insufficient shelf stock for selected product variant';
+        end if;
+      end loop;
+    end if;
+
+    line_unit_price := product_record.price;
+    if jsonb_typeof(item -> 'variant_source_values') = 'array' then
+      select (saved.value #>> '{linked_values,price}')::numeric
+      into line_unit_price
+      from jsonb_array_elements(item -> 'variant_source_values') with ordinality as source(value, position)
+      join jsonb_array_elements(coalesce(product_record.attributes -> '_variants', '[]'::jsonb)) as saved(value)
+        on saved.value -> 'values' = source.value
+      where saved.value #>> '{linked_values,price}' ~ '^[0-9]+([.][0-9]+)?$'
+      order by source.position
+      limit 1;
+      line_unit_price := coalesce(line_unit_price, product_record.price);
+    end if;
+
     if nullif(item ->> 'batch_id', '') is not null then
       select *
       into batch_record
@@ -2132,9 +2279,9 @@ begin
         raise exception 'Reward product has invalid points cost';
       end if;
       points_redeemed_value := points_redeemed_value + (product_record.reward_points_cost * line_quantity);
-      reward_subtotal_value := reward_subtotal_value + (product_record.price * line_quantity);
+      reward_subtotal_value := reward_subtotal_value + (line_unit_price * line_quantity);
     else
-      subtotal_value := subtotal_value + (product_record.price * line_quantity);
+      subtotal_value := subtotal_value + (line_unit_price * line_quantity);
     end if;
   end loop;
 
@@ -2263,7 +2410,48 @@ begin
         shelf_stock = shelf_stock - line_quantity
     where id = product_record.id;
 
-    line_total := case when product_record.is_reward and points_redeemed_value > 0 then 0 else product_record.price * line_quantity end;
+    if jsonb_typeof(item -> 'variant_source_values') = 'array' then
+      for variant_record in
+        with candidates as (
+          select
+            saved.value as record,
+            (select count(*) from jsonb_object_keys(source.value)) as specificity
+          from jsonb_array_elements(item -> 'variant_source_values') with ordinality as source(value, position)
+          join jsonb_array_elements(coalesce(product_record.attributes -> '_variants', '[]'::jsonb)) as saved(value)
+            on saved.value -> 'values' = source.value
+          where saved.value ? 'stock' and saved.value ? 'shelf_stock'
+            and exists (
+              select 1 from public.product_settings settings
+              where settings.card_settings -> 'linkedAttributeIds' ? 'stock'
+                and settings.card_settings -> 'linkedAttributeIds' ? 'shelf_stock'
+            )
+        )
+        select record from candidates
+        where specificity = (select max(specificity) from candidates)
+      loop
+        perform public.adjust_product_variant_stock(
+          product_record.id,
+          variant_record -> 'values',
+          -line_quantity,
+          -line_quantity
+        );
+      end loop;
+    end if;
+
+    line_unit_price := product_record.price;
+    if jsonb_typeof(item -> 'variant_source_values') = 'array' then
+      select (saved.value #>> '{linked_values,price}')::numeric
+      into line_unit_price
+      from jsonb_array_elements(item -> 'variant_source_values') with ordinality as source(value, position)
+      join jsonb_array_elements(coalesce(product_record.attributes -> '_variants', '[]'::jsonb)) as saved(value)
+        on saved.value -> 'values' = source.value
+      where saved.value #>> '{linked_values,price}' ~ '^[0-9]+([.][0-9]+)?$'
+      order by source.position
+      limit 1;
+      line_unit_price := coalesce(line_unit_price, product_record.price);
+    end if;
+
+    line_total := case when product_record.is_reward and points_redeemed_value > 0 then 0 else line_unit_price * line_quantity end;
 
     insert into public.order_items (
       order_id,
@@ -2272,6 +2460,10 @@ begin
       import_date,
       expiry_date,
       product_name,
+      variant_key,
+      variant_label,
+      variant_values,
+      variant_source_values,
       quantity,
       unit_price,
       line_total,
@@ -2284,8 +2476,12 @@ begin
       case when nullif(item ->> 'batch_id', '') is not null then batch_record.import_date else product_record.import_date end,
       case when nullif(item ->> 'batch_id', '') is not null then batch_record.expiry_date else product_record.expiry_date end,
       product_record.name,
+      nullif(item ->> 'variant_key', ''),
+      nullif(item ->> 'variant_label', ''),
+      case when jsonb_typeof(item -> 'variant_values') = 'object' then item -> 'variant_values' else null end,
+      case when jsonb_typeof(item -> 'variant_source_values') = 'array' then item -> 'variant_source_values' else null end,
       line_quantity,
-      case when product_record.is_reward and points_redeemed_value > 0 then 0 else product_record.price end,
+      case when product_record.is_reward and points_redeemed_value > 0 then 0 else line_unit_price end,
       line_total,
       case when product_record.is_reward and points_redeemed_value > 0 then product_record.reward_points_cost else 0 end
     );
@@ -2311,6 +2507,7 @@ as $$
 declare
   item_record public.order_items;
   order_record public.orders;
+  variant_source jsonb;
 begin
   if not public.has_permission('orders.cancel') then
     raise exception 'Permission denied';
@@ -2351,6 +2548,41 @@ begin
     set stock = stock + item_record.quantity,
         shelf_stock = shelf_stock + item_record.quantity
     where id = item_record.product_id;
+
+    if jsonb_typeof(item_record.variant_source_values) = 'array' then
+      for variant_source in
+        with candidates as (
+          select
+            source.value as variant_values,
+            (select count(*) from jsonb_object_keys(source.value)) as specificity
+          from jsonb_array_elements(item_record.variant_source_values) with ordinality as source(value, position)
+          join jsonb_array_elements(coalesce((select attributes -> '_variants' from public.products where id = item_record.product_id), '[]'::jsonb)) as saved(value)
+            on saved.value -> 'values' = source.value
+          where saved.value ? 'stock' and saved.value ? 'shelf_stock'
+            and exists (
+              select 1 from public.product_settings settings
+              where settings.card_settings -> 'linkedAttributeIds' ? 'stock'
+                and settings.card_settings -> 'linkedAttributeIds' ? 'shelf_stock'
+            )
+        )
+        select variant_values from candidates
+        where specificity = (select max(specificity) from candidates)
+      loop
+        perform public.adjust_product_variant_stock(
+          item_record.product_id,
+          variant_source,
+          item_record.quantity,
+          item_record.quantity
+        );
+      end loop;
+    elsif item_record.variant_values is not null then
+      perform public.adjust_product_variant_stock(
+        item_record.product_id,
+        item_record.variant_values,
+        item_record.quantity,
+        item_record.quantity
+      );
+    end if;
 
     if item_record.batch_id is not null then
       update public.product_batches
@@ -2447,6 +2679,7 @@ declare
   deleted_count integer := 0;
   item_record public.order_items;
   order_record public.orders;
+  variant_source jsonb;
 begin
   if not public.has_permission('orders.delete') then
     raise exception 'Permission denied';
@@ -2496,6 +2729,8 @@ begin
           select coalesce(jsonb_agg(jsonb_build_object(
             'product_id', item.product_id,
             'product_name', item.product_name,
+            'variant_label', item.variant_label,
+            'variant_values', item.variant_values,
             'quantity', item.quantity,
             'unit_price', item.unit_price,
             'line_total', item.line_total
@@ -2523,6 +2758,41 @@ begin
         set stock = stock + item_record.quantity,
             shelf_stock = shelf_stock + item_record.quantity
         where id = item_record.product_id;
+
+        if jsonb_typeof(item_record.variant_source_values) = 'array' then
+          for variant_source in
+            with candidates as (
+              select
+                source.value as variant_values,
+                (select count(*) from jsonb_object_keys(source.value)) as specificity
+              from jsonb_array_elements(item_record.variant_source_values) with ordinality as source(value, position)
+              join jsonb_array_elements(coalesce((select attributes -> '_variants' from public.products where id = item_record.product_id), '[]'::jsonb)) as saved(value)
+                on saved.value -> 'values' = source.value
+              where saved.value ? 'stock' and saved.value ? 'shelf_stock'
+                and exists (
+                  select 1 from public.product_settings settings
+                  where settings.card_settings -> 'linkedAttributeIds' ? 'stock'
+                    and settings.card_settings -> 'linkedAttributeIds' ? 'shelf_stock'
+                )
+            )
+            select variant_values from candidates
+            where specificity = (select max(specificity) from candidates)
+          loop
+            perform public.adjust_product_variant_stock(
+              item_record.product_id,
+              variant_source,
+              item_record.quantity,
+              item_record.quantity
+            );
+          end loop;
+        elsif item_record.variant_values is not null then
+          perform public.adjust_product_variant_stock(
+            item_record.product_id,
+            item_record.variant_values,
+            item_record.quantity,
+            item_record.quantity
+          );
+        end if;
 
         if item_record.batch_id is not null then
           update public.product_batches

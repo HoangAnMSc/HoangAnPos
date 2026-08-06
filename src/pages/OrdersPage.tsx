@@ -29,6 +29,10 @@ type InvoiceItem = {
   import_date: string | null;
   expiry_date: string | null;
   product_name: string;
+  variant_key: string | null;
+  variant_label: string | null;
+  variant_values: Record<string, string | string[]> | null;
+  variant_source_values: Record<string, string>[] | null;
   quantity: number;
   unit_price: number;
   line_total: number;
@@ -603,6 +607,11 @@ export function OrdersPage() {
                   >
                     <div>
                       <p className="font-bold text-slate-900">{item.product_name}</p>
+                      {item.variant_label ? (
+                        <p className="mt-1 text-xs font-extrabold text-moss-700">
+                          {item.variant_label}
+                        </p>
+                      ) : null}
                       <p className="mt-1 text-sm font-semibold text-slate-500">
                         {item.reward_points_cost > 0
                           ? `${item.reward_points_cost.toLocaleString("vi-VN")} điểm`

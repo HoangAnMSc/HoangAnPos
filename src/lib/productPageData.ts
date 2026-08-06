@@ -1,4 +1,5 @@
 import type {
+  CustomProductAttribute,
   CustomAttributeType,
   ProductSettings,
 } from "../services/productSettings";
@@ -30,6 +31,233 @@ export type ProductVariant = {
   image_url?: string;
   linked_values?: Record<string, string>;
 };
+
+export type ProductVariantSelection = Record<string, string[]>;
+
+export type ResolvedProductVariant = {
+  image_url?: string;
+  label: string;
+  linked_values: Record<string, string>;
+  matches: ProductVariant[];
+  selection: ProductVariantSelection;
+  shelf_stock: number | null;
+  stock: number | null;
+  stock_sources: ProductVariant[];
+  values: Record<string, string | string[]>;
+};
+
+export type ProductVariantDefinition = Pick<
+  CustomProductAttribute,
+  "id" | "name" | "optionColors" | "optionDisplay" | "options" | "type"
+>;
+
+export function getProductAttributes(product: Product) {
+  return product.attributes &&
+    typeof product.attributes === "object" &&
+    !Array.isArray(product.attributes)
+    ? (product.attributes as Record<string, unknown>)
+    : {};
+}
+
+export function getProductVariantAttributeIds(product: Product) {
+  const attributes = getProductAttributes(product);
+  return Array.isArray(attributes._variantAttributeIds)
+    ? attributes._variantAttributeIds.filter(
+        (value): value is string => typeof value === "string" && Boolean(value),
+      )
+    : [];
+}
+
+export function getProductVariants(product: Product): ProductVariant[] {
+  const attributes = getProductAttributes(product);
+  if (!Array.isArray(attributes._variants)) return [];
+
+  return attributes._variants.filter(
+    (variant): variant is ProductVariant =>
+      Boolean(
+        variant &&
+          typeof variant === "object" &&
+          !Array.isArray(variant) &&
+          "values" in variant &&
+          variant.values &&
+          typeof variant.values === "object" &&
+          !Array.isArray(variant.values),
+      ),
+  );
+}
+
+export function getProductVariantCount(product: Product) {
+  const variants = getProductVariants(product);
+  const attributeIds = new Set(getProductVariantAttributeIds(product));
+  const maxSpecificity = Math.max(
+    0,
+    ...variants.map(
+      (variant) =>
+        Object.keys(variant.values).filter((key) => attributeIds.has(key)).length,
+    ),
+  );
+  return variants.filter(
+    (variant) =>
+      Object.keys(variant.values).filter((key) => attributeIds.has(key)).length ===
+      maxSpecificity,
+  ).length;
+}
+
+export function getProductVariantDefinitions(
+  product: Product,
+  settings: ProductSettings,
+): ProductVariantDefinition[] {
+  const ids = new Set(getProductVariantAttributeIds(product));
+  return settings.customAttributes.filter(
+    (attribute) =>
+      attribute.enabled &&
+      ids.has(attribute.id) &&
+      (attribute.type === "single" || attribute.type === "multiple"),
+  );
+}
+
+export function getProductVariantKey(
+  variant: Pick<ProductVariant, "values">,
+  attributeIds?: string[],
+) {
+  const keys = attributeIds?.length
+    ? attributeIds
+    : Object.keys(variant.values).sort((left, right) => left.localeCompare(right));
+  return keys.map((key) => `${key}:${variant.values[key] ?? ""}`).join("|");
+}
+
+export function getProductVariantLabel(
+  variant: Pick<ProductVariant, "values">,
+  definitions: ProductVariantDefinition[],
+) {
+  return definitions
+    .map((definition) => variant.values[definition.id])
+    .filter(Boolean)
+    .join(" / ");
+}
+
+export function getVariantStock(variant: ProductVariant, shelf = false) {
+  const value = Number(shelf ? variant.shelf_stock : variant.stock);
+  return Number.isFinite(value) ? Math.max(Math.floor(value), 0) : 0;
+}
+
+function hasOwnVariantValue(
+  variant: ProductVariant,
+  key: "stock" | "shelf_stock",
+) {
+  return Object.prototype.hasOwnProperty.call(variant, key);
+}
+
+export function resolveProductVariantSelection(
+  product: Product,
+  settings: ProductSettings,
+  selection: ProductVariantSelection,
+): ResolvedProductVariant | null {
+  const definitions = getProductVariantDefinitions(product, settings);
+  if (!definitions.length) return null;
+
+  const normalizedSelection = Object.fromEntries(
+    definitions.map((definition) => [
+      definition.id,
+      (selection[definition.id] ?? []).filter((value) =>
+        definition.options.includes(value),
+      ),
+    ]),
+  );
+  if (
+    definitions.some(
+      (definition) => normalizedSelection[definition.id].length === 0,
+    )
+  ) {
+    return null;
+  }
+
+  const definitionIds = new Set(definitions.map((definition) => definition.id));
+  const matches = getProductVariants(product)
+    .filter((variant) => {
+      const entries = Object.entries(variant.values).filter(([key]) =>
+        definitionIds.has(key),
+      );
+      return (
+        entries.length > 0 &&
+        entries.every(([key, value]) =>
+          normalizedSelection[key]?.includes(String(value)),
+        )
+      );
+    })
+    .sort((left, right) => {
+      const specificity =
+        Object.keys(right.values).filter((key) => definitionIds.has(key)).length -
+        Object.keys(left.values).filter((key) => definitionIds.has(key)).length;
+      if (specificity) return specificity;
+      return getProductVariantKey(left).localeCompare(getProductVariantKey(right));
+    });
+
+  const linkedValues: Record<string, string> = {};
+  [...matches].reverse().forEach((variant) => {
+    Object.entries(variant.linked_values ?? {}).forEach(([key, value]) => {
+      if (value !== "") linkedValues[key] = value;
+    });
+  });
+  // Apply the most specific records last so combined matches override
+  // information stored on each individual attribute.
+  matches.forEach((variant) => {
+    Object.entries(variant.linked_values ?? {}).forEach(([key, value]) => {
+      if (value !== "" && linkedValues[key] === undefined)
+        linkedValues[key] = value;
+    });
+  });
+
+  const specificityOf = (variant: ProductVariant) =>
+    Object.keys(variant.values).filter((key) => definitionIds.has(key)).length;
+  const firstInventoryMatch = matches.find(
+    (variant) =>
+      hasOwnVariantValue(variant, "stock") &&
+      hasOwnVariantValue(variant, "shelf_stock"),
+  );
+  const inventorySpecificity = firstInventoryMatch
+    ? specificityOf(firstInventoryMatch)
+    : -1;
+  const stockSources = matches.filter(
+    (variant) =>
+      hasOwnVariantValue(variant, "stock") &&
+      hasOwnVariantValue(variant, "shelf_stock") &&
+      specificityOf(variant) === inventorySpecificity,
+  );
+  const shelfSources = stockSources;
+  const stock = stockSources.length
+    ? Math.min(...stockSources.map((variant) => getVariantStock(variant)))
+    : null;
+  const shelfStock = shelfSources.length
+    ? Math.min(...shelfSources.map((variant) => getVariantStock(variant, true)))
+    : stock;
+  const values = Object.fromEntries(
+    definitions.map((definition) => {
+      const selected = normalizedSelection[definition.id];
+      return [
+        definition.id,
+        definition.type === "multiple" ? selected : selected[0],
+      ];
+    }),
+  );
+
+  return {
+    image_url: matches.find((variant) => variant.image_url)?.image_url,
+    label: definitions
+      .map(
+        (definition) =>
+          `${definition.name}: ${normalizedSelection[definition.id].join(", ")}`,
+      )
+      .join(" · "),
+    linked_values: linkedValues,
+    matches,
+    selection: normalizedSelection,
+    shelf_stock: shelfStock,
+    stock,
+    stock_sources: stockSources,
+    values,
+  };
+}
 
 export const linkedFieldLabels: Record<string, string> = {
   name: "Tên sản phẩm",
@@ -176,8 +404,6 @@ export function getProductCardEditorSampleValues(
 
 export function getProductDetailItems(
   product: Product,
-  batchTotal: number,
-  activeBatchCount: number,
 ) {
   return [
     { label: "EAN-13", value: getProductEan13Value(product) },
@@ -187,17 +413,70 @@ export function getProductDetailItems(
     { label: "Tổng tồn", value: String(product.stock) },
     { label: "Trên kệ", value: String(product.shelf_stock) },
     { label: "Trong kho", value: String(product.stock - product.shelf_stock) },
-    { label: "Tồn theo lô", value: `${batchTotal} / ${activeBatchCount} lô` },
+    { label: "Ngày nhập", value: product.import_date || "Chưa có" },
+    { label: "Hạn sử dụng", value: product.expiry_date || "Chưa có" },
+    {
+      label: "Đổi điểm",
+      value: product.is_reward
+        ? `${product.reward_points_cost.toLocaleString("vi-VN")} điểm`
+        : "Không",
+    },
     { label: "Trạng thái", value: product.is_active ? "Đang hiện" : "Đang ẩn" },
   ];
+}
+
+export function getEnabledProductDetailItems(
+  product: Product,
+  settings: ProductSettings,
+) {
+  const items = [
+    { key: "sku", label: "EAN-13", value: getProductEan13Value(product) || "Chưa có" },
+    { key: "category", label: "Nhóm hàng", value: product.category || "Chưa phân nhóm" },
+    { key: "price", label: "Giá bán", value: formatCurrency(product.price) },
+    { key: "cost_price", label: "Giá vốn", value: formatCurrency(product.cost_price) },
+    { key: "stock", label: "Tổng tồn", value: String(product.stock) },
+    { key: "shelf_stock", label: "Trên kệ", value: String(product.shelf_stock) },
+    { key: "stock", label: "Trong kho", value: String(product.stock - product.shelf_stock) },
+    { key: "import_date", label: "Ngày nhập", value: product.import_date || "Chưa có" },
+    { key: "expiry_date", label: "Hạn sử dụng", value: product.expiry_date || "Chưa có" },
+    {
+      key: "is_reward",
+      label: "Sản phẩm đổi điểm",
+      value: product.is_reward ? "Có" : "Không",
+    },
+    {
+      key: "reward_points_cost",
+      label: "Điểm cần đổi",
+      value: product.is_reward
+        ? `${product.reward_points_cost.toLocaleString("vi-VN")} điểm`
+        : "Không áp dụng",
+    },
+    { key: "is_active", label: "Trạng thái", value: product.is_active ? "Đang hiện" : "Đang ẩn" },
+  ];
+  const order = new Map(settings.attributeOrder.map((key, index) => [key, index]));
+  return items
+    .filter((item) => settings.enabledFields[item.key] !== false)
+    .sort(
+      (left, right) =>
+        (order.get(left.key) ?? 999) - (order.get(right.key) ?? 999),
+    );
 }
 
 export function buildVariantCombinations(
   attributes: ProductSettings["customAttributes"],
   values: Record<string, unknown>,
+  selectedAttributeIds?: string[],
 ) {
+  const selectedIds = selectedAttributeIds
+    ? new Set(selectedAttributeIds)
+    : null;
   return attributes
-    .filter((item) => item.enabled && item.useForVariants)
+    .filter(
+      (item) =>
+        item.enabled &&
+        (selectedIds ? selectedIds.has(item.id) : item.useForVariants) &&
+        (item.type === "single" || item.type === "multiple"),
+    )
     .reduce<Record<string, string>[]>(
       (rows, attribute) => {
         const options =

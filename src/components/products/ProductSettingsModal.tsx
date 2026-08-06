@@ -1307,6 +1307,53 @@ export function ProductSettingsModal({
               từng sản phẩm.
             </p>
           </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <strong className="text-sm text-slate-950">
+              Thông tin liên quan theo biến thể
+            </strong>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              Dữ liệu đã chọn có thể nhập riêng cho từng tổ hợp. Khi nhiều dữ
+              liệu cùng khớp, tổ hợp đầy đủ được ưu tiên trước từng thuộc tính.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {draft.attributeOrder
+                .filter(
+                  (key) =>
+                    draft.enabledFields[key] !== false &&
+                    !draft.customAttributes.some(
+                      (attribute) =>
+                        attribute.id === key &&
+                        (attribute.type === "single" ||
+                          attribute.type === "multiple"),
+                    ),
+                )
+                .map((key) => {
+                  const checked = draft.linkedAttributeIds.includes(key);
+                  return (
+                    <label
+                      className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs font-bold ${checked ? "border-moss-400 bg-moss-50 text-moss-900" : "border-slate-200 text-slate-600"}`}
+                      key={key}
+                    >
+                      <input
+                        checked={checked}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            linkedAttributeIds: event.target.checked
+                              ? [...new Set([...current.linkedAttributeIds, key])]
+                              : current.linkedAttributeIds.filter(
+                                  (item) => item !== key,
+                                ),
+                          }))
+                        }
+                        type="checkbox"
+                      />
+                      <span className="truncate">{fieldLabel(key)}</span>
+                    </label>
+                  );
+                })}
+            </div>
+          </div>
           <button
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-moss-400 bg-white p-3 text-sm font-extrabold text-moss-800 transition hover:bg-moss-50"
             onClick={() => openEditor()}

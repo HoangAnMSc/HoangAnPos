@@ -64,7 +64,12 @@ import {
   buildVariantCombinations,
   emptyForm,
   fieldClassName,
-  getProductDetailItems,
+  getEnabledProductDetailItems,
+  getProductAttributes,
+  getProductVariantDefinitions,
+  getProductVariantLabel,
+  getProductVariants,
+  getVariantStock,
   labelClassName,
   linkedFieldLabels,
   type ProductFormState,
@@ -88,6 +93,7 @@ import {
   defaultProductSettings,
   fetchProductSettings,
   saveProductSettings,
+  type CustomProductAttribute,
   type ProductSettings,
 } from "../services/productSettings";
 
@@ -687,6 +693,11 @@ type ProductFormProps = {
   submitting: boolean;
   settings: ProductSettings;
   onAddCategory: (name: string) => Promise<string>;
+  onCreateVariant: (input: {
+    name: string;
+    options: string[];
+    type: "single" | "multiple";
+  }) => Promise<CustomProductAttribute>;
   onSubmit: (input: ProductInput, imageFiles: File[]) => Promise<void>;
 };
 
@@ -701,6 +712,7 @@ function ProductForm({
   initialEan13 = "",
   libraryImages,
   onAddCategory,
+  onCreateVariant,
   onSubmit,
   product,
   submitting,
@@ -721,6 +733,14 @@ function ProductForm({
   const [uploadingAttribute, setUploadingAttribute] = useState("");
   const [variantImagePickerKey, setVariantImagePickerKey] = useState("");
   const [variantChooserOpen, setVariantChooserOpen] = useState(false);
+  const [variantCreateOpen, setVariantCreateOpen] = useState(false);
+  const [variantCreateName, setVariantCreateName] = useState("");
+  const [variantCreateOptions, setVariantCreateOptions] = useState("");
+  const [variantCreateType, setVariantCreateType] = useState<
+    "single" | "multiple"
+  >("single");
+  const [variantCreateError, setVariantCreateError] = useState("");
+  const [variantCreating, setVariantCreating] = useState(false);
   const [variantSelection, setVariantSelection] = useState<
     Record<string, string>
   >({});
@@ -744,6 +764,12 @@ function ProductForm({
     setEan13ScannerOpen(false);
     setError("");
     setVariantSelection({});
+    setVariantChooserOpen(false);
+    setVariantCreateOpen(false);
+    setVariantCreateName("");
+    setVariantCreateOptions("");
+    setVariantCreateType("single");
+    setVariantCreateError("");
     setAttributeValues(
       product?.attributes &&
         typeof product.attributes === "object" &&
@@ -766,22 +792,39 @@ function ProductForm({
   }
 
   const categoryOptions = mergeCategoryNames([...categories, form.category]);
-  const selectedVariantIds = Array.isArray(attributeValues._variantAttributeIds)
+  const storedVariantIds = Array.isArray(attributeValues._variantAttributeIds)
     ? (attributeValues._variantAttributeIds as string[])
+    : null;
+  const inferredVariantIds = Array.isArray(attributeValues._variants)
+    ? [
+        ...new Set(
+          (attributeValues._variants as ProductVariant[]).flatMap((variant) =>
+            Object.keys(variant.values),
+          ),
+        ),
+      ].filter((id) =>
+        settings.customAttributes.some(
+          (attribute) =>
+            attribute.id === id &&
+            (attribute.type === "single" || attribute.type === "multiple"),
+        ),
+      )
     : [];
+  const selectedVariantIds = storedVariantIds ?? inferredVariantIds;
   const variantAttributes = settings.customAttributes.filter(
-    (item) => item.enabled && selectedVariantIds.includes(item.id),
-  );
-  const variantCombinations = buildVariantCombinations(
-    settings.customAttributes.map((item) => ({
-      ...item,
-      useForVariants: false,
-    })),
-    attributeValues,
+    (item) =>
+      item.enabled &&
+      selectedVariantIds.includes(item.id) &&
+      (item.type === "single" || item.type === "multiple"),
   );
   const linkedVariantStock = settings.linkedAttributeIds.includes("stock");
   const linkedVariantShelf =
     settings.linkedAttributeIds.includes("shelf_stock");
+  const variantCombinations = buildVariantCombinations(
+    settings.customAttributes,
+    attributeValues,
+    selectedVariantIds,
+  );
   const linkedVariantImage =
     settings.linkedAttributeIds.includes("image") ||
     settings.customAttributes.some(
@@ -800,11 +843,17 @@ function ProductForm({
     ? (attributeValues._variants as ProductVariant[])
     : [];
   const activeVariantValues = Object.fromEntries(
-    variantAttributes.map((attribute) => [
-      attribute.id,
-      variantSelection[attribute.id] ??
-        String(attributeValues[attribute.id] ?? attribute.options[0] ?? ""),
-    ]),
+    variantAttributes.map((attribute) => {
+      const savedValue = attributeValues[attribute.id];
+      const firstSavedValue = Array.isArray(savedValue)
+        ? savedValue[0]
+        : savedValue;
+      return [
+        attribute.id,
+        variantSelection[attribute.id] ??
+          String(firstSavedValue ?? attribute.options[0] ?? ""),
+      ];
+    }),
   );
   const variantKey = (values: Record<string, string>) =>
     variantAttributes
@@ -886,7 +935,7 @@ function ProductForm({
     const selectedCategory = existingCategory ?? nextCategory;
 
     if (existingCategory) {
-      updateField("category", selectedCategory);
+      updateRelatedBuiltIn("category", selectedCategory);
       closeCategoryModal();
       return;
     }
@@ -896,7 +945,7 @@ function ProductForm({
 
     try {
       const savedCategory = await onAddCategory(nextCategory);
-      updateField("category", savedCategory);
+      updateRelatedBuiltIn("category", savedCategory);
       closeCategoryModal();
     } catch (requestError) {
       setCategoryError(
@@ -926,6 +975,20 @@ function ProductForm({
     const ean13Code = normalizeEan13Input(form.ean13);
     const importDate = normalizeNullableText(form.import_date);
     const expiryDate = normalizeNullableText(form.expiry_date);
+
+    if (
+      savedVariants.some(
+        (variant) =>
+          linkedVariantStock &&
+          linkedVariantShelf &&
+          getVariantStock(variant, true) > getVariantStock(variant),
+      )
+    ) {
+      setError(
+        "Tồn trên kệ của mỗi biến thể không được lớn hơn tổng tồn của biến thể đó.",
+      );
+      return;
+    }
 
     if (!name) {
       setError("Product title is required.");
@@ -987,26 +1050,66 @@ function ProductForm({
     }
   }
 
-  const previewUrl = imagePreviewUrl || form.image_url;
-  const linkedKeys = settings.attributeOrder.filter((key) =>
-    settings.linkedAttributeIds.includes(key),
-  );
-  const linkedIndexes = linkedKeys.map((key) =>
-    settings.attributeOrder.indexOf(key),
-  );
-  const groupedFieldOrder = settings.attributeOrder.filter(
-    (key) => !settings.linkedAttributeIds.includes(key),
-  );
-  groupedFieldOrder.splice(
-    linkedIndexes.length
-      ? Math.min(...linkedIndexes)
-      : groupedFieldOrder.length,
-    0,
-    ...linkedKeys,
-  );
+  const basePreviewUrl = imagePreviewUrl || form.image_url;
   const fieldOrder = (key: string) =>
-    groupedFieldOrder.indexOf(key) < 0 ? 999 : groupedFieldOrder.indexOf(key);
+    settings.attributeOrder.indexOf(key) < 0
+      ? 999
+      : settings.attributeOrder.indexOf(key);
   const fieldEnabled = (key: string) => settings.enabledFields[key] !== false;
+  const hasSelectedVariants = variantAttributes.length > 0;
+  const activeSavedVariant = savedVariants.find(
+    (item) => variantKey(item.values) === variantKey(activeVariantValues),
+  );
+  const isRelatedField = (key: string) =>
+    hasSelectedVariants && settings.linkedAttributeIds.includes(key);
+  const relatedFieldClassName = (key: string, force = false) =>
+    hasSelectedVariants && (force || settings.linkedAttributeIds.includes(key))
+      ? "border-l-4 border-l-moss-500 pl-3"
+      : "";
+  const relatedValue = (key: string, fallback: string) => {
+    if (!isRelatedField(key) || !activeSavedVariant) return fallback;
+    if (key === "image") return activeSavedVariant.image_url ?? fallback;
+    if (key === "stock")
+      return Object.prototype.hasOwnProperty.call(activeSavedVariant, "stock")
+        ? String(activeSavedVariant.stock)
+        : fallback;
+    if (key === "shelf_stock")
+      return Object.prototype.hasOwnProperty.call(
+        activeSavedVariant,
+        "shelf_stock",
+      )
+        ? String(activeSavedVariant.shelf_stock)
+        : fallback;
+    return activeSavedVariant.linked_values?.[key] ?? fallback;
+  };
+  const updateRelatedBuiltIn = (
+    key: keyof ProductFormState,
+    value: string | boolean,
+  ) => {
+    updateField(key, value);
+    const relatedKey =
+      key === "image_url" ? "image" : key === "ean13" ? "sku" : key;
+    if (!isRelatedField(relatedKey)) return;
+    if (key === "stock" || key === "shelf_stock") {
+      updateVariant(activeVariantValues, key, String(value));
+      return;
+    }
+    if (key === "image_url") {
+      updateVariant(activeVariantValues, "image_url", String(value));
+      return;
+    }
+    updateVariantLinkedValue(activeVariantValues, relatedKey, String(value));
+  };
+  const updateRelatedAttribute = (key: string, value: string) => {
+    setAttributeValues((current) => ({ ...current, [key]: value }));
+    if (isRelatedField(key))
+      updateVariantLinkedValue(activeVariantValues, key, value);
+  };
+  const previewUrl = imagePreviewUrl || relatedValue("image", basePreviewUrl);
+  const displayedIsActive =
+    relatedValue("is_active", String(form.is_active)) === "true";
+  const displayedIsReward =
+    relatedValue("is_reward", String(form.is_reward)) === "true";
 
   async function addAttributeFiles(key: string, files: FileList | null) {
     if (!files?.length || uploadingAttribute) return;
@@ -1032,16 +1135,23 @@ function ProductForm({
         videoFile && !current.video
           ? await uploadProductVideoAsset(videoFile)
           : null;
+      const nextImages = [
+        ...(current.images ?? []),
+        ...imageUploads.map((item) => item.url),
+      ].slice(0, 10);
       setAttributeValues((values) => ({
         ...values,
         [key]: {
-          images: [
-            ...(current.images ?? []),
-            ...imageUploads.map((item) => item.url),
-          ].slice(0, 10),
+          images: nextImages,
           video: videoUpload?.url ?? current.video ?? "",
         },
       }));
+      if (isRelatedField(key))
+        updateVariant(
+          activeVariantValues,
+          "image_url",
+          nextImages[0] ?? "",
+        );
     } catch (requestError) {
       setError(
         getErrorMessage(requestError, "Không tải được media lên Cloudinary."),
@@ -1051,6 +1161,108 @@ function ProductForm({
     }
   }
 
+  async function createVariantFromForm() {
+    const name = variantCreateName.trim();
+    const options = [
+      ...new Set(
+        variantCreateOptions
+          .split(/[\n,]/)
+          .map((option) => option.trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (!name) {
+      setVariantCreateError("Nhập tên biến thể.");
+      return;
+    }
+    if (!options.length) {
+      setVariantCreateError("Thêm ít nhất một giá trị cho biến thể.");
+      return;
+    }
+    setVariantCreating(true);
+    setVariantCreateError("");
+    try {
+      const attribute = await onCreateVariant({
+        name,
+        options,
+        type: variantCreateType,
+      });
+      setAttributeValues((current) => ({
+        ...current,
+        _variantAttributeIds: [
+          ...new Set([...selectedVariantIds, attribute.id]),
+        ],
+        [attribute.id]:
+          attribute.type === "multiple"
+            ? [attribute.options[0]].filter(Boolean)
+            : attribute.options[0] ?? "",
+      }));
+      setVariantSelection((current) => ({
+        ...current,
+        [attribute.id]: attribute.options[0] ?? "",
+      }));
+      setVariantCreateName("");
+      setVariantCreateOptions("");
+      setVariantCreateType("single");
+      setVariantCreateOpen(false);
+      setVariantChooserOpen(true);
+    } catch (requestError) {
+      setVariantCreateError(
+        getErrorMessage(requestError, "Không tạo được biến thể mới."),
+      );
+    } finally {
+      setVariantCreating(false);
+    }
+  }
+
+  function removeVariantFromProduct(attributeId: string) {
+    setAttributeValues((current) => {
+      const currentVariantIds = Array.isArray(current._variantAttributeIds)
+        ? (current._variantAttributeIds as string[])
+        : [];
+      const remainingVariantIds = currentVariantIds.filter(
+        (id) => id !== attributeId,
+      );
+      const variants = Array.isArray(current._variants)
+        ? (current._variants as ProductVariant[])
+        : [];
+      const mergedVariants = new Map<string, ProductVariant>();
+
+      if (remainingVariantIds.length) {
+        variants.forEach((variant) => {
+          const values = Object.fromEntries(
+            remainingVariantIds
+              .filter((id) => variant.values[id] !== undefined)
+              .map((id) => [id, variant.values[id]]),
+          );
+          const key = variantKey(values);
+          const existing = mergedVariants.get(key);
+          if (existing) {
+            mergedVariants.set(key, {
+              ...existing,
+              stock: getVariantStock(existing) + getVariantStock(variant),
+              shelf_stock:
+                getVariantStock(existing, true) + getVariantStock(variant, true),
+            });
+          } else {
+            mergedVariants.set(key, { ...variant, values });
+          }
+        });
+      }
+
+      return {
+        ...current,
+        _variantAttributeIds: remainingVariantIds,
+        _variants: [...mergedVariants.values()],
+      };
+    });
+    setVariantSelection((current) => {
+      const next = { ...current };
+      delete next[attributeId];
+      return next;
+    });
+  }
+
   return (
     <>
       <form
@@ -1058,14 +1270,48 @@ function ProductForm({
         id={formId}
         onSubmit={handleSubmit}
       >
-        <button
-          className="hidden"
-          id={`${formId}-add-variant`}
-          onClick={() => setVariantChooserOpen(true)}
-          type="button"
-        />
+        <section
+          className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-moss-300 bg-moss-50/50 p-2 lg:col-span-2"
+          style={{ order: 998 }}
+        >
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <button
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-moss-700 px-3 text-sm font-extrabold text-white transition hover:bg-moss-800"
+              id={`${formId}-add-variant`}
+              onClick={() => setVariantChooserOpen(true)}
+              type="button"
+            >
+              <Plus className="h-4 w-4" />
+              Thêm biến thể
+            </button>
+            {variantAttributes.length ? (
+              variantAttributes.map((attribute) => (
+                <span
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-moss-300 bg-white pl-2.5 pr-1 text-sm font-extrabold text-moss-900"
+                  key={attribute.id}
+                >
+                  {attribute.name}
+                  <button
+                    aria-label={`Gỡ biến thể ${attribute.name} khỏi sản phẩm`}
+                    className="inline-flex h-7 items-center gap-1 rounded-md bg-red-50 px-2 text-xs font-extrabold text-red-700 transition hover:bg-red-100"
+                    onClick={() => removeVariantFromProduct(attribute.id)}
+                    title="Gỡ biến thể khỏi sản phẩm"
+                    type="button"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Gỡ
+                  </button>
+                </span>
+              ))
+            ) : (
+              <span className="text-xs font-bold text-moss-800">
+                Chưa thêm biến thể cho sản phẩm
+              </span>
+            )}
+          </div>
+        </section>
         {fieldEnabled("image") ? (
-          <section className="space-y-3" style={{ order: fieldOrder("image") }}>
+          <section className={`space-y-3 ${relatedFieldClassName("image")}`} style={{ order: fieldOrder("image") }}>
             <h3 className="text-sm font-extrabold text-slate-950">Hình ảnh</h3>
             <button
               className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-moss-300 hover:bg-moss-50 sm:max-w-sm"
@@ -1101,21 +1347,23 @@ function ProductForm({
         ) : null}
 
         {fieldEnabled("name") ? (
-          <label className="block" style={{ order: fieldOrder("name") }}>
+          <label className={`block ${relatedFieldClassName("name")}`} style={{ order: fieldOrder("name") }}>
             <span className={labelClassName}>Tên sản phẩm</span>
             <input
               className={fieldClassName}
-              onChange={(event) => updateField("name", event.target.value)}
+              onChange={(event) =>
+                updateRelatedBuiltIn("name", event.target.value)
+              }
               placeholder="Nhập tên sản phẩm"
               required
-              value={form.name}
+              value={relatedValue("name", form.name)}
             />
           </label>
         ) : null}
 
         {canSetVisibility && fieldEnabled("is_active") ? (
           <section
-            className="space-y-3"
+            className={`space-y-3 ${relatedFieldClassName("is_active")}`}
             style={{ order: fieldOrder("is_active") }}
           >
             <h3 className="text-sm font-extrabold text-slate-950">
@@ -1124,11 +1372,11 @@ function ProductForm({
             <div className="grid grid-cols-2 gap-2">
               <button
                 className={`flex h-12 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition ${
-                  form.is_active
+                  displayedIsActive
                     ? "border-moss-500 bg-moss-50 text-moss-700"
                     : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
                 }`}
-                onClick={() => updateField("is_active", true)}
+                onClick={() => updateRelatedBuiltIn("is_active", true)}
                 type="button"
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-moss-700 shadow-sm">
@@ -1138,11 +1386,11 @@ function ProductForm({
               </button>
               <button
                 className={`flex h-12 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition ${
-                  !form.is_active
+                  !displayedIsActive
                     ? "border-red-500 bg-red-50 text-red-700"
                     : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
                 }`}
-                onClick={() => updateField("is_active", false)}
+                onClick={() => updateRelatedBuiltIn("is_active", false)}
                 type="button"
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-red-700 shadow-sm">
@@ -1154,35 +1402,63 @@ function ProductForm({
           </section>
         ) : null}
 
-        {variantAttributes.length ? (
-          <section
-            className="grid gap-3 sm:grid-cols-2 lg:col-span-2"
-            style={{ order: 900 }}
-          >
-            {variantAttributes.map((attribute) => {
+        {settings.customAttributes.some((attribute) => attribute.enabled) ? (
+          <section className="contents">
+            {settings.customAttributes
+              .filter(
+                (attribute) => {
+                  const isVariantAttribute =
+                    attribute.type === "single" ||
+                    attribute.type === "multiple";
+                  return (
+                    attribute.enabled &&
+                    (!isVariantAttribute ||
+                      selectedVariantIds.includes(attribute.id))
+                  );
+                },
+              )
+              .map((attribute) => {
+              const isSelectedVariant = selectedVariantIds.includes(
+                attribute.id,
+              );
               const value = attributeValues[attribute.id];
               if (attribute.type === "media") {
-                const media =
+                const baseMedia =
                   value && typeof value === "object" && !Array.isArray(value)
                     ? (value as { images?: string[]; video?: string })
                     : {};
+                const media =
+                  isRelatedField(attribute.id) && activeSavedVariant?.image_url
+                    ? { images: [activeSavedVariant.image_url], video: "" }
+                    : baseMedia;
                 return (
-                  <MultiMediaField
+                  <div
+                    className={relatedFieldClassName(attribute.id)}
                     key={attribute.id}
-                    label={attribute.name}
-                    libraryImages={libraryImages}
-                    onChange={(next) =>
-                      setAttributeValues((current) => ({
-                        ...current,
-                        [attribute.id]: next,
-                      }))
-                    }
-                    onFiles={(files) =>
-                      void addAttributeFiles(attribute.id, files)
-                    }
-                    uploading={uploadingAttribute === attribute.id}
-                    value={media}
-                  />
+                    style={{ order: fieldOrder(attribute.id) }}
+                  >
+                    <MultiMediaField
+                      label={attribute.name}
+                      libraryImages={libraryImages}
+                      onChange={(next) => {
+                        setAttributeValues((current) => ({
+                          ...current,
+                          [attribute.id]: next,
+                        }));
+                        if (isRelatedField(attribute.id))
+                          updateVariant(
+                            activeVariantValues,
+                            "image_url",
+                            next.images?.[0] ?? "",
+                          );
+                      }}
+                      onFiles={(files) =>
+                        void addAttributeFiles(attribute.id, files)
+                      }
+                      uploading={uploadingAttribute === attribute.id}
+                      value={media}
+                    />
+                  </div>
                 );
               }
               if (
@@ -1200,14 +1476,31 @@ function ProductForm({
                 const colorOnly = attribute.optionDisplay === "color";
                 return (
                   <fieldset
-                    className="relative rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                    className={`relative rounded-r-xl border border-slate-200 bg-white p-2.5 shadow-sm ${relatedFieldClassName(attribute.id, isSelectedVariant)}`}
                     key={attribute.id}
+                    style={{ order: fieldOrder(attribute.id) }}
                   >
                     <span className="mb-2 flex items-center justify-between gap-2">
                       <b className="text-sm text-slate-950">{attribute.name}</b>
-                      <small className="rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500">
-                        {multiple ? "Chọn nhiều" : "Chọn một"}
-                      </small>
+                      <span className="flex items-center gap-2">
+                        <small className="rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-500">
+                          {multiple ? "Chọn nhiều" : "Chọn một"}
+                        </small>
+                        {isSelectedVariant ? (
+                          <button
+                            aria-label={`Gỡ biến thể ${attribute.name} khỏi sản phẩm`}
+                            className="flex h-8 shrink-0 items-center justify-center gap-1 rounded-lg bg-red-50 px-2 text-xs font-extrabold text-red-700 transition hover:bg-red-100"
+                            onClick={() =>
+                              removeVariantFromProduct(attribute.id)
+                            }
+                            title="Gỡ biến thể khỏi sản phẩm"
+                            type="button"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Gỡ
+                          </button>
+                        ) : null}
+                      </span>
                     </span>
                     <div
                       className={
@@ -1219,31 +1512,58 @@ function ProductForm({
                           className={
                             colorOnly
                               ? "cursor-pointer"
-                              : `flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-bold transition ${selectedValues.includes(option) ? "border-moss-500 bg-moss-50 text-moss-900" : "border-slate-200 bg-white text-slate-700"}`
+                              : `flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-sm font-bold transition ${(isSelectedVariant ? activeVariantValues[attribute.id] === option : selectedValues.includes(option)) ? "border-moss-500 bg-moss-50 text-moss-900 ring-1 ring-moss-400" : "border-slate-200 bg-white text-slate-700"}`
                           }
                           key={option}
                         >
                           <input
-                            checked={selectedValues.includes(option)}
+                            checked={
+                              isSelectedVariant
+                                ? activeVariantValues[attribute.id] === option
+                                : selectedValues.includes(option)
+                            }
                             className="sr-only"
                             name={multiple ? undefined : attribute.id}
-                            onChange={(event) =>
-                              setAttributeValues((current) => ({
-                                ...current,
-                                [attribute.id]: multiple
+                            onChange={(event) => {
+                              const nextSelected = isSelectedVariant
+                                ? multiple
+                                  ? [
+                                      ...new Set([
+                                        ...(Array.isArray(selected)
+                                          ? selected
+                                          : []),
+                                        option,
+                                      ]),
+                                    ]
+                                  : option
+                                : multiple
                                   ? event.target.checked
                                     ? [...(selected as string[]), option]
                                     : (selected as string[]).filter(
                                         (item) => item !== option,
                                       )
-                                  : option,
-                              }))
+                                  : option;
+                              setAttributeValues((current) => ({
+                                ...current,
+                                [attribute.id]: nextSelected,
+                              }));
+                              if (isSelectedVariant)
+                                setVariantSelection((current) => ({
+                                  ...current,
+                                  [attribute.id]: option,
+                                }));
+                            }}
+                            type={
+                              isSelectedVariant
+                                ? "radio"
+                                : multiple
+                                  ? "checkbox"
+                                  : "radio"
                             }
-                            type={multiple ? "checkbox" : "radio"}
                           />
                           {attribute.optionDisplay !== "text" ? (
                             <span
-                              className={`block h-8 w-8 shrink-0 rounded-full border-2 shadow-sm transition ${selectedValues.includes(option) ? "border-white ring-2 ring-moss-700" : "border-white ring-1 ring-slate-300"}`}
+                              className={`block h-8 w-8 shrink-0 rounded-full border-2 shadow-sm transition ${(isSelectedVariant ? activeVariantValues[attribute.id] === option : selectedValues.includes(option)) ? "border-white ring-2 ring-moss-700" : "border-white ring-1 ring-slate-300"}`}
                               style={{
                                 backgroundColor:
                                   attribute.optionColors?.[option] ?? option,
@@ -1258,7 +1578,7 @@ function ProductForm({
                           ) : null}
                           {!colorOnly ? (
                             <span
-                              className={`h-4 w-4 shrink-0 ${multiple ? "rounded" : "rounded-full"} border-2 ${selectedValues.includes(option) ? "border-moss-700 bg-moss-700 ring-2 ring-moss-100" : "border-slate-300"}`}
+                              className={`h-4 w-4 shrink-0 ${multiple && !isSelectedVariant ? "rounded" : "rounded-full"} border-2 ${(isSelectedVariant ? activeVariantValues[attribute.id] === option : selectedValues.includes(option)) ? "border-moss-700 bg-moss-700 ring-2 ring-moss-100" : "border-slate-300"}`}
                             />
                           ) : null}
                         </label>
@@ -1269,8 +1589,9 @@ function ProductForm({
               }
               return (
                 <label
-                  className="block rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                  className={`block rounded-r-2xl border border-slate-200 bg-white p-3 shadow-sm ${relatedFieldClassName(attribute.id)}`}
                   key={attribute.id}
+                  style={{ order: fieldOrder(attribute.id) }}
                 >
                   <span className="mb-2 flex items-center justify-between gap-2">
                     <b className="text-sm text-slate-950">{attribute.name}</b>
@@ -1285,10 +1606,7 @@ function ProductForm({
                   <input
                     className={fieldClassName}
                     onChange={(event) =>
-                      setAttributeValues((current) => ({
-                        ...current,
-                        [attribute.id]: event.target.value,
-                      }))
+                      updateRelatedAttribute(attribute.id, event.target.value)
                     }
                     type={
                       attribute.type === "date"
@@ -1297,7 +1615,7 @@ function ProductForm({
                           ? "number"
                           : "text"
                     }
-                    value={String(value ?? "")}
+                    value={relatedValue(attribute.id, String(value ?? ""))}
                   />
                 </label>
               );
@@ -1307,17 +1625,17 @@ function ProductForm({
 
         {fieldEnabled("description") ? (
           <label
-            className="block lg:col-span-2"
+            className={`block lg:col-span-2 ${relatedFieldClassName("description")}`}
             style={{ order: fieldOrder("description") }}
           >
             <span className={labelClassName}>Mô tả</span>
             <textarea
               className={`${fieldClassName} min-h-20 resize-none`}
               onChange={(event) =>
-                updateField("description", event.target.value)
+                updateRelatedBuiltIn("description", event.target.value)
               }
               placeholder="Nhập mô tả ngắn"
-              value={form.description}
+              value={relatedValue("description", form.description)}
             />
           </label>
         ) : null}
@@ -1556,10 +1874,6 @@ function ProductForm({
                                 ...current,
                                 [attribute.id]: option,
                               }));
-                              setAttributeValues((current) => ({
-                                ...current,
-                                [attribute.id]: option,
-                              }));
                             }}
                             type="button"
                           >
@@ -1764,6 +2078,133 @@ function ProductForm({
                 );
               })}
             </div>
+            {variantAttributes.length > 1 ? (
+              <div className="space-y-2 border-t border-slate-200 pt-3">
+                <div>
+                  <h4 className="text-sm font-extrabold text-slate-900">
+                    Dữ liệu riêng từng thuộc tính
+                  </h4>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Được dùng sau dữ liệu của tổ hợp khi tổ hợp chưa có thông
+                    tin tương ứng.
+                  </p>
+                </div>
+                {variantAttributes.map((attribute) => {
+                  const option = activeVariantValues[attribute.id];
+                  const values = { [attribute.id]: option };
+                  const variant = getVariant(values);
+                  return (
+                    <div
+                      className="rounded-xl border border-slate-200 bg-white p-3"
+                      key={`single-${attribute.id}-${option}`}
+                    >
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <strong className="text-sm text-slate-900">
+                          {attribute.name}: {option}
+                        </strong>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-500">
+                          Ưu tiên sau
+                        </span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {linkedVariantImage ? (
+                          <label className="text-xs font-bold text-slate-600">
+                            Ảnh biến thể (URL)
+                            <input
+                              className={fieldClassName}
+                              onChange={(event) =>
+                                updateVariant(
+                                  values,
+                                  "image_url",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="https://..."
+                              type="url"
+                              value={variant.image_url ?? ""}
+                            />
+                          </label>
+                        ) : null}
+                        {linkedVariantStock ? (
+                          <label className="text-xs font-bold text-slate-600">
+                            Tổng tồn
+                            <input
+                              className={fieldClassName}
+                              min="0"
+                              onChange={(event) =>
+                                updateVariant(
+                                  values,
+                                  "stock",
+                                  event.target.value,
+                                )
+                              }
+                              type="number"
+                              value={variant.stock}
+                            />
+                          </label>
+                        ) : null}
+                        {linkedVariantShelf ? (
+                          <label className="text-xs font-bold text-slate-600">
+                            Tồn trên kệ
+                            <input
+                              className={fieldClassName}
+                              min="0"
+                              onChange={(event) =>
+                                updateVariant(
+                                  values,
+                                  "shelf_stock",
+                                  event.target.value,
+                                )
+                              }
+                              type="number"
+                              value={variant.shelf_stock}
+                            />
+                          </label>
+                        ) : null}
+                        {linkedDetailKeys.map((key) => {
+                          const definition = settings.customAttributes.find(
+                            (item) => item.id === key,
+                          );
+                          return (
+                            <label
+                              className="text-xs font-bold text-slate-600"
+                              key={key}
+                            >
+                              {definition?.name ?? linkedFieldLabels[key] ?? key}
+                              <input
+                                className={fieldClassName}
+                                onChange={(event) =>
+                                  updateVariantLinkedValue(
+                                    values,
+                                    key,
+                                    event.target.value,
+                                  )
+                                }
+                                type={
+                                  key === "import_date" ||
+                                  key === "expiry_date" ||
+                                  definition?.type === "date"
+                                    ? "date"
+                                    : [
+                                          "price",
+                                          "cost_price",
+                                          "reward_points_cost",
+                                        ].includes(key) ||
+                                        definition?.type === "number"
+                                      ? "number"
+                                      : "text"
+                                }
+                                value={variant.linked_values?.[key] ?? ""}
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
             {variantCombinations.length >= 100 ? (
               <p className="text-xs font-bold text-amber-700">
                 Chỉ hiển thị 100 tổ hợp đầu tiên. Hãy giảm số lựa chọn để quản
@@ -1775,7 +2216,7 @@ function ProductForm({
 
         {fieldEnabled("is_reward") ? (
           <section
-            className="space-y-3"
+            className={`space-y-3 ${relatedFieldClassName("is_reward")}`}
             style={{ order: fieldOrder("is_reward") }}
           >
             <h3 className="text-sm font-extrabold text-slate-950">
@@ -1783,35 +2224,40 @@ function ProductForm({
             </h3>
             <div className="grid grid-cols-2 gap-2">
               <button
-                className={`h-12 rounded-xl border px-3 text-sm font-bold ${!form.is_reward ? "border-moss-500 bg-moss-50 text-moss-700" : "border-slate-200 bg-white"}`}
-                onClick={() => updateField("is_reward", false)}
+                className={`h-12 rounded-xl border px-3 text-sm font-bold ${!displayedIsReward ? "border-moss-500 bg-moss-50 text-moss-700" : "border-slate-200 bg-white"}`}
+                onClick={() => updateRelatedBuiltIn("is_reward", false)}
                 type="button"
               >
                 Sản phẩm bán
               </button>
               <button
-                className={`h-12 rounded-xl border px-3 text-sm font-bold ${form.is_reward ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 bg-white"}`}
-                onClick={() => updateField("is_reward", true)}
+                className={`h-12 rounded-xl border px-3 text-sm font-bold ${displayedIsReward ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 bg-white"}`}
+                onClick={() => updateRelatedBuiltIn("is_reward", true)}
                 type="button"
               >
                 Quà đổi điểm
               </button>
             </div>
-            {form.is_reward && fieldEnabled("reward_points_cost") ? (
-              <label className="block">
+            {displayedIsReward && fieldEnabled("reward_points_cost") ? (
+              <label className={`block ${relatedFieldClassName("reward_points_cost")}`}>
                 <span className={labelClassName}>Điểm cần đổi</span>
                 <input
                   className={fieldClassName}
                   inputMode="numeric"
                   onChange={(event) =>
-                    updateField(
+                    updateRelatedBuiltIn(
                       "reward_points_cost",
                       normalizeIntegerInput(event.target.value),
                     )
                   }
                   placeholder="100"
                   type="text"
-                  value={formatIntegerInput(form.reward_points_cost)}
+                  value={formatIntegerInput(
+                    relatedValue(
+                      "reward_points_cost",
+                      form.reward_points_cost,
+                    ),
+                  )}
                 />
               </label>
             ) : null}
@@ -1819,15 +2265,15 @@ function ProductForm({
         ) : null}
 
         {fieldEnabled("category") ? (
-          <label className="block" style={{ order: fieldOrder("category") }}>
+          <label className={`block ${relatedFieldClassName("category")}`} style={{ order: fieldOrder("category") }}>
             <span className={labelClassName}>Nhóm hàng</span>
             <div className="flex gap-2">
               <select
                 className={`${fieldClassName} min-w-0 flex-1 appearance-none`}
                 onChange={(event) =>
-                  updateField("category", event.target.value)
+                  updateRelatedBuiltIn("category", event.target.value)
                 }
-                value={form.category}
+                value={relatedValue("category", form.category)}
               >
                 <option value="">Chọn nhóm hàng</option>
                 {categoryOptions.map((category) => (
@@ -1851,101 +2297,111 @@ function ProductForm({
         ) : null}
 
         {fieldEnabled("import_date") ? (
-          <label className="block" style={{ order: fieldOrder("import_date") }}>
+          <label className={`block ${relatedFieldClassName("import_date")}`} style={{ order: fieldOrder("import_date") }}>
             <span className={labelClassName}>Ngày nhập</span>
             <input
               className={fieldClassName}
               onChange={(event) =>
-                updateField("import_date", event.target.value)
+                updateRelatedBuiltIn("import_date", event.target.value)
               }
               type="date"
-              value={form.import_date}
+              value={relatedValue("import_date", form.import_date)}
             />
           </label>
         ) : null}
         {fieldEnabled("expiry_date") ? (
-          <label className="block" style={{ order: fieldOrder("expiry_date") }}>
+          <label className={`block ${relatedFieldClassName("expiry_date")}`} style={{ order: fieldOrder("expiry_date") }}>
             <span className={labelClassName}>Ngày hết hạn</span>
             <input
               className={fieldClassName}
               onChange={(event) =>
-                updateField("expiry_date", event.target.value)
+                updateRelatedBuiltIn("expiry_date", event.target.value)
               }
               type="date"
-              value={form.expiry_date}
+              value={relatedValue("expiry_date", form.expiry_date)}
             />
           </label>
         ) : null}
 
         {fieldEnabled("cost_price") ? (
-          <label className="block" style={{ order: fieldOrder("cost_price") }}>
+          <label className={`block ${relatedFieldClassName("cost_price")}`} style={{ order: fieldOrder("cost_price") }}>
             <span className={labelClassName}>Giá vốn</span>
             <input
               className={fieldClassName}
               inputMode="numeric"
               onChange={(event) =>
-                updateField(
+                updateRelatedBuiltIn(
                   "cost_price",
                   normalizeIntegerInput(event.target.value),
                 )
               }
               placeholder="0"
               type="text"
-              value={formatIntegerInput(form.cost_price)}
+              value={formatIntegerInput(
+                relatedValue("cost_price", form.cost_price),
+              )}
             />
           </label>
         ) : null}
         {fieldEnabled("price") ? (
-          <label className="block" style={{ order: fieldOrder("price") }}>
+          <label className={`block ${relatedFieldClassName("price")}`} style={{ order: fieldOrder("price") }}>
             <span className={labelClassName}>Giá bán</span>
             <input
               className={fieldClassName}
               inputMode="numeric"
               onChange={(event) =>
-                updateField("price", normalizeIntegerInput(event.target.value))
+                updateRelatedBuiltIn(
+                  "price",
+                  normalizeIntegerInput(event.target.value),
+                )
               }
               placeholder="0"
               type="text"
-              value={formatIntegerInput(form.price)}
+              value={formatIntegerInput(relatedValue("price", form.price))}
             />
           </label>
         ) : null}
 
         {fieldEnabled("stock") ? (
-          <label className="block" style={{ order: fieldOrder("stock") }}>
+          <label className={`block ${relatedFieldClassName("stock")}`} style={{ order: fieldOrder("stock") }}>
             <span className={labelClassName}>Số lượng</span>
-            <input
-              className={fieldClassName}
-              inputMode="numeric"
+              <input
+                className={fieldClassName}
+                inputMode="numeric"
               onChange={(event) =>
-                updateField("stock", normalizeIntegerInput(event.target.value))
+                updateRelatedBuiltIn(
+                  "stock",
+                  normalizeIntegerInput(event.target.value),
+                )
               }
               placeholder="0"
               type="text"
-              value={formatIntegerInput(form.stock)}
-            />
-          </label>
+                value={formatIntegerInput(relatedValue("stock", form.stock))}
+              />
+            </label>
         ) : null}
         {fieldEnabled("shelf_stock") ? (
-          <label className="block" style={{ order: fieldOrder("shelf_stock") }}>
+          <label className={`block ${relatedFieldClassName("shelf_stock")}`} style={{ order: fieldOrder("shelf_stock") }}>
             <span className={labelClassName}>Tồn trên kệ</span>
-            <input
-              className={fieldClassName}
-              inputMode="numeric"
+              <input
+                className={fieldClassName}
+                inputMode="numeric"
               onChange={(event) =>
-                updateField(
+                updateRelatedBuiltIn(
                   "shelf_stock",
                   normalizeIntegerInput(event.target.value),
                 )
               }
               placeholder="0"
               type="text"
-              value={formatIntegerInput(form.shelf_stock)}
-            />
+                value={formatIntegerInput(
+                  relatedValue("shelf_stock", form.shelf_stock),
+                )}
+              />
           </label>
         ) : null}
         {fieldEnabled("sku") ? (
-          <label className="block" style={{ order: fieldOrder("sku") }}>
+          <label className={`block ${relatedFieldClassName("sku")}`} style={{ order: fieldOrder("sku") }}>
             <span className={labelClassName}>EAN-13</span>
             <div className="flex gap-2">
               <input
@@ -1956,7 +2412,7 @@ function ProductForm({
                 maxLength={13}
                 onChange={(event) => {
                   if (!ean13Locked) {
-                    updateField(
+                    updateRelatedBuiltIn(
                       "ean13",
                       normalizeEan13Input(event.target.value),
                     );
@@ -1964,7 +2420,7 @@ function ProductForm({
                 }}
                 placeholder="Quét hoặc nhập 13 chữ số"
                 readOnly={ean13Locked}
-                value={form.ean13}
+                value={relatedValue("sku", form.ean13)}
               />
               {ean13Locked ? (
                 <span className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-moss-50 px-3 text-xs font-extrabold text-moss-700">
@@ -2005,54 +2461,84 @@ function ProductForm({
       >
         <div className="space-y-2">
           <p className="mb-3 text-xs font-semibold text-slate-500">
-            Chọn các biến thể đã tạo. Trường nhập sẽ tự xuất hiện ở cuối form
-            sản phẩm.
+            Chọn các biến thể đã tạo. Thuộc tính vẫn nằm đúng vị trí trong cài
+            đặt; các trường thông tin liên quan sẽ có vạch xanh và thay đổi
+            theo lựa chọn đang chỉnh sửa.
           </p>
-          {settings.customAttributes.length ? (
-            settings.customAttributes.map((attribute) => {
+          <button
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-moss-400 bg-moss-50 px-3 py-3 text-sm font-extrabold text-moss-800 transition hover:bg-moss-100"
+            onClick={() => {
+              setVariantChooserOpen(false);
+              setVariantCreateOpen(true);
+              setVariantCreateError("");
+            }}
+            type="button"
+          >
+            <Plus className="h-4 w-4" />
+            Tạo biến thể mới
+          </button>
+          {settings.customAttributes.some(
+            (attribute) =>
+              attribute.type === "single" || attribute.type === "multiple",
+          ) ? (
+            settings.customAttributes
+              .filter(
+                (attribute) =>
+                  attribute.type === "single" || attribute.type === "multiple",
+              )
+              .map((attribute) => {
               const checked = selectedVariantIds.includes(attribute.id);
               return (
-                <label
-                  className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${checked ? "border-moss-400 bg-moss-50" : "border-slate-200 bg-white"}`}
+                <div
+                  className={`flex items-center gap-2 rounded-xl border p-2 ${checked ? "border-moss-400 bg-moss-50" : "border-slate-200 bg-white"}`}
                   key={attribute.id}
                 >
-                  <input
-                    checked={checked}
-                    className="h-4 w-4 accent-moss-700"
-                    onChange={(event) =>
-                      setAttributeValues((current) => ({
-                        ...current,
-                        _variantAttributeIds: event.target.checked
-                          ? [...new Set([...selectedVariantIds, attribute.id])]
-                          : selectedVariantIds.filter(
-                              (id) => id !== attribute.id,
-                            ),
-                      }))
-                    }
-                    type="checkbox"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <strong className="block text-sm text-slate-950">
-                      {attribute.name}
-                    </strong>
-                    <small className="font-semibold text-slate-500">
-                      {attribute.type === "single"
-                        ? "Chọn một"
-                        : attribute.type === "multiple"
-                          ? "Chọn nhiều"
-                          : attribute.type === "media"
-                            ? "Ảnh & video"
-                            : attribute.type === "number"
-                              ? "Số"
-                              : attribute.type === "date"
-                                ? "Ngày"
-                                : "Văn bản"}
-                    </small>
-                  </span>
-                  {checked ? <Check className="h-4 w-4 text-moss-700" /> : null}
-                </label>
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 p-1">
+                    <input
+                      checked={checked}
+                      className="h-4 w-4 accent-moss-700"
+                      onChange={(event) =>
+                        event.target.checked
+                          ? setAttributeValues((current) => ({
+                              ...current,
+                              _variantAttributeIds: [
+                                ...new Set([
+                                  ...selectedVariantIds,
+                                  attribute.id,
+                                ]),
+                              ],
+                            }))
+                          : removeVariantFromProduct(attribute.id)
+                      }
+                      type="checkbox"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <strong className="block text-sm text-slate-950">
+                        {attribute.name}
+                      </strong>
+                      <small className="font-semibold text-slate-500">
+                        {attribute.type === "single" ? "Chọn một" : "Chọn nhiều"}
+                      </small>
+                    </span>
+                    {checked ? (
+                      <Check className="h-4 w-4 text-moss-700" />
+                    ) : null}
+                  </label>
+                  {checked ? (
+                    <button
+                      aria-label={`Gỡ ${attribute.name} khỏi sản phẩm`}
+                      className="flex h-9 shrink-0 items-center justify-center gap-1 rounded-lg bg-red-50 px-2 text-xs font-extrabold text-red-700 transition hover:bg-red-100"
+                      onClick={() => removeVariantFromProduct(attribute.id)}
+                      title="Gỡ biến thể khỏi sản phẩm"
+                      type="button"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Gỡ
+                    </button>
+                  ) : null}
+                </div>
               );
-            })
+              })
           ) : (
             <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-sm font-semibold text-slate-500">
               Chưa có biến thể. Hãy tạo trong trang Các biến thể trước.
@@ -2061,9 +2547,84 @@ function ProductForm({
         </div>
       </Modal>
 
+      <Modal
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2">
+            <Button
+              disabled={variantCreating}
+              onClick={() => {
+                setVariantCreateOpen(false);
+                setVariantChooserOpen(true);
+              }}
+              variant="secondary"
+            >
+              Quay lại
+            </Button>
+            <Button
+              disabled={variantCreating}
+              onClick={() => void createVariantFromForm()}
+            >
+              {variantCreating ? "Đang tạo..." : "Tạo và thêm"}
+            </Button>
+          </div>
+        }
+        onClose={() => {
+          setVariantCreateOpen(false);
+          setVariantChooserOpen(true);
+        }}
+        open={variantCreateOpen}
+        size="sm"
+        title="Tạo biến thể mới"
+      >
+        <div className="space-y-3">
+          <Input
+            autoFocus
+            label="Tên biến thể"
+            onChange={(event) => {
+              setVariantCreateName(event.target.value);
+              setVariantCreateError("");
+            }}
+            placeholder="Ví dụ: Màu, Kích thước"
+            value={variantCreateName}
+          />
+          <label className="block">
+            <span className={labelClassName}>Loại lựa chọn</span>
+            <select
+              className={fieldClassName}
+              onChange={(event) =>
+                setVariantCreateType(
+                  event.target.value as "single" | "multiple",
+                )
+              }
+              value={variantCreateType}
+            >
+              <option value="single">Chọn 1</option>
+              <option value="multiple">Chọn nhiều</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className={labelClassName}>Các giá trị</span>
+            <textarea
+              className={`${fieldClassName} min-h-28 resize-y`}
+              onChange={(event) => {
+                setVariantCreateOptions(event.target.value);
+                setVariantCreateError("");
+              }}
+              placeholder={"Mỗi giá trị một dòng hoặc phân cách bằng dấu phẩy\nVí dụ: Đỏ, Xanh, Trắng"}
+              value={variantCreateOptions}
+            />
+          </label>
+          {variantCreateError ? (
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+              {variantCreateError}
+            </p>
+          ) : null}
+        </div>
+      </Modal>
+
       <MediaPickerModal
         canUploadImage={canUploadImage}
-        currentImageUrl={form.image_url}
+        currentImageUrl={previewUrl}
         libraryImages={libraryImages}
         multipleUpload
         onClose={() => setMediaOpen(false)}
@@ -2076,7 +2637,7 @@ function ProductForm({
           setImagePreviewUrl(
             nextFiles[0] ? URL.createObjectURL(nextFiles[0]) : "",
           );
-          updateField("image_url", imageUrl);
+          updateRelatedBuiltIn("image_url", imageUrl);
           setMediaOpen(false);
         }}
         open={mediaOpen}
@@ -2162,6 +2723,11 @@ type ProductEditorModalProps = {
   submitting: boolean;
   settings: ProductSettings;
   onAddCategory: (name: string) => Promise<string>;
+  onCreateVariant: (input: {
+    name: string;
+    options: string[];
+    type: "single" | "multiple";
+  }) => Promise<CustomProductAttribute>;
   onCancel: () => void;
   onDelete: (product: Product) => Promise<void>;
   onSubmit: (input: ProductInput, imageFiles: File[]) => Promise<void>;
@@ -2177,6 +2743,7 @@ function ProductEditorModal({
   initialEan13 = "",
   libraryImages,
   onAddCategory,
+  onCreateVariant,
   onCancel,
   onDelete,
   onSubmit,
@@ -2205,17 +2772,6 @@ function ProductEditorModal({
                 <Trash2 className="h-4 w-4" />
               </button>
             ) : null}
-            <button
-              aria-label="Thêm biến thể"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-800 transition hover:border-moss-400 hover:bg-moss-50"
-              onClick={() =>
-                document.getElementById(`${formId}-add-variant`)?.click()
-              }
-              title="Thêm biến thể"
-              type="button"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
           </div>
           <div className="grid min-w-0 grid-cols-2 gap-2 justify-self-end sm:w-auto">
             <button
@@ -2254,6 +2810,7 @@ function ProductEditorModal({
         initialEan13={initialEan13}
         libraryImages={libraryImages}
         onAddCategory={onAddCategory}
+        onCreateVariant={onCreateVariant}
         onSubmit={onSubmit}
         product={product}
         submitting={submitting}
@@ -2268,6 +2825,7 @@ type ProductDetailModalProps = {
   canEditProduct: boolean;
   open: boolean;
   product: Product | null;
+  settings: ProductSettings;
   onClose: () => void;
   onEdit: (product: Product) => void;
 };
@@ -2279,6 +2837,7 @@ function ProductDetailModal({
   onEdit,
   open,
   product,
+  settings,
 }: ProductDetailModalProps) {
   if (!product) {
     return null;
@@ -2292,15 +2851,88 @@ function ProductDetailModal({
   const expiryStatus = getExpiryStatus(
     nearestBatch?.expiry_date ?? product.expiry_date,
   );
-  const batchTotal = activeBatches.reduce(
-    (sum, batch) => sum + batch.quantity,
+  const detailItems = getEnabledProductDetailItems(product, settings).map((item) => ({
+    ...item,
+    value:
+      item.label === "Ngày nhập"
+        ? formatProductDate(product.import_date)
+        : item.label === "Hạn sử dụng"
+          ? formatProductDate(product.expiry_date)
+          : item.value,
+  }));
+  const attributes = getProductAttributes(product);
+  const variantDefinitions = getProductVariantDefinitions(product, settings);
+  const variants = getProductVariants(product);
+  const variantAttributeIds = new Set(
+    variantDefinitions.map((definition) => definition.id),
+  );
+  const customDetailItems = settings.customAttributes
+    .filter(
+      (attribute) =>
+        attribute.enabled &&
+        attribute.type !== "media" &&
+        attributes[attribute.id] !== undefined &&
+        attributes[attribute.id] !== null &&
+        attributes[attribute.id] !== "",
+    )
+    .map((attribute) => {
+      const value = attributes[attribute.id];
+      const displayValue = Array.isArray(value)
+        ? value.join(", ")
+        : value && typeof value === "object"
+          ? `${Array.isArray((value as { images?: unknown }).images) ? (value as { images: unknown[] }).images.length : 0} ảnh${(value as { video?: unknown }).video ? " + video" : ""}`
+          : String(value);
+      return { label: attribute.name, value: displayValue };
+    });
+  const customMediaItems = settings.customAttributes
+    .filter(
+      (attribute) =>
+        attribute.enabled &&
+        attribute.type === "media" &&
+        attributes[attribute.id] &&
+        typeof attributes[attribute.id] === "object",
+    )
+    .map((attribute) => ({
+      definition: attribute,
+      value: attributes[attribute.id] as {
+        images?: string[];
+        video?: string;
+      },
+    }))
+    .filter(
+      (item) =>
+        (item.value.images?.filter(Boolean).length ?? 0) > 0 ||
+        Boolean(item.value.video),
+    );
+  const maxVariantSpecificity = Math.max(
+    0,
+    ...variants.map(
+      (variant) =>
+        Object.keys(variant.values).filter((key) => variantAttributeIds.has(key))
+          .length,
+    ),
+  );
+  const inventoryVariants = variants.filter(
+    (variant) =>
+      Object.keys(variant.values).filter((key) => variantAttributeIds.has(key))
+        .length === maxVariantSpecificity,
+  );
+  const variantStockTotal = inventoryVariants.reduce(
+    (sum, variant) => sum + getVariantStock(variant),
     0,
   );
-  const detailItems = getProductDetailItems(
-    product,
-    batchTotal,
-    activeBatches.length,
+  const variantShelfTotal = inventoryVariants.reduce(
+    (sum, variant) => sum + getVariantStock(variant, true),
+    0,
   );
+  const orderedVariants = [...variants].sort((left, right) => {
+    const specificity =
+      Object.keys(right.values).filter((key) => variantAttributeIds.has(key))
+        .length -
+      Object.keys(left.values).filter((key) => variantAttributeIds.has(key))
+        .length;
+    return specificity;
+  });
 
   return (
     <Modal
@@ -2331,6 +2963,7 @@ function ProductDetailModal({
     >
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row">
+          {settings.enabledFields.image !== false ? (
           <div className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-slate-100">
             {product.image_url ? (
               <img
@@ -2342,8 +2975,10 @@ function ProductDetailModal({
               <NoImagePlaceholder />
             )}
           </div>
+          ) : null}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap gap-2">
+              {settings.enabledFields.is_active !== false ? (
               <Badge
                 className="items-center gap-1"
                 tone={product.is_active ? "green" : "red"}
@@ -2355,21 +2990,26 @@ function ProductDetailModal({
                 )}
                 {product.is_active ? "Đang hiện" : "Đang ẩn"}
               </Badge>
+              ) : null}
+              {settings.enabledFields.expiry_date !== false ? (
               <Badge tone={getExpiryTone(expiryStatus)}>
                 {getExpiryLabel(expiryStatus)}
               </Badge>
+              ) : null}
             </div>
             <h3 className="mt-2 font-display text-xl font-bold text-coal sm:text-2xl">
               {product.name}
             </h3>
-            <p className="mt-1.5 text-sm leading-5 text-coal/60">
-              {product.description || "Chưa có mô tả sản phẩm."}
-            </p>
+            {settings.enabledFields.description !== false ? (
+              <p className="mt-1.5 text-sm leading-5 text-coal/60">
+                {product.description || "Chưa có mô tả sản phẩm."}
+              </p>
+            ) : null}
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          {detailItems.map((item) => (
+          {[...detailItems, ...customDetailItems].map((item) => (
             <div
               className="rounded-xl bg-slate-50 px-3 py-2.5"
               key={item.label}
@@ -2383,6 +3023,152 @@ function ProductDetailModal({
             </div>
           ))}
         </div>
+
+        {customMediaItems.map((item) => (
+          <section className="space-y-2" key={item.definition.id}>
+            <h4 className="text-sm font-extrabold uppercase tracking-wide text-coal/55">
+              {item.definition.name}
+            </h4>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {(item.value.images ?? []).filter(Boolean).map((url) => (
+                <a
+                  className="block aspect-video overflow-hidden rounded-xl bg-slate-100"
+                  href={url}
+                  key={url}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <img
+                    alt={item.definition.name}
+                    className="h-full w-full object-cover"
+                    src={url}
+                  />
+                </a>
+              ))}
+              {item.value.video ? (
+                <video
+                  className="aspect-video w-full rounded-xl bg-slate-950 object-contain"
+                  controls
+                  src={item.value.video}
+                />
+              ) : null}
+            </div>
+          </section>
+        ))}
+
+        {variantDefinitions.length > 1000 ? (
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-extrabold uppercase tracking-wide text-coal/55">
+                  Biến thể và số lượng
+                </h4>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  Tổng {variantStockTotal} · trên kệ {variantShelfTotal} · trong kho {Math.max(variantStockTotal - variantShelfTotal, 0)}
+                </p>
+              </div>
+              <Badge tone="blue">{inventoryVariants.length} biến thể</Badge>
+            </div>
+
+            {variants.length ? (
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="hidden grid-cols-[minmax(0,1fr)_90px_90px_90px] gap-3 bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500 sm:grid">
+                  <span>Biến thể</span>
+                  <span className="text-right">Tổng tồn</span>
+                  <span className="text-right">Trên kệ</span>
+                  <span className="text-right">Trong kho</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {orderedVariants.map((variant, index) => {
+                    const specificity = Object.keys(variant.values).filter(
+                      (key) => variantAttributeIds.has(key),
+                    ).length;
+                    const stock = getVariantStock(variant);
+                    const shelfStock = getVariantStock(variant, true);
+                    const relatedItems = Object.entries(
+                      variant.linked_values ?? {},
+                    )
+                      .filter(
+                        ([key, value]) =>
+                          settings.enabledFields[key] !== false && value !== "",
+                      )
+                      .map(([key, value]) => ({
+                        label:
+                          settings.customAttributes.find(
+                            (attribute) => attribute.id === key,
+                          )?.name ?? linkedFieldLabels[key] ?? key,
+                        value:
+                          ["price", "cost_price"].includes(key) &&
+                          Number.isFinite(Number(value))
+                            ? formatCurrency(Number(value))
+                            : ["import_date", "expiry_date"].includes(key)
+                              ? formatProductDate(value)
+                              : value,
+                      }));
+                    const label =
+                      getProductVariantLabel(variant, variantDefinitions) ||
+                      Object.values(variant.values).join(" / ") ||
+                      `Biến thể ${index + 1}`;
+                    return (
+                      <div
+                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_90px_90px_90px] sm:px-4"
+                        key={`${label}-${index}`}
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                            {variant.image_url || product.image_url ? (
+                              <img
+                                alt={label}
+                                className="h-full w-full object-cover"
+                                src={variant.image_url || product.image_url || ""}
+                              />
+                            ) : (
+                              <NoImagePlaceholder compact />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-extrabold text-slate-900">{label}</p>
+                            <p className="truncate text-xs font-semibold text-slate-500">
+                              {specificity > 1
+                                ? "Tổ hợp ưu tiên"
+                                : "Dữ liệu riêng theo thuộc tính"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-right sm:contents">
+                          <p className="font-black tabular-nums text-slate-900" title="Tổng tồn">{stock}</p>
+                          <p className="font-black tabular-nums text-moss-700" title="Trên kệ">{shelfStock}</p>
+                          <p className="font-black tabular-nums text-slate-600" title="Trong kho">{Math.max(stock - shelfStock, 0)}</p>
+                        </div>
+                        {relatedItems.length ? (
+                          <div className="col-span-full grid grid-cols-2 gap-2 border-t border-slate-100 pt-2 sm:grid-cols-3">
+                            {relatedItems.map((item) => (
+                              <div
+                                className="rounded-lg bg-slate-50 px-2.5 py-2"
+                                key={item.label}
+                              >
+                                <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
+                                  {item.label}
+                                </p>
+                                <p className="mt-0.5 break-words text-xs font-bold text-slate-800">
+                                  {item.value}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 px-3 py-4 text-center text-sm font-bold text-amber-700">
+                Sản phẩm đã chọn thuộc tính biến thể nhưng chưa khai báo số lượng cho từng biến thể.
+              </div>
+            )}
+          </section>
+        ) : null}
 
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
@@ -2696,6 +3482,60 @@ export function ProductsPage() {
     }
   }
 
+  async function handleCreateVariantFromForm(input: {
+    name: string;
+    options: string[];
+    type: "single" | "multiple";
+  }) {
+    const name = input.name.trim();
+    if (
+      productSettings.customAttributes.some(
+        (attribute) => attribute.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
+      )
+    ) {
+      throw new Error("Tên biến thể đã tồn tại.");
+    }
+
+    const id = crypto.randomUUID();
+    const attribute: CustomProductAttribute = {
+      id,
+      name,
+      type: input.type,
+      options: [...new Set(input.options.map((option) => option.trim()).filter(Boolean))],
+      enabled: true,
+      useForVariants: true,
+      optionDisplay: "text",
+      optionColors: {},
+    };
+    const nextSettings: ProductSettings = {
+      ...productSettings,
+      customAttributes: [...productSettings.customAttributes, attribute],
+      attributeOrder: [...productSettings.attributeOrder, id],
+      enabledFields: { ...productSettings.enabledFields, [id]: true },
+      card: {
+        ...productSettings.card,
+        order: [...productSettings.card.order, id],
+        visibleFields: [...new Set([...productSettings.card.visibleFields, id])],
+      },
+      posCard: {
+        ...productSettings.posCard,
+        order: [...productSettings.posCard.order, id],
+        visibleFields: [...new Set([...productSettings.posCard.visibleFields, id])],
+      },
+    };
+
+    setSavingSettings(true);
+    try {
+      const savedSettings = await saveProductSettings(nextSettings);
+      setProductSettings(savedSettings);
+      return (
+        savedSettings.customAttributes.find((item) => item.id === id) ?? attribute
+      );
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   useEffect(() => {
     void loadProducts();
   }, [loadProducts]);
@@ -2957,23 +3797,8 @@ export function ProductsPage() {
     );
   }
 
-  function getNearestBatch(productId: string) {
-    const batches = getProductActiveBatches(productId);
-    return batches.find((batch) => batch.expiry_date) ?? batches[0] ?? null;
-  }
-
   function getProductExpiryStatus(product: Product) {
-    const nearestBatch = getNearestBatch(product.id);
-    return getExpiryStatus(nearestBatch?.expiry_date ?? product.expiry_date);
-  }
-
-  function getProductExpiryLabel(product: Product) {
-    const nearestBatch = getNearestBatch(product.id);
-    if (!nearestBatch) {
-      return formatProductDate(product.expiry_date);
-    }
-
-    return formatProductDate(nearestBatch.expiry_date);
+    return getExpiryStatus(product.expiry_date);
   }
 
   function getProductExpiryClassName(product: Product) {
@@ -3149,7 +3974,6 @@ export function ProductsPage() {
                 <ProductCard
                   compact
                   expiryClassName={getProductExpiryClassName(product)}
-                  expiryLabel={getProductExpiryLabel(product)}
                   key={product.id}
                   onSelect={() => openViewModal(product)}
                   product={product}
@@ -3399,6 +4223,7 @@ export function ProductsPage() {
         initialEan13={initialCreateEan13}
         libraryImages={libraryImages}
         onAddCategory={handleAddCategory}
+        onCreateVariant={handleCreateVariantFromForm}
         onCancel={closeProductEditor}
         onDelete={handleDelete}
         onSubmit={handleSave}
@@ -3439,6 +4264,7 @@ export function ProductsPage() {
         onEdit={openEditFromDetail}
         open={Boolean(viewingProduct)}
         product={viewingProduct}
+        settings={productSettings}
       />
       {canReceiveStock ? (
         <ReceiveStockModal

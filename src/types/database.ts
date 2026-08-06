@@ -668,6 +668,10 @@ export type Database = {
           import_date: string | null;
           expiry_date: string | null;
           product_name: string;
+          variant_key: string | null;
+          variant_label: string | null;
+          variant_values: Json | null;
+          variant_source_values: Json | null;
           quantity: number;
           unit_price: number;
           line_total: number;
@@ -682,6 +686,10 @@ export type Database = {
           import_date?: string | null;
           expiry_date?: string | null;
           product_name: string;
+          variant_key?: string | null;
+          variant_label?: string | null;
+          variant_values?: Json | null;
+          variant_source_values?: Json | null;
           quantity: number;
           unit_price: number;
           line_total: number;
@@ -696,6 +704,10 @@ export type Database = {
           import_date?: string | null;
           expiry_date?: string | null;
           product_name?: string;
+          variant_key?: string | null;
+          variant_label?: string | null;
+          variant_values?: Json | null;
+          variant_source_values?: Json | null;
           quantity?: number;
           unit_price?: number;
           line_total?: number;

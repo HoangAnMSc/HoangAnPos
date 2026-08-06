@@ -70,6 +70,10 @@ grant usage on schema public to anon, authenticated;
 
 Các lệnh trên xóa toàn bộ bảng, hàm, policy và dữ liệu trong schema `public`.
 
+Nếu database đã có dữ liệu và chỉ cần nâng cấp tính năng biến thể tại POS,
+chạy `supabase/variant-pos-upgrade.sql` trong SQL Editor. File nâng cấp này giữ
+nguyên dữ liệu hiện có; không chạy lại `schema.sql` cho trường hợp này.
+
 Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Staff.
 
 ### 5. Cấu hình email quên mật khẩu

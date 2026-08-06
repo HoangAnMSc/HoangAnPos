@@ -14,6 +14,7 @@ import {
   DollarSign,
   FileText,
   ImagePlus,
+  Layers3,
   Loader2,
   Minus,
   PackageSearch,
@@ -62,6 +63,12 @@ import {
   normalizeEan13Input,
 } from "../lib/productDisplay";
 import {
+  getProductVariantDefinitions,
+  getProductVariantCount,
+  resolveProductVariantSelection,
+  type ProductVariantSelection,
+} from "../lib/productPageData";
+import {
   createCustomer,
   fetchCustomers,
   type CustomerInput,
@@ -88,6 +95,7 @@ import {
 } from "../services/productSettings";
 import type {
   CartItem,
+  CartProductVariant,
   Customer,
   Order,
   PaymentSettings,
@@ -143,6 +151,73 @@ const renderLegacyModalActions = false;
 
 function createLineId(productId: string) {
   return `${productId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createCartVariant(
+  product: Product,
+  selection: ProductVariantSelection,
+  settings: ProductSettings,
+): CartProductVariant | null {
+  const resolved = resolveProductVariantSelection(product, settings, selection);
+  if (!resolved) return null;
+  const variantInventoryLinked =
+    settings.linkedAttributeIds.includes("stock") &&
+    settings.linkedAttributeIds.includes("shelf_stock");
+  return {
+    image_url: resolved.image_url,
+    key: JSON.stringify(resolved.values),
+    label: resolved.label,
+    linked_values: resolved.linked_values,
+    source_values: resolved.matches.map((variant) => variant.values),
+    shelf_stock:
+      variantInventoryLinked && resolved.shelf_stock !== null
+        ? resolved.shelf_stock
+        : product.shelf_stock,
+    stock:
+      variantInventoryLinked && resolved.stock !== null
+        ? resolved.stock
+        : product.stock,
+    values: resolved.values,
+  };
+}
+
+function selectionFromCartVariant(
+  variant: CartProductVariant,
+): ProductVariantSelection {
+  return Object.fromEntries(
+    Object.entries(variant.values).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value : [value],
+    ]),
+  );
+}
+
+function applyVariantProductData(
+  product: Product,
+  variant: CartProductVariant | null,
+): Product {
+  if (!variant) return product;
+  const linked = variant.linked_values ?? {};
+  const numeric = (key: string, fallback: number) => {
+    const value = Number(linked[key]);
+    return Number.isFinite(value) ? value : fallback;
+  };
+  return {
+    ...product,
+    category: linked.category ?? product.category,
+    cost_price: numeric("cost_price", product.cost_price),
+    description: linked.description ?? product.description,
+    expiry_date: linked.expiry_date ?? product.expiry_date,
+    image_url: variant.image_url ?? linked.image_url ?? product.image_url,
+    import_date: linked.import_date ?? product.import_date,
+    name: linked.name ?? product.name,
+    price: numeric("price", product.price),
+    reward_points_cost: numeric(
+      "reward_points_cost",
+      product.reward_points_cost,
+    ),
+    sku: linked.sku ?? product.sku,
+  };
 }
 
 function createEmptyBill(id: number): PosBill {
@@ -332,9 +407,11 @@ export function PosPage() {
   const customerSearchRef = useRef<HTMLInputElement>(null);
   const cartSectionRef = useRef<HTMLElement>(null);
   const focusSearchAfterBatchRef = useRef(true);
+  const focusSearchAfterVariantRef = useRef(true);
   const paidAmountRef = useRef<HTMLInputElement>(null);
 
   const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [variantModalOpen, setVariantModalOpen] = useState(false);
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(
     null,
   );
@@ -372,6 +449,12 @@ export function PosPage() {
   const [productQuery, setProductQuery] = useState("");
   const [productToBatchSelect, setProductToBatchSelect] =
     useState<Product | null>(null);
+  const [productToVariantSelect, setProductToVariantSelect] =
+    useState<Product | null>(null);
+  const [variantOptionSelection, setVariantOptionSelection] =
+    useState<ProductVariantSelection>({});
+  const [variantToBatchSelect, setVariantToBatchSelect] =
+    useState<CartProductVariant | null>(null);
   const [printingCompletedSale, setPrintingCompletedSale] = useState(false);
   const [receiptPaperSize, setReceiptPaperSize] = useState<ReceiptPaperSize>(
     () => getReceiptPaperSize(),
@@ -406,6 +489,27 @@ export function PosPage() {
     canAccess("pos.quick-customer.create") || canAccess("customers.create");
   const canUploadPaymentProof = canAccess("pos.payment-proof.upload");
   const shiftReadyForCheckout = checkoutShiftStatus?.ready === true;
+  const activeVariantDefinitions = productToVariantSelect
+    ? getProductVariantDefinitions(productToVariantSelect, productSettings)
+    : [];
+  const activeCartVariant = productToVariantSelect
+    ? createCartVariant(
+        productToVariantSelect,
+        variantOptionSelection,
+        productSettings,
+      )
+    : null;
+  const activeVariantQuantity =
+    productToVariantSelect && activeCartVariant
+      ? getQuantityInCart(
+          productToVariantSelect.id,
+          null,
+          activeCartVariant.key,
+        )
+      : 0;
+  const activeVariantRemaining = activeCartVariant
+    ? Math.max(activeCartVariant.shelf_stock - activeVariantQuantity, 0)
+    : 0;
 
   const loadCheckoutShiftStatus = useCallback(async () => {
     if (!canCheckout) {
@@ -526,9 +630,31 @@ export function PosPage() {
             const freshBatch = item.batch?.id
               ? (batchesById.get(item.batch.id) ?? null)
               : null;
+            const freshVariant = item.variant?.key
+              ? createCartVariant(
+                  freshProduct,
+                  selectionFromCartVariant(item.variant),
+                  productSettings,
+                )
+              : null;
+            const productRequiresVariant =
+              getProductVariantDefinitions(freshProduct, productSettings)
+                .length > 0;
             const availableStock =
-              freshBatch?.shelf_quantity ?? getSellableStock(freshProduct);
+              Math.min(
+                freshBatch?.shelf_quantity ?? Number.POSITIVE_INFINITY,
+                freshVariant?.shelf_stock ?? Number.POSITIVE_INFINITY,
+                getSellableStock(freshProduct),
+              );
             if (item.batch?.id && (!freshBatch || freshBatch.quantity <= 0)) {
+              changed = true;
+              return null;
+            }
+            if (item.variant?.key && !freshVariant) {
+              changed = true;
+              return null;
+            }
+            if (productRequiresVariant && !freshVariant) {
               changed = true;
               return null;
             }
@@ -537,7 +663,9 @@ export function PosPage() {
             if (
               quantity !== item.quantity ||
               freshProduct !== item.product ||
-              freshBatch !== item.batch
+              freshBatch !== item.batch ||
+              freshVariant?.stock !== item.variant?.stock ||
+              freshVariant?.shelf_stock !== item.variant?.shelf_stock
             ) {
               changed = true;
             }
@@ -545,8 +673,9 @@ export function PosPage() {
             return {
               ...item,
               batch: freshBatch,
-              product: freshProduct,
+              product: applyVariantProductData(freshProduct, freshVariant),
               quantity,
+              variant: freshVariant,
             };
           })
           .filter((item): item is PosCartItem => Boolean(item));
@@ -556,7 +685,7 @@ export function PosPage() {
 
       return changed ? { ...current, bills } : current;
     });
-  }, [productBatches, products]);
+  }, [productBatches, productSettings, products]);
 
   useEffect(() => {
     function handleShortcut(event: globalThis.KeyboardEvent) {
@@ -734,10 +863,15 @@ export function PosPage() {
     }));
   }
 
-  function getQuantityInCart(productId: string, batchId?: string | null) {
+  function getQuantityInCart(
+    productId: string,
+    batchId?: string | null,
+    variantKey?: string | null,
+  ) {
     return cart
       .filter((item) => item.product.id === productId)
       .filter((item) => (batchId ? item.batch?.id === batchId : true))
+      .filter((item) => (variantKey ? item.variant?.key === variantKey : true))
       .reduce((sum, item) => sum + item.quantity, 0);
   }
 
@@ -812,6 +946,7 @@ export function PosPage() {
     product: Product,
     batch?: ProductBatch | null,
     focusSearchAfterAdd = true,
+    variant?: CartProductVariant | null,
   ) {
     if (!canCheckout) {
       return;
@@ -825,6 +960,34 @@ export function PosPage() {
       return;
     }
 
+    const variantDefinitions = getProductVariantDefinitions(
+      product,
+      productSettings,
+    );
+    if (variant === undefined && variantDefinitions.length) {
+      focusSearchAfterVariantRef.current = focusSearchAfterAdd;
+      setProductToVariantSelect(product);
+      setVariantOptionSelection(
+        Object.fromEntries(
+          variantDefinitions.map((definition) => [
+            definition.id,
+            definition.type === "single" && definition.options[0]
+              ? [definition.options[0]]
+              : [],
+          ]),
+        ),
+      );
+      setVariantModalOpen(true);
+      return;
+    }
+
+    const selectedVariant = variant ?? null;
+    const effectiveProduct = applyVariantProductData(product, selectedVariant);
+    if (selectedVariant && selectedVariant.shelf_stock <= 0) {
+      showErrorNotice("Biến thể này đã hết hàng trên kệ.", "Không thể thêm biến thể");
+      return;
+    }
+
     const batches = getProductBatches(product.id);
     const selectedBatch =
       batch === undefined && batches.length === 1 ? batches[0] : batch;
@@ -832,7 +995,10 @@ export function PosPage() {
     if (batch === undefined && batches.length > 1) {
       focusSearchAfterBatchRef.current = focusSearchAfterAdd;
       setProductToBatchSelect(product);
+      setVariantToBatchSelect(selectedVariant);
       setBatchModalOpen(true);
+      setVariantModalOpen(false);
+      setProductToVariantSelect(null);
       return;
     }
 
@@ -844,12 +1010,28 @@ export function PosPage() {
         ? current
             .filter((item) => item.batch?.id === selectedBatch?.id)
             .reduce((sum, item) => sum + item.quantity, 0)
+          : 0;
+      const quantityInVariant = selectedVariant
+        ? current
+            .filter(
+              (item) =>
+                item.product.id === product.id &&
+                item.variant?.key === selectedVariant.key,
+            )
+            .reduce((sum, item) => sum + item.quantity, 0)
         : 0;
       const maxByBatch = selectedBatch
-        ? selectedBatch.quantity - quantityInBatch
+        ? selectedBatch.shelf_quantity - quantityInBatch
+        : getSellableStock(product) - quantityInCart;
+      const maxByVariant = selectedVariant
+        ? selectedVariant.shelf_stock - quantityInVariant
         : getSellableStock(product) - quantityInCart;
 
-      if (quantityInCart >= getSellableStock(product) || maxByBatch <= 0) {
+      if (
+        quantityInCart >= getSellableStock(product) ||
+        maxByBatch <= 0 ||
+        maxByVariant <= 0
+      ) {
         return current;
       }
 
@@ -859,8 +1041,9 @@ export function PosPage() {
           {
             batch: selectedBatch ?? null,
             lineId: createLineId(product.id),
-            product,
+            product: effectiveProduct,
             quantity: 1,
+            variant: selectedVariant,
           },
         ];
       }
@@ -868,7 +1051,8 @@ export function PosPage() {
       const existingItem = current.find(
         (item) =>
           item.product.id === product.id &&
-          (item.batch?.id ?? null) === (selectedBatch?.id ?? null),
+          (item.batch?.id ?? null) === (selectedBatch?.id ?? null) &&
+          (item.variant?.key ?? null) === (selectedVariant?.key ?? null),
       );
 
       if (existingItem) {
@@ -884,13 +1068,18 @@ export function PosPage() {
         {
           batch: selectedBatch ?? null,
           lineId: createLineId(product.id),
-          product,
+          product: effectiveProduct,
           quantity: 1,
+          variant: selectedVariant,
         },
       ];
     });
     setBatchModalOpen(false);
     setProductToBatchSelect(null);
+    setVariantToBatchSelect(null);
+    setVariantModalOpen(false);
+    setProductToVariantSelect(null);
+    setVariantOptionSelection({});
     setProductQuery("");
     if (focusSearchAfterAdd) {
       productSearchRef.current?.focus();
@@ -909,17 +1098,44 @@ export function PosPage() {
             return item;
           }
 
-          const otherQuantity = current
-            .filter((cartItem) => cartItem.lineId !== lineId)
-            .filter((cartItem) =>
-              item.batch
-                ? cartItem.batch?.id === item.batch.id
-                : cartItem.product.id === item.product.id,
+          const otherProductQuantity = current
+            .filter(
+              (cartItem) =>
+                cartItem.lineId !== lineId &&
+                cartItem.product.id === item.product.id,
             )
             .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-          const availableStock =
-            item.batch?.shelf_quantity ?? getSellableStock(item.product);
-          const maxQuantity = Math.max(availableStock - otherQuantity, 0);
+          const otherBatchQuantity = item.batch
+            ? current
+                .filter(
+                  (cartItem) =>
+                    cartItem.lineId !== lineId &&
+                    cartItem.batch?.id === item.batch?.id,
+                )
+                .reduce((sum, cartItem) => sum + cartItem.quantity, 0)
+            : 0;
+          const otherVariantQuantity = item.variant
+            ? current
+                .filter(
+                  (cartItem) =>
+                    cartItem.lineId !== lineId &&
+                    cartItem.product.id === item.product.id &&
+                    cartItem.variant?.key === item.variant?.key,
+                )
+                .reduce((sum, cartItem) => sum + cartItem.quantity, 0)
+            : 0;
+          const maxQuantity = Math.max(
+            Math.min(
+              getSellableStock(item.product) - otherProductQuantity,
+              item.batch
+                ? item.batch.shelf_quantity - otherBatchQuantity
+                : Number.POSITIVE_INFINITY,
+              item.variant
+                ? item.variant.shelf_stock - otherVariantQuantity
+                : Number.POSITIVE_INFINITY,
+            ),
+            0,
+          );
 
           return {
             ...item,
@@ -1727,11 +1943,12 @@ export function PosPage() {
                             !Array.isArray(product.attributes)
                               ? (product.attributes as Record<string, unknown>)
                               : {};
+                          const variantCount = getProductVariantCount(product);
 
                           return (
                             <article
                               aria-label={`Thêm ${product.name} vào đơn`}
-                              className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white transition sm:rounded-2xl ${effectivePosCardSettings.templateHtml ? "p-0" : "p-1.5 sm:p-2"} ${
+                              className={`group relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white transition sm:rounded-2xl ${effectivePosCardSettings.templateHtml ? "p-0" : "p-1.5 sm:p-2"} ${
                                 quantityInCart > 0
                                   ? "cursor-pointer border-moss-500 shadow-[0_8px_20px_rgba(72,84,54,0.14)] ring-1 ring-moss-200"
                                   : disabled
@@ -1797,6 +2014,11 @@ export function PosPage() {
                                             "vi-VN",
                                           )}{" "}
                                           điểm
+                                        </span>
+                                      ) : null}
+                                      {variantCount ? (
+                                        <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-md bg-slate-950/85 px-1.5 py-1 text-[9px] font-black text-white shadow-sm backdrop-blur-sm sm:text-[10px]">
+                                          <Layers3 className="h-3 w-3" /> {variantCount} biến thể
                                         </span>
                                       ) : null}
                                     </div>
@@ -2084,6 +2306,11 @@ export function PosPage() {
                                   </div>
                                 </>
                               )}
+                              {effectivePosCardSettings.templateHtml && variantCount ? (
+                                <span className="pointer-events-none absolute bottom-2 right-2 z-20 flex items-center gap-1 rounded-full bg-slate-950/85 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+                                  <Layers3 className="h-3 w-3" /> {variantCount} biến thể
+                                </span>
+                              ) : null}
                             </article>
                           );
                         })}
@@ -2190,12 +2417,12 @@ export function PosPage() {
                                 className="grid grid-cols-[56px_minmax(0,1fr)_40px] gap-x-3 gap-y-3 p-3 transition hover:bg-moss-50/45 sm:grid-cols-[64px_minmax(0,1fr)_132px_130px_40px] sm:items-center sm:px-4 sm:py-3"
                                 key={item.lineId}
                               >
-                                <div className="h-14 w-14 overflow-hidden rounded-xl bg-slate-100 sm:h-16 sm:w-16">
-                                  {item.product.image_url ? (
-                                    <img
-                                      alt={item.product.name}
-                                      className="h-full w-full object-cover"
-                                      src={item.product.image_url}
+                                  <div className="h-14 w-14 overflow-hidden rounded-xl bg-slate-100 sm:h-16 sm:w-16">
+                                   {item.variant?.image_url || item.product.image_url ? (
+                                     <img
+                                       alt={item.product.name}
+                                       className="h-full w-full object-cover"
+                                       src={item.variant?.image_url || item.product.image_url || ""}
                                     />
                                   ) : (
                                     <div className="flex h-full w-full items-center justify-center text-slate-400">
@@ -2211,18 +2438,11 @@ export function PosPage() {
                                     {getProductEan13Value(item.product)} ·{" "}
                                     {formatCurrency(item.product.price)}
                                   </p>
-                                  {item.batch ? (
-                                    <p className="mt-1 truncate text-xs font-extrabold text-moss-600">
-                                      Lô{" "}
-                                      {formatProductDate(
-                                        item.batch.import_date,
-                                      )}{" "}
-                                      · HSD{" "}
-                                      {formatProductDate(
-                                        item.batch.expiry_date,
-                                      )}
-                                    </p>
-                                  ) : null}
+                                   {item.variant ? (
+                                     <p className="mt-1 truncate text-xs font-extrabold text-moss-600">
+                                       {item.variant.label}
+                                     </p>
+                                   ) : null}
                                 </div>
 
                                 <div className="col-span-3 row-start-2 flex min-w-0 items-center justify-between gap-2 sm:contents">
@@ -2248,10 +2468,22 @@ export function PosPage() {
                                       <button
                                         aria-label={`Tăng số lượng ${item.product.name}`}
                                         className="flex h-9 w-9 items-center justify-center rounded-lg bg-moss-700 text-white shadow-sm transition hover:bg-moss-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:opacity-60 sm:h-10 sm:w-10"
-                                        disabled={
-                                          quantityInProduct >=
-                                          getSellableStock(item.product)
-                                        }
+                                         disabled={
+                                           quantityInProduct >= getSellableStock(item.product) ||
+                                           (item.variant
+                                             ? getQuantityInCart(
+                                                 item.product.id,
+                                                 null,
+                                                 item.variant.key,
+                                               ) >= item.variant.shelf_stock
+                                             : false) ||
+                                           (item.batch
+                                             ? getQuantityInCart(
+                                                 item.product.id,
+                                                 item.batch.id,
+                                               ) >= item.batch.shelf_quantity
+                                             : false)
+                                         }
                                         onClick={() =>
                                           changeQuantity(
                                             item.lineId,
@@ -2677,8 +2909,9 @@ export function PosPage() {
               const quantityInCurrentBatch = item.batch
                 ? getQuantityInCart(item.product.id, item.batch.id)
                 : quantityInProduct;
-              const maxQuantity =
-                item.batch?.shelf_quantity ?? getSellableStock(item.product);
+              const quantityInCurrentVariant = item.variant
+                ? getQuantityInCart(item.product.id, null, item.variant.key)
+                : quantityInProduct;
 
               return (
                 <article
@@ -2687,11 +2920,11 @@ export function PosPage() {
                 >
                   <div className="flex min-w-0 gap-3">
                     <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
-                      {item.product.image_url ? (
+                      {item.variant?.image_url || item.product.image_url ? (
                         <img
                           alt={item.product.name}
                           className="h-full w-full object-cover"
-                          src={item.product.image_url}
+                          src={item.variant?.image_url || item.product.image_url || ""}
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-slate-400">
@@ -2703,6 +2936,11 @@ export function PosPage() {
                       <h3 className="line-clamp-2 text-sm font-extrabold leading-5 text-slate-900">
                         {item.product.name}
                       </h3>
+                      {item.variant ? (
+                        <p className="mt-1 truncate text-xs font-extrabold text-moss-700">
+                          {item.variant.label}
+                        </p>
+                      ) : null}
                       <p className="mt-1 text-xs font-bold tabular-nums text-moss-700">
                         {formatCurrency(item.product.price * item.quantity)}
                       </p>
@@ -2744,8 +2982,13 @@ export function PosPage() {
                           className="flex h-9 w-9 items-center justify-center rounded-lg bg-moss-700 text-white shadow-sm disabled:bg-slate-300"
                           disabled={
                             !canCheckout ||
-                            quantityInCurrentBatch >= maxQuantity ||
-                            quantityInProduct >= getSellableStock(item.product)
+                            (item.batch
+                              ? quantityInCurrentBatch >= item.batch.shelf_quantity
+                              : false) ||
+                            quantityInProduct >= getSellableStock(item.product) ||
+                            (item.variant
+                              ? quantityInCurrentVariant >= item.variant.shelf_stock
+                              : false)
                           }
                           onClick={() =>
                             changeQuantity(item.lineId, item.quantity + 1)
@@ -3561,10 +3804,177 @@ export function PosPage() {
       {canCheckout ? (
         <Modal
           footer={
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:justify-end">
+              <Button
+                onClick={() => {
+                  setVariantModalOpen(false);
+                  setProductToVariantSelect(null);
+                  setVariantOptionSelection({});
+                }}
+                type="button"
+                variant="secondary"
+              >
+                Đóng
+              </Button>
+              <Button
+                disabled={!activeCartVariant || activeVariantRemaining <= 0}
+                onClick={() => {
+                  if (!productToVariantSelect || !activeCartVariant) return;
+                  addToCart(
+                    productToVariantSelect,
+                    undefined,
+                    focusSearchAfterVariantRef.current,
+                    activeCartVariant,
+                  );
+                }}
+                type="button"
+              >
+                Thêm vào đơn
+              </Button>
+            </div>
+          }
+          onClose={() => {
+            setVariantModalOpen(false);
+            setProductToVariantSelect(null);
+            setVariantOptionSelection({});
+          }}
+          open={variantModalOpen}
+          size="lg"
+          title="Chọn biến thể"
+        >
+          {productToVariantSelect ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 sm:gap-4 sm:p-4">
+                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 sm:h-24 sm:w-24">
+                  {productToVariantSelect.image_url ? (
+                    <img
+                      alt={productToVariantSelect.name}
+                      className="h-full w-full object-cover"
+                      src={productToVariantSelect.image_url}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-slate-400">
+                      <ShoppingBag className="h-8 w-8" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                    {getProductVariantCount(productToVariantSelect)} biến thể
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-lg font-extrabold leading-6 text-slate-900 sm:text-xl">
+                    {productToVariantSelect.name}
+                  </p>
+                  <p className="mt-1 text-sm font-black tabular-nums text-moss-700">
+                    {formatCurrency(productToVariantSelect.price)}
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                {activeVariantDefinitions.map((definition) => {
+                  const selected = variantOptionSelection[definition.id] ?? [];
+                  const multiple = definition.type === "multiple";
+                  return (
+                    <fieldset
+                      className="rounded-2xl border border-slate-200 bg-white p-3"
+                      key={definition.id}
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <legend className="font-extrabold text-slate-900">
+                          {definition.name}
+                        </legend>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-500">
+                          {multiple ? "Chọn nhiều" : "Chọn 1"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {definition.options.map((option) => {
+                          const checked = selected.includes(option);
+                          return (
+                            <button
+                              className={`relative flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold transition ${checked ? "border-moss-600 bg-moss-50 text-moss-900 ring-1 ring-moss-500" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300"}`}
+                              key={option}
+                              onClick={() =>
+                                setVariantOptionSelection((current) => ({
+                                  ...current,
+                                  [definition.id]: multiple
+                                    ? checked
+                                      ? selected.filter((value) => value !== option)
+                                      : [...selected, option]
+                                    : [option],
+                                }))
+                              }
+                              type="button"
+                            >
+                              {definition.optionDisplay !== "text" &&
+                              definition.optionColors?.[option] ? (
+                                <span
+                                  className="h-6 w-6 rounded-full border border-white shadow ring-1 ring-slate-300"
+                                  style={{
+                                    backgroundColor:
+                                      definition.optionColors[option],
+                                  }}
+                                />
+                              ) : null}
+                              {definition.optionDisplay !== "color" ? option : null}
+                              {checked ? (
+                                <Check className="absolute right-1.5 top-1.5 h-4 w-4 rounded-full bg-moss-700 p-0.5 text-white" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                  );
+                })}
+              </div>
+              {activeCartVariant ? (
+                <div className="rounded-2xl border border-moss-200 bg-moss-50 p-3">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-moss-700">
+                    Thông tin áp dụng
+                  </p>
+                  <p className="mt-1 font-extrabold text-slate-900">
+                    {activeCartVariant.label}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-slate-600">
+                    Tổng {activeCartVariant.stock} · Trên kệ {activeCartVariant.shelf_stock} · Còn có thể chọn {activeVariantRemaining}
+                  </p>
+                  {Object.entries(activeCartVariant.linked_values ?? {}).length ? (
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {Object.entries(activeCartVariant.linked_values ?? {}).map(
+                        ([key, value]) => (
+                          <div className="rounded-lg bg-white px-2.5 py-2" key={key}>
+                            <p className="text-[10px] font-extrabold uppercase text-slate-400">
+                              {productSettings.customAttributes.find(
+                                (attribute) => attribute.id === key,
+                              )?.name ?? key}
+                            </p>
+                            <p className="mt-0.5 text-xs font-bold text-slate-800">
+                              {value}
+                            </p>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">
+                  Hãy chọn đủ giá trị cho từng thuộc tính biến thể.
+                </p>
+              )}
+            </div>
+          ) : null}
+        </Modal>
+      ) : null}
+      {canCheckout ? (
+        <Modal
+          footer={
             <Button
               onClick={() => {
                 setBatchModalOpen(false);
                 setProductToBatchSelect(null);
+                setVariantToBatchSelect(null);
               }}
               type="button"
               variant="secondary"
@@ -3575,6 +3985,7 @@ export function PosPage() {
           onClose={() => {
             setBatchModalOpen(false);
             setProductToBatchSelect(null);
+            setVariantToBatchSelect(null);
           }}
           open={batchModalOpen}
           size="lg"
@@ -3626,6 +4037,7 @@ export function PosPage() {
                           productToBatchSelect,
                           batch,
                           focusSearchAfterBatchRef.current,
+                          variantToBatchSelect,
                         )
                       }
                       type="button"

@@ -22,7 +22,7 @@ export function saveReceiptPaperSize(size: ReceiptPaperSize) {
 
 type SavedReceiptInput = {
   customer: { address?: string | null; name: string; phone: string | null; points?: number } | null;
-  items: Array<{ product_name: string; quantity: number; unit_price: number; reward_points_cost?: number }>;
+  items: Array<{ product_name: string; variant_label?: string | null; quantity: number; unit_price: number; reward_points_cost?: number }>;
   order: Order;
 };
 
@@ -55,7 +55,7 @@ export function printPosReceipt({ customer, items, order, paperSize = getReceipt
   const rows = items
     .map(
       (item) => `<tr>
-        <td>${escapeHtml(item.product.name)}</td>
+        <td>${escapeHtml(item.product.name)}${item.variant?.label ? `<br><small>${escapeHtml(item.variant.label)}</small>` : ""}</td>
         <td class="number">${item.quantity}</td>
         <td class="number">${item.product.is_reward && order.points_redeemed > 0 ? `${money(item.product.reward_points_cost)} điểm` : money(item.product.price)}</td>
         <td class="number">${item.product.is_reward && order.points_redeemed > 0 ? `${money(item.product.reward_points_cost * item.quantity)} điểm` : money(item.product.price * item.quantity)}</td>
@@ -152,6 +152,15 @@ export function printSavedReceipt({ customer, items, order }: SavedReceiptInput)
         reward_points_cost: item.reward_points_cost ?? 0,
       },
       quantity: item.quantity,
+      variant: item.variant_label
+        ? {
+            key: "saved",
+            label: item.variant_label,
+            shelf_stock: 0,
+            stock: 0,
+            values: {},
+          }
+        : null,
     })) as unknown as CartItem[],
     order,
     pointsBalance: customer && "points" in customer ? Number(customer.points) : null,

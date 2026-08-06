@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { clsx } from "clsx";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Layers3 } from "lucide-react";
 import { formatCurrency } from "../../lib/format";
 import {
   formatExpiryDays,
@@ -11,6 +11,7 @@ import {
 import {
   productBadgeToneClassNames,
   productFieldLabels,
+  getProductVariantCount,
 } from "../../lib/productPageData";
 import type { Product } from "../../types";
 import type {
@@ -629,6 +630,7 @@ export function ProductCard({
   relatedProducts = [],
 }: ProductCardProps) {
   const expiryStatus = getExpiryStatus(product.expiry_date);
+  const variantCount = getProductVariantCount(product);
   const blockOrder = (key: ProductCardSettings["order"][number]) =>
     Math.max(settings?.order?.indexOf(key) ?? 0, 0);
   const isVisible = (key: string, legacy = true) =>
@@ -668,6 +670,11 @@ export function ProductCard({
             settings={settings}
           />
         </button>
+        {variantCount ? (
+          <span className="pointer-events-none absolute bottom-2 right-2 z-20 flex items-center gap-1 rounded-full bg-slate-950/85 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
+            <Layers3 className="h-3 w-3" /> {variantCount} biến thể
+          </span>
+        ) : null}
         {actions ? (
           <div
             className="absolute right-3 top-3 z-20 flex items-center gap-2"
@@ -759,6 +766,12 @@ export function ProductCard({
                 ) : (
                   <EyeOff className="h-4 w-4" />
                 )}
+              </span>
+            ) : null}
+
+            {variantCount ? (
+              <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-md bg-slate-950/85 px-1.5 py-1 text-[9px] font-black text-white shadow-sm backdrop-blur-sm sm:text-[10px]">
+                <Layers3 className="h-3 w-3" /> {variantCount} biến thể
               </span>
             ) : null}
           </div>
