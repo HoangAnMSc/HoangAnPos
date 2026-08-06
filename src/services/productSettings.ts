@@ -166,18 +166,13 @@ function fromRow(row: {
         (key) => !removedBuiltInAttributes.has(key),
       )
     : defaultProductSettings.attributeOrder;
-  const attributeOrder = [
+  const availableAttributeIds = [
     ...defaultProductSettings.attributeOrder,
-    ...savedOrder.filter(
-      (id) => !defaultProductSettings.attributeOrder.includes(id),
-    ),
-    ...customAttributes
-      .map((item) => item.id)
-      .filter(
-        (id) =>
-          !savedOrder.includes(id) &&
-          !defaultProductSettings.attributeOrder.includes(id),
-      ),
+    ...customAttributes.map((item) => item.id),
+  ];
+  const attributeOrder = [
+    ...savedOrder.filter((id) => availableAttributeIds.includes(id)),
+    ...availableAttributeIds.filter((id) => !savedOrder.includes(id)),
   ];
   const savedEnabled =
     (row.card_settings as { enabledFields?: Record<string, boolean> })

@@ -1,4 +1,4 @@
-import { useEffect, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import {
   Check,
   Code2,
@@ -128,6 +128,12 @@ export function ProductSettingsModal({
   const [draft, setDraft] = useState(settings);
   const [preview, setPreview] = useState<"card" | "pos" | null>(null);
   const [dragged, setDragged] = useState<string | null>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerStart = useRef<{ key: string; x: number; y: number } | null>(
+    null,
+  );
+  const draggedKey = useRef<string | null>(null);
+  const lastPointerY = useRef<number | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [editorError, setEditorError] = useState("");
   const [previewExpanded, setPreviewExpanded] = useState(true);
@@ -145,6 +151,12 @@ export function ProductSettingsModal({
       setLinkOpen(initialLinks);
     }
   }, [open, settings, initialPreview, initialLinks]);
+  useEffect(
+    () => () => {
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+    },
+    [],
+  );
   const fieldLabel = (key: string) =>
     labels[key] ??
     draft.customAttributes.find((item) => item.id === key)?.name ??
@@ -170,8 +182,14 @@ export function ProductSettingsModal({
       "Nội dung mẫu")
     : "";
   const reorder = (items: string[], source: string, target: string) => {
+    const sourceIndex = items.indexOf(source);
+    const targetIndex = items.indexOf(target);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex)
+      return items;
     const next = items.filter((item) => item !== source);
-    next.splice(Math.max(0, next.indexOf(target)), 0, source);
+    const insertionIndex =
+      next.indexOf(target) + (sourceIndex < targetIndex ? 1 : 0);
+    next.splice(Math.max(0, insertionIndex), 0, source);
     return next;
   };
   const reorderDraft = (
@@ -187,39 +205,97 @@ export function ProductSettingsModal({
     },
   });
   const move = (event: PointerEvent<HTMLElement>) => {
-    if (!dragged) return;
-    const target = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest("[data-card-key]")
-      ?.getAttribute("data-card-key");
-    if (target && target !== dragged) {
-      if (preview)
-        updatePreviewCard((card) => ({
-          ...card,
-          order: reorder(card.order, dragged, target),
-        }));
-      else setDraft((current) => reorderDraft(current, dragged, target));
+    const source = draggedKey.current;
+    if (!source) return;
+    const previousY = lastPointerY.current;
+    lastPointerY.current = event.clientY;
+    if (previousY === null || Math.abs(event.clientY - previousY) < 2) return;
+    const direction = event.clientY > previousY ? 1 : -1;
+    const rows = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-card-key]"),
+    )
+      .filter((row) => row.getClientRects().length > 0)
+      .sort(
+        (left, right) =>
+          left.getBoundingClientRect().top - right.getBoundingClientRect().top,
+      );
+    const sourceIndex = rows.findIndex((row) => row.dataset.cardKey === source);
+    if (sourceIndex < 0) return;
+    let targetRow: HTMLElement | undefined;
+    if (direction > 0) {
+      const crossedRows = rows.slice(sourceIndex + 1).filter((row) => {
+        const rect = row.getBoundingClientRect();
+        return event.clientY >= rect.top + rect.height / 2;
+      });
+      targetRow = crossedRows[crossedRows.length - 1];
+    } else {
+      targetRow = rows.slice(0, sourceIndex).find((row) => {
+        const rect = row.getBoundingClientRect();
+        return event.clientY <= rect.top + rect.height / 2;
+      });
     }
+    const target = targetRow?.dataset.cardKey;
+    if (!target || target === source) return;
+    if (preview)
+      updatePreviewCard((card) => ({
+        ...card,
+        order: reorder(card.order, source, target),
+      }));
+    else setDraft((current) => reorderDraft(current, source, target));
   };
-  const dragProps = (key: string) => ({
+  const clearHoldTimer = () => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  };
+  const finishDragging = () => {
+    clearHoldTimer();
+    pointerStart.current = null;
+    lastPointerY.current = null;
+    draggedKey.current = null;
+    setDragged(null);
+  };
+  const dropProps = (key: string) => ({
     "data-card-key": key,
-    draggable: true,
-    onDragStart: () => setDragged(key),
-    onDragOver: (event: React.DragEvent) => event.preventDefault(),
-    onDrop: () => {
-      if (dragged && dragged !== key) {
-        if (preview)
-          updatePreviewCard((card) => ({
-            ...card,
-            order: reorder(card.order, dragged, key),
-          }));
-        else setDraft((current) => reorderDraft(current, dragged, key));
+  });
+  const dragHandleProps = (key: string) => ({
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      clearHoldTimer();
+      lastPointerY.current = event.clientY;
+      pointerStart.current = { key, x: event.clientX, y: event.clientY };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      if (event.pointerType === "mouse") {
+        event.preventDefault();
+        draggedKey.current = key;
+        setDragged(key);
+        return;
       }
-      setDragged(null);
+      holdTimer.current = setTimeout(() => {
+        draggedKey.current = key;
+        setDragged(key);
+        navigator.vibrate?.(25);
+      }, 350);
     },
-    onPointerDown: () => setDragged(key),
-    onPointerMove: move,
-    onPointerUp: () => setDragged(null),
+    onContextMenu: (event: React.MouseEvent<HTMLButtonElement>) =>
+      event.preventDefault(),
+    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+      const start = pointerStart.current;
+      if (!start || start.key !== key) return;
+      if (!draggedKey.current) {
+        const distance = Math.hypot(
+          event.clientX - start.x,
+          event.clientY - start.y,
+        );
+        if (distance > 14) {
+          clearHoldTimer();
+          pointerStart.current = null;
+        }
+        return;
+      }
+      event.preventDefault();
+      move(event);
+    },
+    onPointerUp: finishDragging,
+    onPointerCancel: finishDragging,
   });
   const productAttributes =
     sample?.attributes &&
@@ -275,6 +351,9 @@ export function ProductSettingsModal({
   };
   const enabledCardKeys = previewCard.order.filter(
     (key) => draft.enabledFields[key] !== false,
+  );
+  const settingsFieldKeys = draft.attributeOrder.filter(
+    (key) => !draft.customAttributes.some((item) => item.id === key),
   );
   const visibleCount = previewCard.visibleFields.filter((key) =>
     enabledCardKeys.includes(key),
@@ -578,39 +657,42 @@ export function ProductSettingsModal({
                 Thứ tự form sản phẩm
               </h3>
               <p className="mt-1 text-xs font-semibold text-slate-500">
-                Kéo để đổi vị trí trường trong form tạo/sửa sản phẩm. Switch
-                quyết định trường có được sử dụng hay không.
+                Máy tính: kéo tay nắm. Điện thoại: nhấn giữ tay nắm rồi kéo
+                lên/xuống. Switch chỉ ẩn trường, không xóa dữ liệu đã nhập.
               </p>
             </div>
           </div>
           <div className="space-y-2">
-            {draft.attributeOrder
-              .filter(
-                (key) =>
-                  !draft.customAttributes.some((item) => item.id === key),
-              )
-              .map((key, index) => {
-                const enabled = draft.enabledFields[key] !== false;
-                return (
-                  <div
-                    {...dragProps(key)}
-                    className={`flex touch-none select-none items-center gap-3 rounded-2xl border px-3 py-3 shadow-sm transition ${enabled ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-65"}`}
-                    key={key}
+            {settingsFieldKeys.map((key, index) => {
+              const enabled = draft.enabledFields[key] !== false;
+              return (
+                <div
+                  {...dropProps(key)}
+                  className={`flex select-none items-center gap-3 rounded-2xl border px-3 py-3 shadow-sm transition ${dragged === key ? "border-moss-500 bg-moss-50 ring-2 ring-moss-100" : enabled ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-65"}`}
+                  key={key}
+                >
+                  <button
+                    {...dragHandleProps(key)}
+                    aria-label={`Nhấn giữ để kéo ${fieldLabel(key)}`}
+                    className="flex h-9 w-9 shrink-0 touch-none items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing"
+                    title="Nhấn giữ rồi kéo lên hoặc xuống"
+                    type="button"
                   >
-                    <GripVertical className="h-5 w-5 shrink-0 cursor-grab text-slate-400" />
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-500">
-                      {index + 1}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate font-extrabold text-slate-900">
-                      {fieldLabel(key)}
-                    </span>
-                    <Switch
-                      checked={enabled}
-                      onChange={(value) => setFieldEnabled(key, value)}
-                    />
-                  </div>
-                );
-              })}
+                    <GripVertical className="h-5 w-5 cursor-grab" />
+                  </button>
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-500">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-extrabold text-slate-900">
+                    {fieldLabel(key)}
+                  </span>
+                  <Switch
+                    checked={enabled}
+                    onChange={(value) => setFieldEnabled(key, value)}
+                  />
+                </div>
+              );
+            })}
           </div>
         </section>
       </Modal>
@@ -691,6 +773,9 @@ export function ProductSettingsModal({
                 <p className="text-xs font-semibold text-slate-500">
                   Đang hiện {visibleCount}/{enabledCardKeys.length} mục
                 </p>
+                <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                  Kéo tay nắm; trên điện thoại nhấn giữ rồi kéo.
+                </p>
               </div>
               <div className="flex gap-1">
                 <Button
@@ -726,11 +811,19 @@ export function ProductSettingsModal({
                 const visible = previewCard.visibleFields.includes(key);
                 return (
                   <div
-                    {...dragProps(key)}
-                    className={`flex touch-none items-center gap-3 rounded-xl border p-3 transition ${visible ? "border-moss-200 bg-moss-50" : "border-slate-200 bg-white opacity-70"}`}
+                    {...dropProps(key)}
+                    className={`flex items-center gap-3 rounded-xl border p-2 transition ${dragged === key ? "border-moss-500 bg-moss-50 ring-2 ring-moss-100" : visible ? "border-moss-200 bg-moss-50" : "border-slate-200 bg-white opacity-70"}`}
                     key={key}
                   >
-                    <GripVertical className="h-5 w-5 cursor-grab text-slate-400" />
+                    <button
+                      {...dragHandleProps(key)}
+                      aria-label={`Nhấn giữ để kéo ${fieldLabel(key)}`}
+                      className="flex h-9 w-9 shrink-0 touch-none items-center justify-center rounded-xl text-slate-400 transition hover:bg-white hover:text-slate-700 active:cursor-grabbing"
+                      title="Nhấn giữ rồi kéo lên hoặc xuống"
+                      type="button"
+                    >
+                      <GripVertical className="h-5 w-5 cursor-grab" />
+                    </button>
                     <span className="min-w-0 flex-1 text-sm font-bold">
                       {fieldLabel(key)}
                     </span>
@@ -920,197 +1013,212 @@ export function ProductSettingsModal({
         }
       >
         {cardCodeEditor ? (
-          <div className="grid h-full min-h-[420px] gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="flex min-h-[420px] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-inner">
-              <div className="flex flex-none items-center justify-between gap-3 border-b border-slate-700 px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                  <strong className="ml-2 text-xs text-slate-300">
-                    {cardCodeEditor.activeTab === "html"
-                      ? "Card.tsx"
-                      : "Card.css"}
-                  </strong>
-                </div>
-                <button
-                  className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-bold text-slate-200 transition hover:bg-slate-700"
-                  onClick={() => {
-                    const defaults = getDefaultCardCode(
-                      preview === "pos" ? "pos" : "card",
-                    );
-                    setCardCodeEditor({
-                      ...cardCodeEditor,
-                      error: "",
-                      html: defaults.html,
-                      css: defaults.css,
-                    });
-                  }}
-                  type="button"
-                >
-                  Khôi phục mẫu
-                </button>
-              </div>
-              <div className="grid flex-none grid-cols-2 border-b border-slate-700 bg-slate-900 p-1">
-                {(["html", "css"] as const).map((tab) => (
+          <div className="flex h-full min-h-[420px] flex-col gap-3">
+            <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="flex min-h-[420px] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-inner">
+                <div className="flex flex-none items-center justify-between gap-3 border-b border-slate-700 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                    <strong className="ml-2 text-xs text-slate-300">
+                      {cardCodeEditor.activeTab === "html"
+                        ? "Card.tsx"
+                        : "Card.css"}
+                    </strong>
+                  </div>
                   <button
-                    className={`rounded-lg px-3 py-2 text-xs font-black transition ${cardCodeEditor.activeTab === tab ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"}`}
-                    key={tab}
+                    className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-bold text-slate-200 transition hover:bg-slate-700"
+                    onClick={() => {
+                      const defaults = getDefaultCardCode(
+                        preview === "pos" ? "pos" : "card",
+                      );
+                      setCardCodeEditor({
+                        ...cardCodeEditor,
+                        error: "",
+                        html: defaults.html,
+                        css: defaults.css,
+                      });
+                    }}
+                    type="button"
+                  >
+                    Khôi phục mẫu
+                  </button>
+                </div>
+
+                <div className="order-2 flex flex-none items-center gap-2 border-b border-slate-700 bg-slate-900 px-2 py-2">
+                  <select
+                    aria-label="Chọn mẫu card đã lưu"
+                    className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-2 text-xs font-bold text-slate-200 outline-none focus:border-moss-400"
+                    defaultValue=""
+                    onChange={(event) => {
+                      const template = previewCard.templates?.find(
+                        (item) => item.id === event.target.value,
+                      );
+                      if (!template) return;
+                      setCardCodeEditor({
+                        ...cardCodeEditor,
+                        error: "",
+                        html: template.html,
+                        css: template.css,
+                      });
+                      event.target.value = "";
+                    }}
+                  >
+                    <option value="">
+                      {previewCard.templates?.length
+                        ? `Mẫu đã lưu (${previewCard.templates.length})`
+                        : "Chưa có mẫu đã lưu"}
+                    </option>
+                    {previewCard.templates?.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="h-9 shrink-0 rounded-lg bg-moss-700 px-3 text-xs font-black text-white transition hover:bg-moss-800"
                     onClick={() =>
                       setCardCodeEditor({
                         ...cardCodeEditor,
-                        activeTab: tab,
                         error: "",
+                        saveTemplateOpen: !cardCodeEditor.saveTemplateOpen,
                       })
                     }
                     type="button"
                   >
-                    {tab === "html" ? "TSX / HTML" : "CSS"}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-none items-center gap-2 border-b border-slate-700 bg-slate-900 px-2 py-2">
-                <select
-                  aria-label="Chọn mẫu card đã lưu"
-                  className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-2 text-xs font-bold text-slate-200 outline-none focus:border-moss-400"
-                  defaultValue=""
-                  onChange={(event) => {
-                    const template = previewCard.templates?.find(
-                      (item) => item.id === event.target.value,
-                    );
-                    if (!template) return;
-                    setCardCodeEditor({
-                      ...cardCodeEditor,
-                      error: "",
-                      html: template.html,
-                      css: template.css,
-                    });
-                    event.target.value = "";
-                  }}
-                >
-                  <option value="">
-                    {previewCard.templates?.length
-                      ? `Mẫu đã lưu (${previewCard.templates.length})`
-                      : "Chưa có mẫu đã lưu"}
-                  </option>
-                  {previewCard.templates?.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="h-9 shrink-0 rounded-lg bg-moss-700 px-3 text-xs font-black text-white transition hover:bg-moss-800"
-                  onClick={() =>
-                    setCardCodeEditor({
-                      ...cardCodeEditor,
-                      error: "",
-                      saveTemplateOpen: !cardCodeEditor.saveTemplateOpen,
-                    })
-                  }
-                  type="button"
-                >
-                  Lưu mẫu mới
-                </button>
-              </div>
-              {cardCodeEditor.saveTemplateOpen ? (
-                <div className="flex flex-none gap-2 border-b border-slate-700 bg-slate-900 px-2 pb-2">
-                  <input
-                    autoFocus
-                    className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-moss-400"
-                    onChange={(event) =>
-                      setCardCodeEditor({
-                        ...cardCodeEditor,
-                        error: "",
-                        templateName: event.target.value,
-                      })
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") saveCurrentCardTemplate();
-                    }}
-                    placeholder="Tên mẫu, ví dụ: Card tối giản"
-                    value={cardCodeEditor.templateName}
-                  />
-                  <button
-                    className="h-9 rounded-lg bg-white px-3 text-xs font-black text-slate-950"
-                    onClick={saveCurrentCardTemplate}
-                    type="button"
-                  >
-                    Lưu
+                    Lưu mẫu mới
                   </button>
                 </div>
-              ) : null}
-              <textarea
-                aria-label={
-                  cardCodeEditor.activeTab === "html"
-                    ? "Mã TSX hoặc HTML của toàn bộ card"
-                    : "Mã CSS của toàn bộ card"
-                }
-                autoFocus
-                className={`min-h-0 flex-1 resize-none bg-slate-950 p-4 font-mono text-[13px] leading-6 outline-none selection:bg-moss-700 ${cardCodeEditor.activeTab === "html" ? "text-emerald-300" : "text-sky-300"}`}
-                onChange={(event) =>
-                  setCardCodeEditor({
-                    ...cardCodeEditor,
-                    error: "",
-                    [cardCodeEditor.activeTab]: event.target.value,
-                  })
-                }
-                onKeyDown={(event) => {
-                  if (event.key !== "Tab") return;
-                  event.preventDefault();
-                  const target = event.currentTarget;
-                  const start = target.selectionStart;
-                  const end = target.selectionEnd;
-                  const currentValue =
-                    cardCodeEditor[cardCodeEditor.activeTab];
-                  const value = `${currentValue.slice(0, start)}  ${currentValue.slice(end)}`;
-                  setCardCodeEditor({
-                    ...cardCodeEditor,
-                    error: "",
-                    [cardCodeEditor.activeTab]: value,
-                  });
-                  requestAnimationFrame(() => {
-                    target.selectionStart = target.selectionEnd = start + 2;
-                  });
-                }}
-                spellCheck={false}
-                value={cardCodeEditor[cardCodeEditor.activeTab]}
-              />
-              <div className="flex-none border-t border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold">
-                {cardCodeEditor.error ? (
-                  <span className="text-red-300">{cardCodeEditor.error}</span>
-                ) : (
-                  <span className="text-slate-400">
-                    Dùng biến như {"{{name}}"}, {"{{price}}"},{" "}
-                    {"{{image_url}}"}, {"{{shelf_stock_text}}"} và{" "}
-                    {"{{attributes}}"}.
+                {cardCodeEditor.saveTemplateOpen ? (
+                  <div className="order-3 flex flex-none gap-2 border-b border-slate-700 bg-slate-900 px-2 pb-2">
+                    <input
+                      autoFocus
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-moss-400"
+                      onChange={(event) =>
+                        setCardCodeEditor({
+                          ...cardCodeEditor,
+                          error: "",
+                          templateName: event.target.value,
+                        })
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") saveCurrentCardTemplate();
+                      }}
+                      placeholder="Tên mẫu, ví dụ: Card tối giản"
+                      value={cardCodeEditor.templateName}
+                    />
+                    <button
+                      className="h-9 rounded-lg bg-white px-3 text-xs font-black text-slate-950"
+                      onClick={saveCurrentCardTemplate}
+                      type="button"
+                    >
+                      Lưu
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="order-1 grid flex-none grid-cols-2 border-b border-slate-700 bg-slate-900 p-1">
+                  {(["html", "css"] as const).map((tab) => (
+                    <button
+                      className={`rounded-lg px-3 py-2 text-xs font-black transition ${cardCodeEditor.activeTab === tab ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"}`}
+                      key={tab}
+                      onClick={() =>
+                        setCardCodeEditor({
+                          ...cardCodeEditor,
+                          activeTab: tab,
+                          error: "",
+                        })
+                      }
+                      type="button"
+                    >
+                      {tab === "html" ? "TSX / HTML" : "CSS"}
+                    </button>
+                  ))}
+                </div>
+                <div className="hidden">
+                  <p className="text-[11px] font-semibold text-slate-400">
+                    {cardCodeEditor.activeTab === "html"
+                      ? "Cấu trúc toàn bộ card bằng HTML/TSX. Dùng {{biến}} để chèn dữ liệu."
+                      : "CSS áp dụng riêng cho toàn bộ card đang chọn."}
+                  </p>
+                  <span className="shrink-0 rounded bg-emerald-950 px-2 py-1 text-[10px] font-black text-emerald-300">
+                    LIVE
                   </span>
-                )}
-              </div>
-            </div>
-            <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="mb-3 text-center text-xs font-extrabold text-slate-500">
-                Xem trước trực tiếp · {preview === "pos" ? "Card POS" : "Card chung"}
-              </p>
-              {previewProduct ? (
-                <ProductCardCodeRenderer
-                  customAttributes={draft.customAttributes}
-                  mode={preview === "pos" ? "pos" : "card"}
-                  product={previewProduct}
-                  quantity={0}
-                  settings={{
-                    ...effectivePreviewCard,
-                    templateHtml: cardCodeEditor.html,
-                    templateCss: cardCodeEditor.css,
+                </div>
+                <textarea
+                  aria-label={
+                    cardCodeEditor.activeTab === "html"
+                      ? "Mã TSX hoặc HTML của toàn bộ card"
+                      : "Mã CSS của toàn bộ card"
+                  }
+                  autoFocus
+                  className={`order-4 min-h-0 flex-1 resize-none bg-slate-950 p-4 font-mono text-[13px] leading-6 outline-none selection:bg-moss-700 ${cardCodeEditor.activeTab === "html" ? "text-emerald-300" : "text-sky-300"}`}
+                  onChange={(event) =>
+                    setCardCodeEditor({
+                      ...cardCodeEditor,
+                      error: "",
+                      [cardCodeEditor.activeTab]: event.target.value,
+                    })
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key !== "Tab") return;
+                    event.preventDefault();
+                    const target = event.currentTarget;
+                    const start = target.selectionStart;
+                    const end = target.selectionEnd;
+                    const currentValue =
+                      cardCodeEditor[cardCodeEditor.activeTab];
+                    const value = `${currentValue.slice(0, start)}  ${currentValue.slice(end)}`;
+                    setCardCodeEditor({
+                      ...cardCodeEditor,
+                      error: "",
+                      [cardCodeEditor.activeTab]: value,
+                    });
+                    requestAnimationFrame(() => {
+                      target.selectionStart = target.selectionEnd = start + 2;
+                    });
                   }}
+                  spellCheck={false}
+                  value={cardCodeEditor[cardCodeEditor.activeTab]}
                 />
-              ) : (
-                <p className="rounded-xl bg-white p-4 text-center text-xs font-semibold text-slate-500">
-                  Cần ít nhất một sản phẩm để xem dữ liệu mẫu.
+                <div className="order-5 flex-none border-t border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold">
+                  {cardCodeEditor.error ? (
+                    <span className="text-red-300">{cardCodeEditor.error}</span>
+                  ) : (
+                    <span className="text-slate-400">
+                      Dùng biến như {"{{name}}"}, {"{{price}}"},{" "}
+                      {"{{image_url}}"}, {"{{shelf_stock_text}}"} và{" "}
+                      {"{{attributes}}"}.
+                    </span>
+                  )}
+                </div>
+              </div>
+              <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="mb-3 text-center text-xs font-extrabold text-slate-500">
+                  Xem trước trực tiếp ·{" "}
+                  {preview === "pos" ? "Card POS" : "Card chung"}
                 </p>
-              )}
-            </aside>
+                {previewProduct ? (
+                  <ProductCardCodeRenderer
+                    customAttributes={draft.customAttributes}
+                    mode={preview === "pos" ? "pos" : "card"}
+                    product={previewProduct}
+                    quantity={0}
+                    settings={{
+                      ...effectivePreviewCard,
+                      templateHtml: cardCodeEditor.html,
+                      templateCss: cardCodeEditor.css,
+                    }}
+                  />
+                ) : (
+                  <p className="rounded-xl bg-white p-4 text-center text-xs font-semibold text-slate-500">
+                    Cần ít nhất một sản phẩm để xem dữ liệu mẫu.
+                  </p>
+                )}
+              </aside>
             </div>
+          </div>
         ) : null}
       </Modal>
 
@@ -1275,9 +1383,7 @@ export function ProductSettingsModal({
                         setEditor({
                           ...editor,
                           optionDisplay: event.target.value as
-                            | "color"
-                            | "text"
-                            | "both",
+                            "color" | "text" | "both",
                         })
                       }
                       value={editor.optionDisplay}
