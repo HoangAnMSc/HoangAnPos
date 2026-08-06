@@ -8,6 +8,7 @@ import {
   Minus,
   Pencil,
   Plus,
+  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { Button } from "../ui/Button";
@@ -18,40 +19,24 @@ import {
   ProductCard,
   ProductCardCodeRenderer,
 } from "./ProductCard";
-import { getDefaultCardCode } from "./productCardCode";
+import { getBuiltInCardTemplates, getDefaultCardCode } from "./productCardCode";
 import { formatCurrency } from "../../lib/format";
+import {
+  attributeTypeLabels,
+  getProductCardEditorSampleValues,
+  placeholderLabels,
+  productAttributeTypeOptions,
+  productCardSampleFallbacks,
+  productFieldLabels as labels,
+  productMediaSamplePlaceholder,
+  productOptionDisplayOptions,
+} from "../../lib/productPageData";
 import type { Product } from "../../types";
 import type {
   CustomAttributeType,
   ProductSettings,
 } from "../../services/productSettings";
 
-const labels: Record<string, string> = {
-  image: "Hình ảnh",
-  name: "Tên sản phẩm",
-  sku: "EAN-13",
-  category: "Nhóm hàng",
-  description: "Mô tả",
-  price: "Giá bán",
-  cost_price: "Giá vốn",
-  stock: "Tổng tồn kho",
-  shelf_stock: "Tồn trên kệ",
-  import_date: "Ngày nhập",
-  expiry_date: "Hạn sử dụng",
-  is_active: "Trạng thái",
-  is_reward: "Sản phẩm đổi điểm",
-  reward_points_cost: "Điểm cần đổi",
-  color: "Màu sắc",
-  size: "Kích thước",
-};
-const attributeTypeLabels: Record<CustomAttributeType, string> = {
-  text: "Văn bản",
-  number: "Số",
-  date: "Ngày",
-  single: "Chọn một",
-  multiple: "Chọn nhiều",
-  media: "Ảnh & video",
-};
 type OptionDraft = {
   id: string;
   label: string;
@@ -74,15 +59,6 @@ type CardCodeEditor = {
   error: string;
   saveTemplateOpen: boolean;
   templateName: string;
-};
-
-const placeholderLabels: Record<string, string> = {
-  name: "{#ten}",
-  category: "{#nhomhang}",
-  price: "{#giaban}",
-  shelf_stock: "{#trenke}",
-  stock: "{#tongton}",
-  expiry_date: "{#hansudung}",
 };
 
 function Switch({
@@ -128,6 +104,7 @@ export function ProductSettingsModal({
   const [draft, setDraft] = useState(settings);
   const [preview, setPreview] = useState<"card" | "pos" | null>(null);
   const [dragged, setDragged] = useState<string | null>(null);
+  const [pressing, setPressing] = useState<string | null>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerStart = useRef<{ key: string; x: number; y: number } | null>(
     null,
@@ -161,24 +138,11 @@ export function ProductSettingsModal({
     labels[key] ??
     draft.customAttributes.find((item) => item.id === key)?.name ??
     key;
+  const cardEditorSampleValues = getProductCardEditorSampleValues(sample);
   const cardEditorSampleValue = cardTextEditor
     ? (draft.customAttributes.find((item) => item.id === cardTextEditor.key)
         ?.name ??
-      {
-        name: sample?.name ?? "Tên sản phẩm",
-        category: sample?.category ?? "Nhóm hàng",
-        price: formatCurrency(sample?.price ?? 20000),
-        cost_price: formatCurrency(sample?.cost_price ?? 15000),
-        stock: String(sample?.stock ?? 20),
-        shelf_stock: String(sample?.shelf_stock ?? 10),
-        sku: sample?.sku ?? "8930000000000",
-        description: sample?.description ?? "Mô tả sản phẩm",
-        import_date: sample?.import_date ?? "2026-08-05",
-        expiry_date: sample?.expiry_date ?? "2027-08-05",
-        is_active: sample?.is_active === false ? "Đang ẩn" : "Đang bán",
-        is_reward: sample?.is_reward ? "Có" : "Không",
-        reward_points_cost: String(sample?.reward_points_cost ?? 100),
-      }[cardTextEditor.key] ??
+      cardEditorSampleValues[cardTextEditor.key] ??
       "Nội dung mẫu")
     : "";
   const reorder = (items: string[], source: string, target: string) => {
@@ -204,12 +168,30 @@ export function ProductSettingsModal({
       order: reorder(current.card.order, source, target),
     },
   });
+  const autoScroll = (element: HTMLElement, clientY: number) => {
+    let parent = element.parentElement;
+    while (parent) {
+      const overflowY = window.getComputedStyle(parent).overflowY;
+      if (
+        (overflowY === "auto" || overflowY === "scroll") &&
+        parent.scrollHeight > parent.clientHeight
+      ) {
+        const rect = parent.getBoundingClientRect();
+        const edge = 72;
+        if (clientY < rect.top + edge) parent.scrollBy({ top: -14 });
+        else if (clientY > rect.bottom - edge) parent.scrollBy({ top: 14 });
+        return;
+      }
+      parent = parent.parentElement;
+    }
+  };
   const move = (event: PointerEvent<HTMLElement>) => {
     const source = draggedKey.current;
     if (!source) return;
     const previousY = lastPointerY.current;
     lastPointerY.current = event.clientY;
     if (previousY === null || Math.abs(event.clientY - previousY) < 2) return;
+    autoScroll(event.currentTarget, event.clientY);
     const direction = event.clientY > previousY ? 1 : -1;
     const rows = Array.from(
       document.querySelectorAll<HTMLElement>("[data-card-key]"),
@@ -252,28 +234,57 @@ export function ProductSettingsModal({
     pointerStart.current = null;
     lastPointerY.current = null;
     draggedKey.current = null;
+    setPressing(null);
     setDragged(null);
   };
   const dropProps = (key: string) => ({
     "data-card-key": key,
+    onPointerDown: (event: PointerEvent<HTMLDivElement>) => {
+      if (
+        event.pointerType !== "mouse" ||
+        (event.target as HTMLElement).closest("button")
+      )
+        return;
+      clearHoldTimer();
+      pointerStart.current = { key, x: event.clientX, y: event.clientY };
+      lastPointerY.current = event.clientY;
+      draggedKey.current = key;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      setDragged(key);
+    },
+    onPointerMove: (event: PointerEvent<HTMLDivElement>) => {
+      if (draggedKey.current !== key) return;
+      event.preventDefault();
+      move(event);
+    },
+    onPointerUp: (event: PointerEvent<HTMLDivElement>) => {
+      if (draggedKey.current === key) finishDragging();
+      if (event.currentTarget.hasPointerCapture(event.pointerId))
+        event.currentTarget.releasePointerCapture(event.pointerId);
+    },
+    onPointerCancel: finishDragging,
   });
   const dragHandleProps = (key: string) => ({
     onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
       clearHoldTimer();
+      setPressing(key);
       lastPointerY.current = event.clientY;
       pointerStart.current = { key, x: event.clientX, y: event.clientY };
       event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
       if (event.pointerType === "mouse") {
-        event.preventDefault();
+        setPressing(null);
         draggedKey.current = key;
         setDragged(key);
         return;
       }
       holdTimer.current = setTimeout(() => {
+        setPressing(null);
         draggedKey.current = key;
         setDragged(key);
         navigator.vibrate?.(25);
-      }, 350);
+      }, 220);
     },
     onContextMenu: (event: React.MouseEvent<HTMLButtonElement>) =>
       event.preventDefault(),
@@ -281,14 +292,6 @@ export function ProductSettingsModal({
       const start = pointerStart.current;
       if (!start || start.key !== key) return;
       if (!draggedKey.current) {
-        const distance = Math.hypot(
-          event.clientX - start.x,
-          event.clientY - start.y,
-        );
-        if (distance > 14) {
-          clearHoldTimer();
-          pointerStart.current = null;
-        }
         return;
       }
       event.preventDefault();
@@ -297,6 +300,7 @@ export function ProductSettingsModal({
     onPointerUp: finishDragging,
     onPointerCancel: finishDragging,
   });
+  const previewCard = preview === "pos" ? draft.posCard : draft.card;
   const productAttributes =
     sample?.attributes &&
     typeof sample.attributes === "object" &&
@@ -321,8 +325,7 @@ export function ProductSettingsModal({
                 : attribute.type === "media"
                   ? {
                       images: [
-                        sample?.image_url ??
-                          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='160'%3E%3Crect width='100%25' height='100%25' fill='%23f1f5f9'/%3E%3C/svg%3E",
+                        sample?.image_url ?? productMediaSamplePlaceholder,
                       ],
                       video: "",
                     }
@@ -334,15 +337,45 @@ export function ProductSettingsModal({
   const previewProduct = sample
     ? {
         ...sample,
-        category: sample.category || "Nhóm hàng mẫu",
-        description: sample.description || "Mô tả sản phẩm mẫu",
-        expiry_date: sample.expiry_date || "2027-08-05",
-        import_date: sample.import_date || "2026-08-05",
-        sku: sample.sku || "8930000000000",
+        category: sample.category || productCardSampleFallbacks.category,
+        description:
+          sample.description || productCardSampleFallbacks.description,
+        expiry_date:
+          sample.expiry_date || productCardSampleFallbacks.expiry_date,
+        import_date:
+          sample.import_date || productCardSampleFallbacks.import_date,
+        is_reward:
+          sample.is_reward ||
+          previewCard.visibleFields.includes("reward_points_cost"),
+        reward_points_cost:
+          sample.reward_points_cost ||
+          productCardSampleFallbacks.reward_points_cost,
+        sku: sample.sku || productCardSampleFallbacks.sku,
         attributes: previewAttributes as Product["attributes"],
       }
     : null;
-  const previewCard = preview === "pos" ? draft.posCard : draft.card;
+  const builtInCardTemplates = getBuiltInCardTemplates(
+    preview === "pos" ? "pos" : "card",
+  );
+  const activeBuiltInTemplate = cardCodeEditor
+    ? builtInCardTemplates.find(
+        (template) =>
+          template.html === cardCodeEditor.html &&
+          template.css === cardCodeEditor.css,
+      )
+    : null;
+  const activeSavedTemplate = cardCodeEditor
+    ? previewCard.templates?.find(
+        (template) =>
+          template.html === cardCodeEditor.html &&
+          template.css === cardCodeEditor.css,
+      )
+    : null;
+  const selectedCardTemplate = activeBuiltInTemplate
+    ? `built-in:${activeBuiltInTemplate.id}`
+    : activeSavedTemplate
+      ? `saved:${activeSavedTemplate.id}`
+      : "";
   const effectivePreviewCard = {
     ...previewCard,
     visibleFields: previewCard.visibleFields.filter(
@@ -657,9 +690,17 @@ export function ProductSettingsModal({
                 Thứ tự form sản phẩm
               </h3>
               <p className="mt-1 text-xs font-semibold text-slate-500">
-                Máy tính: kéo tay nắm. Điện thoại: nhấn giữ tay nắm rồi kéo
-                lên/xuống. Switch chỉ ẩn trường, không xóa dữ liệu đã nhập.
+                Kéo bằng vùng tay nắm bên trái. Switch chỉ ẩn trường, không xóa
+                dữ liệu đã nhập.
               </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold">
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
+                  PC: kéo cả dòng hoặc tay nắm
+                </span>
+                <span className="rounded-full bg-moss-50 px-2.5 py-1 text-moss-700">
+                  Điện thoại: giữ 0,2 giây đến khi rung rồi kéo
+                </span>
+              </div>
             </div>
           </div>
           <div className="space-y-2">
@@ -668,17 +709,17 @@ export function ProductSettingsModal({
               return (
                 <div
                   {...dropProps(key)}
-                  className={`flex select-none items-center gap-3 rounded-2xl border px-3 py-3 shadow-sm transition ${dragged === key ? "border-moss-500 bg-moss-50 ring-2 ring-moss-100" : enabled ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-65"}`}
+                  className={`flex select-none items-center gap-2 rounded-2xl border p-2 shadow-sm transition-[border-color,background-color,box-shadow,transform,opacity] duration-150 sm:cursor-grab ${dragged === key ? "relative z-10 scale-[0.99] !cursor-grabbing border-moss-500 bg-moss-50 opacity-80 shadow-lg ring-2 ring-moss-200" : pressing === key ? "border-amber-400 bg-amber-50 ring-2 ring-amber-100" : enabled ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-65"}`}
                   key={key}
                 >
                   <button
                     {...dragHandleProps(key)}
-                    aria-label={`Nhấn giữ để kéo ${fieldLabel(key)}`}
-                    className="flex h-9 w-9 shrink-0 touch-none items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing"
-                    title="Nhấn giữ rồi kéo lên hoặc xuống"
+                    aria-label={`Kéo để đổi vị trí ${fieldLabel(key)}`}
+                    className={`flex h-12 w-12 shrink-0 touch-none items-center justify-center rounded-xl border transition active:cursor-grabbing ${dragged === key ? "cursor-grabbing border-moss-400 bg-moss-700 text-white" : pressing === key ? "animate-pulse cursor-grabbing border-amber-300 bg-amber-100 text-amber-700" : "cursor-grab border-slate-200 bg-slate-100 text-slate-500 hover:border-moss-300 hover:bg-moss-50 hover:text-moss-700"}`}
+                    title="Giữ vùng này và kéo lên hoặc xuống"
                     type="button"
                   >
-                    <GripVertical className="h-5 w-5 cursor-grab" />
+                    <GripVertical className="h-6 w-6" />
                   </button>
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-500">
                     {index + 1}
@@ -698,14 +739,11 @@ export function ProductSettingsModal({
       </Modal>
 
       <Modal
+        bodyClassName="!p-3 sm:!p-5"
         open={Boolean(preview)}
         onClose={closePreview}
         size="lg"
-        title={
-          preview === "pos"
-            ? "Điều chỉnh card POS"
-            : "Điều chỉnh card dùng chung"
-        }
+        title="Thiết kế card"
         footer={
           <div className="flex w-full justify-end gap-2">
             <Button onClick={closePreview} variant="secondary">
@@ -718,64 +756,63 @@ export function ProductSettingsModal({
                 setPreview(null);
               }}
             >
-              {saving ? "Đang lưu..." : "Lưu hiển thị card"}
+              {saving ? "Đang lưu..." : "Lưu"}
             </Button>
           </div>
         }
       >
-        <div className="mb-4 rounded-2xl bg-slate-100 p-1">
-          <div className="grid grid-cols-2">
+        <div className="mb-3 flex items-center gap-1 rounded-xl bg-slate-100 p-1">
+          <div className="grid min-w-0 flex-1 grid-cols-2">
             <button
-              className={`rounded-xl px-3 py-2.5 text-sm font-extrabold transition ${preview === "card" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
+              className={`rounded-lg px-2 py-2 text-sm font-extrabold transition ${preview === "card" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
               onClick={() => setPreview("card")}
               type="button"
             >
               Card chung
             </button>
             <button
-              className={`rounded-xl px-3 py-2.5 text-sm font-extrabold transition ${preview === "pos" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
+              className={`rounded-lg px-2 py-2 text-sm font-extrabold transition ${preview === "pos" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
               onClick={() => setPreview("pos")}
               type="button"
             >
               Card POS
             </button>
           </div>
-          <div className="mt-1 grid grid-cols-2 gap-1">
-            <button
-              className="flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-slate-700 shadow-sm"
-              onClick={() => setPreviewExpanded((value) => !value)}
-              type="button"
-            >
-              {previewExpanded ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
-              {previewExpanded ? "Ẩn xem trước" : "Hiện xem trước"}
-            </button>
-            <button
-              className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-extrabold text-white shadow-sm transition hover:bg-slate-800"
-              onClick={openCardCodeEditor}
-              type="button"
-            >
-              <Code2 className="h-4 w-4" />
-              Điều chỉnh code
-            </button>
-          </div>
+          <button
+            aria-label={previewExpanded ? "Ẩn xem trước" : "Hiện xem trước"}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm transition hover:text-slate-950"
+            onClick={() => setPreviewExpanded((value) => !value)}
+            title={previewExpanded ? "Ẩn xem trước" : "Hiện xem trước"}
+            type="button"
+          >
+            {previewExpanded ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
+          </button>
+          <button
+            aria-label="Chỉnh mã giao diện"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white shadow-sm transition hover:bg-slate-800"
+            onClick={openCardCodeEditor}
+            title="Chỉnh mã giao diện"
+            type="button"
+          >
+            <Code2 className="h-4 w-4" />
+          </button>
         </div>
         <div
-          className={`grid gap-5 ${previewExpanded ? "sm:grid-cols-[minmax(0,1fr)_220px]" : "grid-cols-1"}`}
+          className={`grid gap-3 ${previewExpanded ? "sm:grid-cols-[minmax(0,1fr)_228px]" : "grid-cols-1"}`}
         >
           <section className="order-2 sm:order-1">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <h3 className="font-extrabold text-slate-950">Nội dung card</h3>
-                <p className="text-xs font-semibold text-slate-500">
-                  Đang hiện {visibleCount}/{enabledCardKeys.length} mục
-                </p>
-                <p className="mt-0.5 text-[11px] font-medium text-slate-400">
-                  Kéo tay nắm; trên điện thoại nhấn giữ rồi kéo.
-                </p>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-extrabold text-slate-950">
+                  Trường hiển thị
+                </h3>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">
+                  {visibleCount}/{enabledCardKeys.length}
+                </span>
               </div>
               <div className="flex gap-1">
                 <Button
@@ -790,7 +827,7 @@ export function ProductSettingsModal({
                   }
                   variant="secondary"
                 >
-                  Bật tất cả
+                  Tất cả
                 </Button>
                 <Button
                   className="px-2 text-xs"
@@ -802,7 +839,7 @@ export function ProductSettingsModal({
                   }
                   variant="secondary"
                 >
-                  Tắt tất cả
+                  Ẩn hết
                 </Button>
               </div>
             </div>
@@ -812,17 +849,17 @@ export function ProductSettingsModal({
                 return (
                   <div
                     {...dropProps(key)}
-                    className={`flex items-center gap-3 rounded-xl border p-2 transition ${dragged === key ? "border-moss-500 bg-moss-50 ring-2 ring-moss-100" : visible ? "border-moss-200 bg-moss-50" : "border-slate-200 bg-white opacity-70"}`}
+                    className={`flex items-center gap-2 rounded-xl border p-2 transition-[border-color,background-color,box-shadow,transform,opacity] duration-150 sm:cursor-grab ${dragged === key ? "relative z-10 scale-[0.99] !cursor-grabbing border-moss-500 bg-moss-50 opacity-80 shadow-lg ring-2 ring-moss-200" : pressing === key ? "border-amber-400 bg-amber-50 ring-2 ring-amber-100" : visible ? "border-moss-200 bg-moss-50" : "border-slate-200 bg-white opacity-70"}`}
                     key={key}
                   >
                     <button
                       {...dragHandleProps(key)}
-                      aria-label={`Nhấn giữ để kéo ${fieldLabel(key)}`}
-                      className="flex h-9 w-9 shrink-0 touch-none items-center justify-center rounded-xl text-slate-400 transition hover:bg-white hover:text-slate-700 active:cursor-grabbing"
-                      title="Nhấn giữ rồi kéo lên hoặc xuống"
+                      aria-label={`Kéo để đổi vị trí ${fieldLabel(key)}`}
+                      className={`flex h-11 w-11 shrink-0 touch-none items-center justify-center rounded-xl border transition active:cursor-grabbing ${dragged === key ? "cursor-grabbing border-moss-400 bg-moss-700 text-white" : pressing === key ? "animate-pulse cursor-grabbing border-amber-300 bg-amber-100 text-amber-700" : "cursor-grab border-slate-200 bg-white text-slate-500 hover:border-moss-300 hover:text-moss-700"}`}
+                      title="Giữ vùng này và kéo lên hoặc xuống"
                       type="button"
                     >
-                      <GripVertical className="h-5 w-5 cursor-grab" />
+                      <GripVertical className="h-6 w-6" />
                     </button>
                     <span className="min-w-0 flex-1 text-sm font-bold">
                       {fieldLabel(key)}
@@ -847,13 +884,13 @@ export function ProductSettingsModal({
             </div>
           </section>
           {previewExpanded ? (
-            <aside className="order-1 rounded-2xl border border-slate-100 bg-slate-50 p-3 sm:order-2 sm:self-start">
-              <p className="mb-2 flex items-center justify-center gap-1.5 text-center text-xs font-bold text-slate-500">
+            <aside className="order-1 rounded-xl border border-slate-100 bg-slate-50 p-2 sm:order-2 sm:self-start">
+              <p className="mb-2 flex items-center justify-center gap-1.5 text-center text-[11px] font-bold text-slate-500">
                 <Pencil className="h-3.5 w-3.5" />
-                Nhấn vào từng vùng để sửa
+                Xem trước
               </p>
               {preview === "card" && previewProduct ? (
-                <div className="mx-auto w-full max-w-[210px]">
+                <div className="mx-auto w-[210px] max-w-full">
                   <ProductCard
                     compact
                     customAttributes={draft.customAttributes}
@@ -866,10 +903,11 @@ export function ProductSettingsModal({
               ) : preview === "pos" &&
                 previewProduct &&
                 previewCard.templateHtml ? (
-                <div className="mx-auto w-full max-w-[210px]">
+                <div className="mx-auto w-[210px] max-w-full">
                   <ProductCardCodeRenderer
                     customAttributes={draft.customAttributes}
                     mode="pos"
+                    onEditField={openCardFieldEditor}
                     product={previewProduct}
                     quantity={0}
                     settings={effectivePreviewCard}
@@ -923,9 +961,6 @@ export function ProductSettingsModal({
       >
         {cardTextEditor?.key === "image" ? (
           <div>
-            <p className="mb-3 text-sm font-semibold text-slate-600">
-              Chọn cách ảnh sản phẩm nằm trong khung card.
-            </p>
             <div className="grid grid-cols-2 gap-2">
               {(["cover", "contain"] as const).map((fit) => (
                 <button
@@ -943,10 +978,6 @@ export function ProductSettingsModal({
           </div>
         ) : cardTextEditor ? (
           <div className="space-y-4">
-            <div className="rounded-xl bg-moss-50 p-3 text-xs font-semibold text-moss-800">
-              Chỉ thay đổi chữ ở hai bên. Giá trị thật của sản phẩm luôn được
-              giữ nguyên.
-            </div>
             <label className="block text-sm font-bold text-slate-700">
               Chữ phía trước
               <input
@@ -999,36 +1030,35 @@ export function ProductSettingsModal({
       <Modal
         bodyClassName="!p-3 sm:!p-4"
         contentClassName="!h-[min(92dvh,820px)]"
-        open={Boolean(cardCodeEditor)}
+        open={Boolean(cardCodeEditor) && !cardTextEditor}
         onClose={() => setCardCodeEditor(null)}
         size="wide"
-        title={`IDE card ${preview === "pos" ? "POS" : "dùng chung"}`}
+        title={`Mã giao diện · ${preview === "pos" ? "Card POS" : "Card chung"}`}
         footer={
           <div className="flex w-full justify-end gap-2">
             <Button onClick={() => setCardCodeEditor(null)} variant="secondary">
               Hủy
             </Button>
-            <Button onClick={saveCardCodeEditor}>Áp dụng toàn bộ card</Button>
+            <Button onClick={saveCardCodeEditor}>Áp dụng</Button>
           </div>
         }
       >
         {cardCodeEditor ? (
-          <div className="flex h-full min-h-[420px] flex-col gap-3">
-            <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="flex h-full min-h-[420px] flex-col">
+            <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,1fr)_280px]">
               <div className="flex min-h-[420px] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-inner">
                 <div className="flex flex-none items-center justify-between gap-3 border-b border-slate-700 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                    <strong className="ml-2 text-xs text-slate-300">
+                    <Code2 className="h-4 w-4 text-moss-300" />
+                    <strong className="text-xs text-slate-200">
                       {cardCodeEditor.activeTab === "html"
                         ? "Card.tsx"
                         : "Card.css"}
                     </strong>
                   </div>
                   <button
-                    className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-bold text-slate-200 transition hover:bg-slate-700"
+                    aria-label="Khôi phục thiết kế mặc định"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
                     onClick={() => {
                       const defaults = getDefaultCardCode(
                         preview === "pos" ? "pos" : "card",
@@ -1040,21 +1070,25 @@ export function ProductSettingsModal({
                         css: defaults.css,
                       });
                     }}
+                    title="Khôi phục thiết kế mặc định"
                     type="button"
                   >
-                    Khôi phục mẫu
+                    <RotateCcw className="h-4 w-4" />
                   </button>
                 </div>
 
                 <div className="order-2 flex flex-none items-center gap-2 border-b border-slate-700 bg-slate-900 px-2 py-2">
                   <select
-                    aria-label="Chọn mẫu card đã lưu"
+                    aria-label="Chọn mẫu giao diện card"
                     className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-2 text-xs font-bold text-slate-200 outline-none focus:border-moss-400"
-                    defaultValue=""
                     onChange={(event) => {
-                      const template = previewCard.templates?.find(
-                        (item) => item.id === event.target.value,
-                      );
+                      const [source, id] = event.target.value.split(":");
+                      const template =
+                        source === "built-in"
+                          ? builtInCardTemplates.find((item) => item.id === id)
+                          : previewCard.templates?.find(
+                              (item) => item.id === id,
+                            );
                       if (!template) return;
                       setCardCodeEditor({
                         ...cardCodeEditor,
@@ -1062,19 +1096,32 @@ export function ProductSettingsModal({
                         html: template.html,
                         css: template.css,
                       });
-                      event.target.value = "";
                     }}
+                    value={selectedCardTemplate}
                   >
-                    <option value="">
-                      {previewCard.templates?.length
-                        ? `Mẫu đã lưu (${previewCard.templates.length})`
-                        : "Chưa có mẫu đã lưu"}
-                    </option>
-                    {previewCard.templates?.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.name}
-                      </option>
-                    ))}
+                    <option value="">Tùy chỉnh / Chọn mẫu giao diện</option>
+                    <optgroup label="Mẫu có sẵn">
+                      {builtInCardTemplates.map((template) => (
+                        <option
+                          key={template.id}
+                          value={`built-in:${template.id}`}
+                        >
+                          {template.name} — {template.description}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {previewCard.templates?.length ? (
+                      <optgroup label="Mẫu của tôi">
+                        {previewCard.templates.map((template) => (
+                          <option
+                            key={template.id}
+                            value={`saved:${template.id}`}
+                          >
+                            {template.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
                   </select>
                   <button
                     className="h-9 shrink-0 rounded-lg bg-moss-700 px-3 text-xs font-black text-white transition hover:bg-moss-800"
@@ -1087,7 +1134,7 @@ export function ProductSettingsModal({
                     }
                     type="button"
                   >
-                    Lưu mẫu mới
+                    Lưu mẫu
                   </button>
                 </div>
                 {cardCodeEditor.saveTemplateOpen ? (
@@ -1132,19 +1179,9 @@ export function ProductSettingsModal({
                       }
                       type="button"
                     >
-                      {tab === "html" ? "TSX / HTML" : "CSS"}
+                      {tab === "html" ? "Giao diện TSX" : "Kiểu dáng CSS"}
                     </button>
                   ))}
-                </div>
-                <div className="hidden">
-                  <p className="text-[11px] font-semibold text-slate-400">
-                    {cardCodeEditor.activeTab === "html"
-                      ? "Cấu trúc toàn bộ card bằng HTML/TSX. Dùng {{biến}} để chèn dữ liệu."
-                      : "CSS áp dụng riêng cho toàn bộ card đang chọn."}
-                  </p>
-                  <span className="shrink-0 rounded bg-emerald-950 px-2 py-1 text-[10px] font-black text-emerald-300">
-                    LIVE
-                  </span>
                 </div>
                 <textarea
                   aria-label={
@@ -1186,31 +1223,51 @@ export function ProductSettingsModal({
                   {cardCodeEditor.error ? (
                     <span className="text-red-300">{cardCodeEditor.error}</span>
                   ) : (
-                    <span className="text-slate-400">
-                      Dùng biến như {"{{name}}"}, {"{{price}}"},{" "}
-                      {"{{image_url}}"}, {"{{shelf_stock_text}}"} và{" "}
-                      {"{{attributes}}"}.
-                    </span>
+                    <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      <span>
+                        {cardCodeEditor.activeTab === "html"
+                          ? "TSX / HTML"
+                          : "CSS"}
+                      </span>
+                      <span className="text-emerald-400">Live</span>
+                    </div>
                   )}
                 </div>
               </div>
-              <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <p className="mb-3 text-center text-xs font-extrabold text-slate-500">
-                  Xem trước trực tiếp ·{" "}
-                  {preview === "pos" ? "Card POS" : "Card chung"}
+              <aside className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                <p className="mb-2 text-center text-[11px] font-extrabold text-slate-500">
+                  Xem trước
                 </p>
                 {previewProduct ? (
-                  <ProductCardCodeRenderer
-                    customAttributes={draft.customAttributes}
-                    mode={preview === "pos" ? "pos" : "card"}
-                    product={previewProduct}
-                    quantity={0}
-                    settings={{
-                      ...effectivePreviewCard,
-                      templateHtml: cardCodeEditor.html,
-                      templateCss: cardCodeEditor.css,
-                    }}
-                  />
+                  <div className="mx-auto w-[210px] max-w-full">
+                    {preview === "card" ? (
+                      <ProductCard
+                        compact
+                        customAttributes={draft.customAttributes}
+                        onEditField={openCardFieldEditor}
+                        product={previewProduct}
+                        relatedProducts={[previewProduct]}
+                        settings={{
+                          ...effectivePreviewCard,
+                          templateHtml: cardCodeEditor.html,
+                          templateCss: cardCodeEditor.css,
+                        }}
+                      />
+                    ) : (
+                      <ProductCardCodeRenderer
+                        customAttributes={draft.customAttributes}
+                        mode="pos"
+                        onEditField={openCardFieldEditor}
+                        product={previewProduct}
+                        quantity={0}
+                        settings={{
+                          ...effectivePreviewCard,
+                          templateHtml: cardCodeEditor.html,
+                          templateCss: cardCodeEditor.css,
+                        }}
+                      />
+                    )}
+                  </div>
                 ) : (
                   <p className="rounded-xl bg-white p-4 text-center text-xs font-semibold text-slate-500">
                     Cần ít nhất một sản phẩm để xem dữ liệu mẫu.
@@ -1363,12 +1420,11 @@ export function ProductSettingsModal({
                     })
                   }
                 >
-                  <option value="text">Văn bản</option>
-                  <option value="number">Số</option>
-                  <option value="date">Ngày tháng năm</option>
-                  <option value="single">Chọn duy nhất</option>
-                  <option value="multiple">Chọn nhiều</option>
-                  <option value="media">Hình ảnh & video</option>
+                  {productAttributeTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -1388,9 +1444,11 @@ export function ProductSettingsModal({
                       }
                       value={editor.optionDisplay}
                     >
-                      <option value="text">Chữ</option>
-                      <option value="color">Màu</option>
-                      <option value="both">Cả hai</option>
+                      {productOptionDisplayOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </label>
                 </div>

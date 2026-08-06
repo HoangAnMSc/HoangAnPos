@@ -3,15 +3,20 @@ import { clsx } from "clsx";
 import { formatCurrency } from "../../lib/format";
 import {
   formatExpiryDays,
+  formatProductDate,
   getExpiryStatus,
   type ExpiryStatus,
 } from "../../lib/productDisplay";
+import {
+  productBadgeToneClassNames,
+  productFieldLabels,
+} from "../../lib/productPageData";
 import type { Product } from "../../types";
 import type {
   CustomProductAttribute,
   ProductCardSettings,
 } from "../../services/productSettings";
-import { getDefaultCardCode } from "./productCardCode";
+import { cardTypedFieldCss, getDefaultCardCode } from "./productCardCode";
 
 type ProductCardProps = {
   actions?: React.ReactNode;
@@ -28,13 +33,6 @@ type ProductCardProps = {
   settings?: ProductCardSettings;
   customAttributes?: CustomProductAttribute[];
   relatedProducts?: Product[];
-};
-
-const badgeToneClassNames = {
-  amber: "bg-amber-100 text-amber-700",
-  blue: "bg-moss-100 text-moss-700",
-  green: "bg-moss-100 text-moss-700",
-  neutral: "bg-slate-100 text-slate-600",
 };
 
 function escapeHtml(value: unknown) {
@@ -70,18 +68,168 @@ function sanitizeCardHtml(html: string) {
   return documentNode.body.innerHTML;
 }
 
+function normalizeCardValues(value: unknown) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (value === null || value === undefined || value === "") return [];
+  return [String(value)];
+}
+
+function applyCardTextTemplate(
+  settings: ProductCardSettings,
+  key: string,
+  value: string,
+) {
+  return settings.textTemplates?.[key]?.split("{value}").join(value) ?? value;
+}
+
+function applyCardHtmlTemplate(
+  settings: ProductCardSettings,
+  key: string,
+  safeHtml: string,
+) {
+  const template = settings.textTemplates?.[key];
+  if (!template) return safeHtml;
+  const marker = template.indexOf("{value}");
+  if (marker < 0) return escapeHtml(template);
+  return `${escapeHtml(template.slice(0, marker))}${safeHtml}${escapeHtml(template.slice(marker + 7))}`;
+}
+
+function renderChoiceValue(
+  values: string[],
+  attribute: CustomProductAttribute,
+) {
+  const display = attribute.optionDisplay ?? "text";
+  return `<span class="choice-list">${values
+    .map((value) => {
+      const configuredColor = attribute.optionColors?.[value] ?? "";
+      const color = /^#[0-9a-f]{3,8}$/i.test(configuredColor)
+        ? configuredColor
+        : "transparent";
+      const swatch =
+        display === "text"
+          ? ""
+          : `<i class="choice-swatch" style="background:${escapeHtml(color)}"></i>`;
+      const text =
+        display === "color"
+          ? ""
+          : `<span class="choice-text">${escapeHtml(value)}</span>`;
+      return `<span class="choice-chip choice-${display}" title="${escapeHtml(value)}">${swatch}${text}</span>`;
+    })
+    .join("")}</span>`;
+}
+
+function renderCardFieldBlocks(
+  product: Product,
+  settings: ProductCardSettings,
+  customAttributes: CustomProductAttribute[],
+  explicitlyRendered: Set<string>,
+) {
+  const productValues = product as unknown as Record<string, unknown>;
+  const attributes =
+    product.attributes &&
+    typeof product.attributes === "object" &&
+    !Array.isArray(product.attributes)
+      ? (product.attributes as Record<string, unknown>)
+      : {};
+  const visible = new Set(settings.visibleFields);
+  const customById = new Map(customAttributes.map((item) => [item.id, item]));
+  const reserved = new Set(["image", ...explicitlyRendered]);
+  const order = [
+    ...settings.order,
+    ...customAttributes.map((item) => item.id),
+  ].filter((key, index, items) => items.indexOf(key) === index);
+
+  return order
+    .filter((key) => visible.has(key) && !reserved.has(key))
+    .map((key) => {
+      if (key === "reward_points_cost" && !product.is_reward) return "";
+      const attribute = customById.get(key);
+      const raw = attribute ? attributes[key] : productValues[key];
+      const values = normalizeCardValues(raw);
+      if (!values.length) return "";
+      const label = escapeHtml(
+        attribute?.name ?? productFieldLabels[key] ?? key,
+      );
+      let typeClass = "field-text";
+      let content = escapeHtml(values.join(", "));
+
+      if (attribute?.type === "single" || attribute?.type === "multiple") {
+        typeClass =
+          attribute.type === "single" ? "field-single" : "field-multiple";
+        content = renderChoiceValue(values, attribute);
+      } else if (attribute?.type === "number") {
+        typeClass = "field-number";
+        content = escapeHtml(
+          values
+            .map((value) => {
+              const number = Number(value);
+              return Number.isFinite(number)
+                ? number.toLocaleString("vi-VN")
+                : value;
+            })
+            .join(", "),
+        );
+      } else if (attribute?.type === "date") {
+        typeClass = "field-date";
+        content = escapeHtml(values.map(formatProductDate).join(", "));
+      } else if (attribute?.type === "media") {
+        const media = raw as { images?: string[]; video?: string };
+        const image = media.images?.[0];
+        if (!(image || media.video)) return "";
+        typeClass = "field-media";
+        content = `${image ? `<img src="${escapeHtml(image)}" alt="${label}" />` : ""}<span>${media.images?.length ?? 0} ảnh${media.video ? " · 1 video" : ""}</span>`;
+      } else if (key === "price" || key === "cost_price") {
+        typeClass = "field-money";
+        content = escapeHtml(formatCurrency(Number(raw ?? 0)));
+      } else if (
+        key === "stock" ||
+        key === "shelf_stock" ||
+        key === "reward_points_cost"
+      ) {
+        typeClass = "field-number field-stock";
+        content = escapeHtml(Number(raw ?? 0).toLocaleString("vi-VN"));
+      } else if (key === "import_date" || key === "expiry_date") {
+        typeClass = "field-date";
+        content = escapeHtml(formatProductDate(String(raw)));
+      } else if (key === "is_active" || key === "is_reward") {
+        typeClass = `field-status ${raw ? "is-positive" : "is-muted"}`;
+        content = escapeHtml(
+          key === "is_active"
+            ? raw
+              ? "Đang bán"
+              : "Đang ẩn"
+            : raw
+              ? "Đổi điểm"
+              : "Không đổi điểm",
+        );
+      } else if (key === "sku") {
+        typeClass = "field-code";
+      }
+
+      content = applyCardHtmlTemplate(settings, key, content);
+
+      return `<span class="product-field ${typeClass}" data-field="${escapeHtml(key)}"><span class="field-label">${label}</span><span class="field-value">${content}</span></span>`;
+    })
+    .filter(Boolean)
+    .join("");
+}
+
 export function ProductCardCodeRenderer({
   product,
   settings,
   customAttributes = [],
   mode = "card",
   quantity = 0,
+  embedded = false,
+  onEditField,
 }: {
   product: Product;
   settings: ProductCardSettings;
   customAttributes?: CustomProductAttribute[];
   mode?: "card" | "pos";
   quantity?: number;
+  embedded?: boolean;
+  onEditField?: (key: string) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -90,6 +238,20 @@ export function ProductCardCodeRenderer({
       hostRef.current.shadowRoot ??
       hostRef.current.attachShadow({ mode: "open" });
     const defaults = getDefaultCardCode(mode);
+    const source = settings.templateHtml || defaults.html;
+    const tokenFields: Record<string, string> = {
+      name: "name",
+      category: "category",
+      price: "price",
+      shelf_stock: "shelf_stock",
+      shelf_stock_text: "shelf_stock",
+      reward_points_badge: "reward_points_cost",
+    };
+    const explicitlyRendered = new Set(
+      Array.from(source.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g))
+        .map((match) => tokenFields[match[1]])
+        .filter((field): field is string => Boolean(field)),
+    );
     const attributes =
       product.attributes &&
       typeof product.attributes === "object" &&
@@ -97,35 +259,89 @@ export function ProductCardCodeRenderer({
         ? (product.attributes as Record<string, unknown>)
         : {};
     const visible = new Set(settings.visibleFields);
-    const customText = customAttributes
-      .filter((attribute) => visible.has(attribute.id))
-      .map((attribute) => {
-        const value = attributes[attribute.id];
-        if (value === null || value === undefined || value === "") return "";
-        return `${attribute.name}: ${Array.isArray(value) ? value.join(", ") : String(value)}`;
-      })
-      .filter(Boolean)
-      .join(" · ");
     const noImage =
-      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='200'%3E%3Crect width='100%25' height='100%25' fill='%23f1f5f9'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%2394a3b8' font-family='sans-serif' font-size='16'%3ENO IMAGE%3C/text%3E%3C/svg%3E";
+      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='200' viewBox='0 0 320 200'%3E%3Cg fill='none' stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='5'%3E%3Crect x='132' y='65' width='56' height='46' rx='7'/%3E%3Cpath d='m140 102 14-14 11 10 8-7 8 8'/%3E%3Ccircle cx='171' cy='79' r='4' fill='%2394a3b8' stroke='none'/%3E%3C/g%3E%3Ctext x='160' y='137' text-anchor='middle' fill='%2394a3b8' font-family='sans-serif' font-size='13' font-weight='700' letter-spacing='1.5'%3ENO IMAGE%3C/text%3E%3C/svg%3E";
+    const fieldBlocks = renderCardFieldBlocks(
+      product,
+      settings,
+      customAttributes,
+      explicitlyRendered,
+    );
     const values: Record<string, unknown> = {
       image_url: visible.has("image") ? product.image_url || noImage : "",
-      name: visible.has("name") ? product.name : "",
-      category: visible.has("category") ? product.category : "",
-      description: visible.has("description") ? product.description : "",
-      price: visible.has("price") ? formatCurrency(product.price) : "",
+      name: visible.has("name")
+        ? applyCardTextTemplate(settings, "name", product.name)
+        : "",
+      category: visible.has("category")
+        ? applyCardTextTemplate(settings, "category", product.category ?? "")
+        : "",
+      description: visible.has("description")
+        ? applyCardTextTemplate(
+            settings,
+            "description",
+            product.description ?? "",
+          )
+        : "",
+      price: visible.has("price")
+        ? applyCardTextTemplate(
+            settings,
+            "price",
+            formatCurrency(product.price),
+          )
+        : "",
       cost_price: visible.has("cost_price")
-        ? formatCurrency(product.cost_price)
+        ? applyCardTextTemplate(
+            settings,
+            "cost_price",
+            formatCurrency(product.cost_price),
+          )
         : "",
-      stock: visible.has("stock") ? product.stock : "",
-      shelf_stock: visible.has("shelf_stock") ? product.shelf_stock : "",
+      stock: visible.has("stock")
+        ? applyCardTextTemplate(settings, "stock", String(product.stock))
+        : "",
+      shelf_stock: visible.has("shelf_stock")
+        ? applyCardTextTemplate(
+            settings,
+            "shelf_stock",
+            String(product.shelf_stock),
+          )
+        : "",
       shelf_stock_text: visible.has("shelf_stock")
-        ? `Còn ${product.shelf_stock} trên kệ`
+        ? settings.textTemplates?.shelf_stock
+          ? applyCardTextTemplate(
+              settings,
+              "shelf_stock",
+              String(product.shelf_stock),
+            )
+          : `Còn ${product.shelf_stock} trên kệ`
         : "",
-      sku: visible.has("sku") ? product.sku : "",
-      import_date: visible.has("import_date") ? product.import_date : "",
-      expiry_date: visible.has("expiry_date") ? product.expiry_date : "",
-      attributes: customText,
+      sku: visible.has("sku")
+        ? applyCardTextTemplate(settings, "sku", product.sku ?? "")
+        : "",
+      import_date: visible.has("import_date")
+        ? applyCardTextTemplate(
+            settings,
+            "import_date",
+            product.import_date ?? "",
+          )
+        : "",
+      expiry_date: visible.has("expiry_date")
+        ? applyCardTextTemplate(
+            settings,
+            "expiry_date",
+            product.expiry_date ?? "",
+          )
+        : "",
+      attributes: fieldBlocks,
+      field_blocks: fieldBlocks,
+      reward_points_badge:
+        visible.has("reward_points_cost") && product.is_reward
+          ? applyCardTextTemplate(
+              settings,
+              "reward_points_cost",
+              `${product.reward_points_cost.toLocaleString("vi-VN")} điểm`,
+            )
+          : "",
       quantity,
     };
     customAttributes.forEach((attribute) => {
@@ -133,18 +349,63 @@ export function ProductCardCodeRenderer({
         ? attributes[attribute.id]
         : "";
     });
-    const source = settings.templateHtml || defaults.html;
     const rendered = source.replace(
       /\{\{\s*([\w.-]+)\s*\}\}/g,
-      (_match, key: string) => escapeHtml(values[key]),
+      (_match, key: string) =>
+        key === "field_blocks" || key === "attributes"
+          ? String(values[key] ?? "")
+          : escapeHtml(values[key]),
     );
-    const safeCss = (settings.templateCss || defaults.css).replace(
-      /@import[^;]+;/gi,
-      "",
-    ).replace(/<\/style/gi, "");
-    const layoutGuard = `:host{display:block;width:100%;height:100%;min-width:0;overflow:hidden}*{box-sizing:border-box}.card-shell{height:100%;min-width:0;max-width:100%;overflow:hidden}img,video{max-width:100%}`;
-    root.innerHTML = `<style>${layoutGuard}\n${safeCss}</style>${sanitizeCardHtml(rendered)}`;
-  }, [customAttributes, mode, product, quantity, settings]);
+    const safeCss = (settings.templateCss || defaults.css)
+      .replace(/@import[^;]+;/gi, "")
+      .replace(/<\/style/gi, "");
+    const embeddedGuard = embedded
+      ? ".card-shell{border:0!important;border-radius:inherit!important;box-shadow:none!important;transform:none!important}"
+      : "";
+    const editorGuard = onEditField
+      ? "[data-card-field]{cursor:pointer;transition:outline-color .15s ease,box-shadow .15s ease}[data-card-field]:hover{outline:2px solid #8fa676;outline-offset:2px;box-shadow:0 0 0 4px rgba(143,166,118,.13)}"
+      : "";
+    const imageFitGuard = `.media>img{object-fit:${settings.imageFit === "contain" ? "contain" : "cover"}!important}`;
+    const layoutGuard = `:host{display:block;width:100%;height:100%;min-width:0;overflow:hidden}*{box-sizing:border-box}.card-shell{height:100%;min-width:0;max-width:100%;overflow:hidden}img,video{max-width:100%}${embeddedGuard}${editorGuard}${imageFitGuard}`;
+    root.innerHTML = `<style>${layoutGuard}\n${cardTypedFieldCss}\n${safeCss}</style>${sanitizeCardHtml(rendered)}`;
+    if (!onEditField) return;
+    const editableSelectors: Array<[string, string]> = [
+      [".media", "image"],
+      [".name", "name"],
+      [".category", "category"],
+      [".price", "price"],
+      [".stock", "shelf_stock"],
+      [".reward-badge", "reward_points_cost"],
+    ];
+    editableSelectors.forEach(([selector, key]) => {
+      root.querySelectorAll<HTMLElement>(selector).forEach((element) => {
+        element.dataset.cardField ||= key;
+      });
+    });
+    root.querySelectorAll<HTMLElement>("[data-field]").forEach((element) => {
+      element.dataset.cardField = element.dataset.field;
+    });
+    const handleEdit = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const editable = target.closest<HTMLElement>("[data-card-field]");
+      const key = editable?.dataset.cardField;
+      if (!key) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onEditField(key);
+    };
+    root.addEventListener("click", handleEdit);
+    return () => root.removeEventListener("click", handleEdit);
+  }, [
+    customAttributes,
+    embedded,
+    mode,
+    onEditField,
+    product,
+    quantity,
+    settings,
+  ]);
   return <div className="h-full min-w-0 w-full" ref={hostRef} />;
 }
 
@@ -236,7 +497,7 @@ export function ProductCard({
     return (
       <article
         className={clsx(
-          "group relative h-full min-w-0 overflow-hidden rounded-2xl bg-white shadow-[0_3px_12px_rgba(15,23,42,0.05)] transition",
+          "group relative h-full min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_3px_12px_rgba(15,23,42,0.05)] transition",
           disabled ? "opacity-55" : "hover:-translate-y-0.5",
           className,
         )}
@@ -249,6 +510,8 @@ export function ProductCard({
         >
           <ProductCardCodeRenderer
             customAttributes={customAttributes}
+            embedded
+            onEditField={onEditField}
             product={product}
             settings={settings}
           />
@@ -312,7 +575,7 @@ export function ProductCard({
               <span
                 className={clsx(
                   "absolute left-2 top-2 rounded-full px-2.5 py-1 text-[11px] font-extrabold",
-                  badgeToneClassNames[badgeTone],
+                  productBadgeToneClassNames[badgeTone],
                 )}
               >
                 {badgeLabel}

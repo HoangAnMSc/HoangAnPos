@@ -1,9 +1,4 @@
-import {
-  type FormEvent,
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import {
   Barcode,
   Boxes,
@@ -65,6 +60,16 @@ import {
   uploadProductVideoAsset,
 } from "../lib/cloudinary";
 import { normalizeNullableText } from "../lib/text";
+import {
+  buildVariantCombinations,
+  emptyForm,
+  fieldClassName,
+  getProductDetailItems,
+  labelClassName,
+  linkedFieldLabels,
+  type ProductFormState,
+  type ProductVariant,
+} from "../lib/productPageData";
 import { saveCloudinaryImageAsset } from "../services/cloudinaryImages";
 import {
   createProductCategory,
@@ -85,94 +90,6 @@ import {
   saveProductSettings,
   type ProductSettings,
 } from "../services/productSettings";
-
-type ProductFormState = {
-  name: string;
-  ean13: string;
-  category: string;
-  description: string;
-  price: string;
-  cost_price: string;
-  import_date: string;
-  expiry_date: string;
-  stock: string;
-  shelf_stock: string;
-  image_url: string;
-  is_active: boolean;
-  is_reward: boolean;
-  reward_points_cost: string;
-};
-
-type ProductVariant = {
-  values: Record<string, string>;
-  stock: number;
-  shelf_stock: number;
-  image_url?: string;
-  linked_values?: Record<string, string>;
-};
-
-const linkedFieldLabels: Record<string, string> = {
-  name: "Tên sản phẩm",
-  sku: "EAN-13",
-  category: "Nhóm hàng",
-  description: "Mô tả",
-  price: "Giá bán",
-  cost_price: "Giá vốn",
-  import_date: "Ngày nhập",
-  expiry_date: "Hạn sử dụng",
-  is_active: "Trạng thái",
-  is_reward: "Sản phẩm đổi điểm",
-  reward_points_cost: "Điểm cần đổi",
-};
-
-function buildVariantCombinations(
-  attributes: ProductSettings["customAttributes"],
-  values: Record<string, unknown>,
-) {
-  return attributes
-    .filter((item) => item.enabled && item.useForVariants)
-    .reduce<Record<string, string>[]>(
-      (rows, attribute) => {
-        const options =
-          attribute.type === "single" || attribute.type === "multiple"
-            ? attribute.options
-            : [
-                attribute.type === "media"
-                  ? "Media"
-                  : String(values[attribute.id] ?? "Chưa nhập"),
-              ];
-        return rows.flatMap((row) =>
-          options.map((option) => ({
-            ...row,
-            [attribute.id]: option,
-          })),
-        );
-      },
-      [{}],
-    )
-    .slice(0, 100);
-}
-
-const emptyForm: ProductFormState = {
-  category: "",
-  cost_price: "0",
-  description: "",
-  ean13: "",
-  expiry_date: "",
-  image_url: "",
-  import_date: "",
-  is_active: true,
-  is_reward: false,
-  name: "",
-  price: "0",
-  reward_points_cost: "0",
-  stock: "0",
-  shelf_stock: "0",
-};
-
-const fieldClassName =
-  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-moss-400 focus:ring-4 focus:ring-moss-100";
-const labelClassName = "mb-1.5 block text-xs font-extrabold text-slate-700";
 
 function MultiMediaField({
   label,
@@ -1148,50 +1065,50 @@ function ProductForm({
           type="button"
         />
         {fieldEnabled("image") ? (
-        <section className="space-y-3" style={{ order: fieldOrder("image") }}>
-          <h3 className="text-sm font-extrabold text-slate-950">Hình ảnh</h3>
-          <button
-            className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-moss-300 hover:bg-moss-50 sm:max-w-sm"
-            onClick={() => setMediaOpen(true)}
-            type="button"
-          >
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-50 text-slate-950">
-              {previewUrl ? (
-                <img
-                  alt="Product"
-                  className="h-full w-full rounded-xl object-cover"
-                  src={previewUrl}
-                />
-              ) : (
-                <ImageIcon className="h-5 w-5" />
-              )}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-extrabold text-slate-950">
-                Thêm ảnh
+          <section className="space-y-3" style={{ order: fieldOrder("image") }}>
+            <h3 className="text-sm font-extrabold text-slate-950">Hình ảnh</h3>
+            <button
+              className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-moss-300 hover:bg-moss-50 sm:max-w-sm"
+              onClick={() => setMediaOpen(true)}
+              type="button"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-50 text-slate-950">
+                {previewUrl ? (
+                  <img
+                    alt="Product"
+                    className="h-full w-full rounded-xl object-cover"
+                    src={previewUrl}
+                  />
+                ) : (
+                  <ImageIcon className="h-5 w-5" />
+                )}
               </span>
-              {previewUrl ? (
-                <span className="block truncate text-xs font-semibold text-slate-500">
-                  Đã chọn hình ảnh
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-extrabold text-slate-950">
+                  Thêm ảnh
                 </span>
-              ) : null}
-            </span>
-            <ChevronRight className="h-5 w-5 text-slate-950" />
-          </button>
-        </section>
+                {previewUrl ? (
+                  <span className="block truncate text-xs font-semibold text-slate-500">
+                    Đã chọn hình ảnh
+                  </span>
+                ) : null}
+              </span>
+              <ChevronRight className="h-5 w-5 text-slate-950" />
+            </button>
+          </section>
         ) : null}
 
         {fieldEnabled("name") ? (
-        <label className="block" style={{ order: fieldOrder("name") }}>
-          <span className={labelClassName}>Tên sản phẩm</span>
-          <input
-            className={fieldClassName}
-            onChange={(event) => updateField("name", event.target.value)}
-            placeholder="Nhập tên sản phẩm"
-            required
-            value={form.name}
-          />
-        </label>
+          <label className="block" style={{ order: fieldOrder("name") }}>
+            <span className={labelClassName}>Tên sản phẩm</span>
+            <input
+              className={fieldClassName}
+              onChange={(event) => updateField("name", event.target.value)}
+              placeholder="Nhập tên sản phẩm"
+              required
+              value={form.name}
+            />
+          </label>
         ) : null}
 
         {canSetVisibility && fieldEnabled("is_active") ? (
@@ -1932,10 +1849,7 @@ function ProductForm({
         ) : null}
 
         {fieldEnabled("import_date") ? (
-          <label
-            className="block"
-            style={{ order: fieldOrder("import_date") }}
-          >
+          <label className="block" style={{ order: fieldOrder("import_date") }}>
             <span className={labelClassName}>Ngày nhập</span>
             <input
               className={fieldClassName}
@@ -1948,10 +1862,7 @@ function ProductForm({
           </label>
         ) : null}
         {fieldEnabled("expiry_date") ? (
-          <label
-            className="block"
-            style={{ order: fieldOrder("expiry_date") }}
-          >
+          <label className="block" style={{ order: fieldOrder("expiry_date") }}>
             <span className={labelClassName}>Ngày hết hạn</span>
             <input
               className={fieldClassName}
@@ -1965,10 +1876,7 @@ function ProductForm({
         ) : null}
 
         {fieldEnabled("cost_price") ? (
-          <label
-            className="block"
-            style={{ order: fieldOrder("cost_price") }}
-          >
+          <label className="block" style={{ order: fieldOrder("cost_price") }}>
             <span className={labelClassName}>Giá vốn</span>
             <input
               className={fieldClassName}
@@ -2017,10 +1925,7 @@ function ProductForm({
           </label>
         ) : null}
         {fieldEnabled("shelf_stock") ? (
-          <label
-            className="block"
-            style={{ order: fieldOrder("shelf_stock") }}
-          >
+          <label className="block" style={{ order: fieldOrder("shelf_stock") }}>
             <span className={labelClassName}>Tồn trên kệ</span>
             <input
               className={fieldClassName}
@@ -2386,20 +2291,11 @@ function ProductDetailModal({
     (sum, batch) => sum + batch.quantity,
     0,
   );
-  const detailItems = [
-    { label: "EAN-13", value: getProductEan13Value(product) },
-    { label: "Nhóm hàng", value: product.category || "Chưa phân nhóm" },
-    { label: "Giá vốn", value: formatCurrency(product.cost_price) },
-    { label: "Giá bán", value: formatCurrency(product.price) },
-    { label: "Tổng tồn", value: String(product.stock) },
-    { label: "Trên kệ", value: String(product.shelf_stock) },
-    { label: "Trong kho", value: String(product.stock - product.shelf_stock) },
-    {
-      label: "Tồn theo lô",
-      value: `${batchTotal} / ${activeBatches.length} lô`,
-    },
-    { label: "Trạng thái", value: product.is_active ? "Đang hiện" : "Đang ẩn" },
-  ];
+  const detailItems = getProductDetailItems(
+    product,
+    batchTotal,
+    activeBatches.length,
+  );
 
   return (
     <Modal

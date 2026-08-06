@@ -1731,7 +1731,7 @@ export function PosPage() {
                           return (
                             <article
                               aria-label={`Thêm ${product.name} vào đơn`}
-                              className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white p-1.5 transition sm:rounded-2xl sm:p-2 ${
+                              className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white transition sm:rounded-2xl ${effectivePosCardSettings.templateHtml ? "p-0" : "p-1.5 sm:p-2"} ${
                                 quantityInCart > 0
                                   ? "cursor-pointer border-moss-500 shadow-[0_8px_20px_rgba(72,84,54,0.14)] ring-1 ring-moss-200"
                                   : disabled
@@ -1762,6 +1762,7 @@ export function PosPage() {
                                   customAttributes={
                                     productSettings.customAttributes
                                   }
+                                  embedded
                                   mode="pos"
                                   product={product}
                                   quantity={quantityInCart}
@@ -1769,300 +1770,318 @@ export function PosPage() {
                                 />
                               ) : (
                                 <>
-                              {posFieldVisible("image") ? (
-                                <div
-                                  className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-100"
-                                  style={{ order: posFieldOrder("image") }}
-                                >
-                                  {product.image_url ? (
-                                    <img
-                                      alt={product.name}
-                                      className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                                      src={product.image_url}
-                                    />
-                                  ) : (
-                                    <div className="flex h-full w-full items-center justify-center text-slate-400">
-                                      <ShoppingBag className="h-5 w-5" />
+                                  {posFieldVisible("image") ? (
+                                    <div
+                                      className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-100"
+                                      style={{ order: posFieldOrder("image") }}
+                                    >
+                                      {product.image_url ? (
+                                        <img
+                                          alt={product.name}
+                                          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                                          src={product.image_url}
+                                        />
+                                      ) : (
+                                        <div className="flex h-full w-full items-center justify-center text-slate-400">
+                                          <ShoppingBag className="h-5 w-5" />
+                                        </div>
+                                      )}
+                                      {quantityInCart > 0 ? (
+                                        <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-moss-700 text-white shadow-md">
+                                          <Check className="h-4 w-4 stroke-[3]" />
+                                        </span>
+                                      ) : null}
+                                      {product.is_reward ? (
+                                        <span className="absolute bottom-1.5 left-1.5 rounded-md bg-amber-100/95 px-1.5 py-1 text-[9px] font-black text-amber-800 shadow-sm sm:text-[10px]">
+                                          {product.reward_points_cost.toLocaleString(
+                                            "vi-VN",
+                                          )}{" "}
+                                          điểm
+                                        </span>
+                                      ) : null}
                                     </div>
-                                  )}
-                                  {quantityInCart > 0 ? (
-                                    <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-moss-700 text-white shadow-md">
-                                      <Check className="h-4 w-4 stroke-[3]" />
-                                    </span>
                                   ) : null}
-                                  {product.is_reward ? (
-                                    <span className="absolute bottom-1.5 left-1.5 rounded-md bg-amber-100/95 px-1.5 py-1 text-[9px] font-black text-amber-800 shadow-sm sm:text-[10px]">
-                                      {product.reward_points_cost.toLocaleString(
-                                        "vi-VN",
-                                      )}{" "}
-                                      điểm
-                                    </span>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                              <div className="flex min-w-0 flex-1 flex-col px-0.5 pb-0.5 pt-2">
-                                {posFieldVisible("name") ? (
-                                  <h3
-                                    style={{ order: posFieldOrder("name") }}
-                                    className="line-clamp-2 min-h-10 text-sm font-extrabold leading-5 text-slate-900"
-                                    title={product.name}
-                                  >
-                                    {product.name}
-                                  </h3>
-                                ) : null}
-                                {posFieldVisible("shelf_stock") ? (
-                                  <p
-                                    className="mt-0.5 text-[11px] font-bold text-slate-500"
-                                    style={{
-                                      order: posFieldOrder("shelf_stock"),
-                                    }}
-                                  >
-                                    Còn{" "}
-                                    {Math.max(
-                                      getSellableStock(product) -
-                                        quantityInCart,
-                                      0,
-                                    )}{" "}
-                                    trên kệ
-                                  </p>
-                                ) : null}
-                                {effectivePosCardSettings.order
-                                  .filter(
-                                    (key) =>
-                                      posFieldVisible(key) &&
-                                      ![
-                                        "image",
-                                        "name",
-                                        "shelf_stock",
-                                        "price",
-                                      ].includes(key),
-                                  )
-                                  .map((key) => {
-                                    const definition =
-                                      productSettings.customAttributes.find(
-                                        (item) => item.id === key,
-                                      );
-                                    const raw =
-                                      (
-                                        product as unknown as Record<
-                                          string,
-                                          unknown
-                                        >
-                                      )[key] ?? productAttributes[key];
-                                    const variants = Array.isArray(
-                                      productAttributes._variants,
-                                    )
-                                      ? (productAttributes._variants as Array<{
-                                          values?: Record<string, string>;
-                                          shelf_stock?: number;
-                                        }>)
-                                      : [];
-                                    if (
-                                      definition?.type === "single" &&
-                                      variants.length
-                                    )
-                                      return (
-                                        <div
-                                          className="mt-1"
-                                          key={key}
-                                          style={{ order: posFieldOrder(key) }}
-                                        >
-                                          <p className="text-[10px] font-bold text-slate-500">
-                                            {definition.name}
-                                          </p>
-                                          <div className="mt-1 flex flex-wrap gap-1">
-                                            {definition.options.map(
-                                              (option) => (
-                                                <span
-                                                  className="rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-bold"
-                                                  key={option}
-                                                >
-                                                  {option} ·{" "}
-                                                  {variants
-                                                    .filter(
-                                                      (variant) =>
-                                                        variant.values?.[
-                                                          key
-                                                        ] === option,
-                                                    )
-                                                    .reduce(
-                                                      (sum, variant) =>
-                                                        sum +
-                                                        Math.max(
-                                                          Number(
-                                                            variant.shelf_stock,
-                                                          ) || 0,
-                                                          0,
-                                                        ),
-                                                      0,
-                                                    )}
-                                                </span>
-                                              ),
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    if (
-                                      raw === undefined ||
-                                      raw === null ||
-                                      (typeof raw === "object" &&
-                                        !Array.isArray(raw))
-                                    )
-                                      return null;
-                                    if (
-                                      definition &&
-                                      (definition.type === "single" ||
-                                        definition.type === "multiple")
-                                    ) {
-                                      const selectedValues = Array.isArray(raw)
-                                        ? raw.map(String)
-                                        : [String(raw)];
-                                      return (
-                                        <div
-                                          className="mt-1"
-                                          key={key}
-                                          style={{ order: posFieldOrder(key) }}
-                                        >
-                                          <p className="text-[10px] font-bold text-slate-500">
-                                            {definition.name}
-                                          </p>
-                                          <div
-                                            className={
-                                              definition.optionDisplay ===
-                                              "color"
-                                                ? "mt-1 flex flex-wrap gap-1.5"
-                                                : "mt-1 space-y-1"
-                                            }
-                                          >
-                                            {definition.options.map(
-                                              (option) => {
-                                                const selected =
-                                                  selectedValues.includes(
-                                                    option,
-                                                  );
-                                                return (
-                                                  <span
-                                                    className={`flex items-center gap-1.5 text-[9px] font-bold ${definition.optionDisplay === "color" ? "inline-flex" : "w-full"} ${selected ? "text-slate-900" : "text-slate-400"}`}
-                                                    key={option}
-                                                  >
-                                                    {definition.optionDisplay !==
-                                                    "text" ? (
-                                                      <i
-                                                        className={`h-4 w-4 rounded-full border-2 ${selected ? "border-moss-700 ring-1 ring-moss-500" : "border-slate-300"}`}
-                                                        style={{
-                                                          backgroundColor:
-                                                            definition
-                                                              .optionColors?.[
-                                                              option
-                                                            ] ?? option,
-                                                        }}
-                                                      />
-                                                    ) : null}
-                                                    {definition.optionDisplay !==
-                                                    "color"
-                                                      ? option
-                                                      : null}
-                                                  </span>
-                                                );
-                                              },
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    }
-                                    const optionStock =
-                                      definition?.type === "single"
-                                        ? quickProducts.reduce(
-                                            (total, item) => {
-                                              const attributes =
-                                                item.attributes &&
-                                                typeof item.attributes ===
-                                                  "object" &&
-                                                !Array.isArray(item.attributes)
-                                                  ? (item.attributes as Record<
-                                                      string,
-                                                      unknown
-                                                    >)
-                                                  : {};
-                                              return attributes[key] === raw
-                                                ? total +
-                                                    Math.max(
-                                                      getSellableStock(item),
-                                                      0,
-                                                    )
-                                                : total;
-                                            },
-                                            0,
-                                          )
-                                        : null;
-                                    return (
-                                      <div
-                                        className="mt-1 text-[10px] font-semibold text-slate-500"
-                                        key={key}
-                                        style={{ order: posFieldOrder(key) }}
+                                  <div className="flex min-w-0 flex-1 flex-col px-0.5 pb-0.5 pt-2">
+                                    {posFieldVisible("name") ? (
+                                      <h3
+                                        style={{ order: posFieldOrder("name") }}
+                                        className="line-clamp-2 min-h-10 text-sm font-extrabold leading-5 text-slate-900"
+                                        title={product.name}
                                       >
-                                        <span>{definition?.name ?? key}: </span>
-                                        <strong className="text-slate-800">
-                                          {Array.isArray(raw)
-                                            ? raw.join(", ")
-                                            : String(raw)}
-                                        </strong>
-                                        {optionStock !== null ? (
-                                          <span className="ml-1 rounded-full bg-moss-50 px-1.5 text-moss-800">
-                                            Còn {optionStock}
-                                          </span>
-                                        ) : null}
+                                        {product.name}
+                                      </h3>
+                                    ) : null}
+                                    {posFieldVisible("shelf_stock") ? (
+                                      <p
+                                        className="mt-0.5 text-[11px] font-bold text-slate-500"
+                                        style={{
+                                          order: posFieldOrder("shelf_stock"),
+                                        }}
+                                      >
+                                        Còn{" "}
+                                        {Math.max(
+                                          getSellableStock(product) -
+                                            quantityInCart,
+                                          0,
+                                        )}{" "}
+                                        trên kệ
+                                      </p>
+                                    ) : null}
+                                    {effectivePosCardSettings.order
+                                      .filter(
+                                        (key) =>
+                                          posFieldVisible(key) &&
+                                          ![
+                                            "image",
+                                            "name",
+                                            "shelf_stock",
+                                            "price",
+                                          ].includes(key),
+                                      )
+                                      .map((key) => {
+                                        const definition =
+                                          productSettings.customAttributes.find(
+                                            (item) => item.id === key,
+                                          );
+                                        const raw =
+                                          (
+                                            product as unknown as Record<
+                                              string,
+                                              unknown
+                                            >
+                                          )[key] ?? productAttributes[key];
+                                        const variants = Array.isArray(
+                                          productAttributes._variants,
+                                        )
+                                          ? (productAttributes._variants as Array<{
+                                              values?: Record<string, string>;
+                                              shelf_stock?: number;
+                                            }>)
+                                          : [];
+                                        if (
+                                          definition?.type === "single" &&
+                                          variants.length
+                                        )
+                                          return (
+                                            <div
+                                              className="mt-1"
+                                              key={key}
+                                              style={{
+                                                order: posFieldOrder(key),
+                                              }}
+                                            >
+                                              <p className="text-[10px] font-bold text-slate-500">
+                                                {definition.name}
+                                              </p>
+                                              <div className="mt-1 flex flex-wrap gap-1">
+                                                {definition.options.map(
+                                                  (option) => (
+                                                    <span
+                                                      className="rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-bold"
+                                                      key={option}
+                                                    >
+                                                      {option} ·{" "}
+                                                      {variants
+                                                        .filter(
+                                                          (variant) =>
+                                                            variant.values?.[
+                                                              key
+                                                            ] === option,
+                                                        )
+                                                        .reduce(
+                                                          (sum, variant) =>
+                                                            sum +
+                                                            Math.max(
+                                                              Number(
+                                                                variant.shelf_stock,
+                                                              ) || 0,
+                                                              0,
+                                                            ),
+                                                          0,
+                                                        )}
+                                                    </span>
+                                                  ),
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        if (
+                                          raw === undefined ||
+                                          raw === null ||
+                                          (typeof raw === "object" &&
+                                            !Array.isArray(raw))
+                                        )
+                                          return null;
+                                        if (
+                                          definition &&
+                                          (definition.type === "single" ||
+                                            definition.type === "multiple")
+                                        ) {
+                                          const selectedValues = Array.isArray(
+                                            raw,
+                                          )
+                                            ? raw.map(String)
+                                            : [String(raw)];
+                                          return (
+                                            <div
+                                              className="mt-1"
+                                              key={key}
+                                              style={{
+                                                order: posFieldOrder(key),
+                                              }}
+                                            >
+                                              <p className="text-[10px] font-bold text-slate-500">
+                                                {definition.name}
+                                              </p>
+                                              <div
+                                                className={
+                                                  definition.optionDisplay ===
+                                                  "color"
+                                                    ? "mt-1 flex flex-wrap gap-1.5"
+                                                    : "mt-1 space-y-1"
+                                                }
+                                              >
+                                                {definition.options.map(
+                                                  (option) => {
+                                                    const selected =
+                                                      selectedValues.includes(
+                                                        option,
+                                                      );
+                                                    return (
+                                                      <span
+                                                        className={`flex items-center gap-1.5 text-[9px] font-bold ${definition.optionDisplay === "color" ? "inline-flex" : "w-full"} ${selected ? "text-slate-900" : "text-slate-400"}`}
+                                                        key={option}
+                                                      >
+                                                        {definition.optionDisplay !==
+                                                        "text" ? (
+                                                          <i
+                                                            className={`h-4 w-4 rounded-full border-2 ${selected ? "border-moss-700 ring-1 ring-moss-500" : "border-slate-300"}`}
+                                                            style={{
+                                                              backgroundColor:
+                                                                definition
+                                                                  .optionColors?.[
+                                                                  option
+                                                                ] ?? option,
+                                                            }}
+                                                          />
+                                                        ) : null}
+                                                        {definition.optionDisplay !==
+                                                        "color"
+                                                          ? option
+                                                          : null}
+                                                      </span>
+                                                    );
+                                                  },
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+                                        const optionStock =
+                                          definition?.type === "single"
+                                            ? quickProducts.reduce(
+                                                (total, item) => {
+                                                  const attributes =
+                                                    item.attributes &&
+                                                    typeof item.attributes ===
+                                                      "object" &&
+                                                    !Array.isArray(
+                                                      item.attributes,
+                                                    )
+                                                      ? (item.attributes as Record<
+                                                          string,
+                                                          unknown
+                                                        >)
+                                                      : {};
+                                                  return attributes[key] === raw
+                                                    ? total +
+                                                        Math.max(
+                                                          getSellableStock(
+                                                            item,
+                                                          ),
+                                                          0,
+                                                        )
+                                                    : total;
+                                                },
+                                                0,
+                                              )
+                                            : null;
+                                        return (
+                                          <div
+                                            className="mt-1 text-[10px] font-semibold text-slate-500"
+                                            key={key}
+                                            style={{
+                                              order: posFieldOrder(key),
+                                            }}
+                                          >
+                                            <span>
+                                              {definition?.name ?? key}:{" "}
+                                            </span>
+                                            <strong className="text-slate-800">
+                                              {Array.isArray(raw)
+                                                ? raw.join(", ")
+                                                : String(raw)}
+                                            </strong>
+                                            {optionStock !== null ? (
+                                              <span className="ml-1 rounded-full bg-moss-50 px-1.5 text-moss-800">
+                                                Còn {optionStock}
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        );
+                                      })}
+                                    <div
+                                      className="mt-2 flex flex-wrap items-center justify-between gap-1.5"
+                                      style={{ order: posFieldOrder("price") }}
+                                    >
+                                      {posFieldVisible("price") ? (
+                                        <span
+                                          className="min-w-0 flex-1 truncate text-xs font-black tabular-nums text-moss-800 sm:text-base"
+                                          title={formatCurrency(product.price)}
+                                        >
+                                          {formatIntegerInput(
+                                            String(product.price),
+                                          )}{" "}
+                                          đ
+                                        </span>
+                                      ) : null}
+                                      <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-moss-50 p-0.5 sm:gap-1 sm:p-1">
+                                        <button
+                                          aria-label={`Giảm ${product.name}`}
+                                          className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-moss-700 shadow-sm ring-1 ring-moss-100 disabled:text-slate-300 disabled:shadow-none sm:h-7 sm:w-7"
+                                          disabled={
+                                            !canCheckout || quantityInCart === 0
+                                          }
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            decreaseProductQuantity(product.id);
+                                          }}
+                                          type="button"
+                                        >
+                                          <Minus className="h-3.5 w-3.5" />
+                                        </button>
+                                        <span className="min-w-4 text-center text-xs font-black tabular-nums text-slate-900 sm:min-w-5 sm:text-sm">
+                                          {quantityInCart}
+                                        </span>
+                                        <button
+                                          aria-label={`Thêm ${product.name}`}
+                                          className="flex h-7 w-7 items-center justify-center rounded-full bg-moss-700 text-white shadow-sm transition hover:bg-moss-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:h-8 sm:w-8"
+                                          disabled={disabled}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            addToCart(
+                                              product,
+                                              undefined,
+                                              false,
+                                            );
+                                          }}
+                                          type="button"
+                                        >
+                                          <Plus className="h-4 w-4" />
+                                        </button>
                                       </div>
-                                    );
-                                  })}
-                                <div
-                                  className="mt-2 flex flex-wrap items-center justify-between gap-1.5"
-                                  style={{ order: posFieldOrder("price") }}
-                                >
-                                  {posFieldVisible("price") ? (
-                                    <span
-                                      className="min-w-0 flex-1 truncate text-xs font-black tabular-nums text-moss-800 sm:text-base"
-                                      title={formatCurrency(product.price)}
-                                    >
-                                      {formatIntegerInput(
-                                        String(product.price),
-                                      )}{" "}
-                                      đ
-                                    </span>
-                                  ) : null}
-                                  <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-moss-50 p-0.5 sm:gap-1 sm:p-1">
-                                    <button
-                                      aria-label={`Giảm ${product.name}`}
-                                      className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-moss-700 shadow-sm ring-1 ring-moss-100 disabled:text-slate-300 disabled:shadow-none sm:h-7 sm:w-7"
-                                      disabled={
-                                        !canCheckout || quantityInCart === 0
-                                      }
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        decreaseProductQuantity(product.id);
-                                      }}
-                                      type="button"
-                                    >
-                                      <Minus className="h-3.5 w-3.5" />
-                                    </button>
-                                    <span className="min-w-4 text-center text-xs font-black tabular-nums text-slate-900 sm:min-w-5 sm:text-sm">
-                                      {quantityInCart}
-                                    </span>
-                                    <button
-                                      aria-label={`Thêm ${product.name}`}
-                                      className="flex h-7 w-7 items-center justify-center rounded-full bg-moss-700 text-white shadow-sm transition hover:bg-moss-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:h-8 sm:w-8"
-                                      disabled={disabled}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        addToCart(product, undefined, false);
-                                      }}
-                                      type="button"
-                                    >
-                                      <Plus className="h-4 w-4" />
-                                    </button>
+                                    </div>
                                   </div>
-                                </div>
-                              </div>
                                 </>
                               )}
                             </article>
