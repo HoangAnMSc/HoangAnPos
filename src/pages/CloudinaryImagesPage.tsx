@@ -184,10 +184,12 @@ export function CloudinaryImagesPage() {
   }
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
+    const files = Array.from(event.target.files ?? []).filter((file) =>
+      file.type.startsWith("image/")
+    );
     event.currentTarget.value = "";
 
-    if (!file) {
+    if (!files.length) {
       return;
     }
 
@@ -198,8 +200,8 @@ export function CloudinaryImagesPage() {
     setUploading(true);
 
     try {
-      const imageUpload = await uploadProductImageAsset(file);
-      await saveCloudinaryImageAsset(imageUpload);
+      const imageUploads = await Promise.all(files.map(uploadProductImageAsset));
+      await Promise.all(imageUploads.map(saveCloudinaryImageAsset));
       await loadImages();
     } catch (requestError) {
       setErrorNotice({
@@ -300,8 +302,14 @@ export function CloudinaryImagesPage() {
                   }`}
                 >
                   <Upload className="h-4 w-4" />
-                  {uploading ? "Đang tải..." : "Tải ảnh"}
-                  <input accept="image/*" className="hidden" onChange={handleUpload} type="file" />
+                  {uploading ? "Đang tải ảnh..." : "Tải nhiều ảnh"}
+                  <input
+                    accept="image/*"
+                    className="hidden"
+                    multiple
+                    onChange={handleUpload}
+                    type="file"
+                  />
                 </label>
               ) : null}
             </div>

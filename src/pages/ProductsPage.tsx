@@ -687,7 +687,7 @@ type ProductFormProps = {
   submitting: boolean;
   settings: ProductSettings;
   onAddCategory: (name: string) => Promise<string>;
-  onSubmit: (input: ProductInput, imageFile: File | null) => Promise<void>;
+  onSubmit: (input: ProductInput, imageFiles: File[]) => Promise<void>;
 };
 
 function ProductForm({
@@ -709,7 +709,7 @@ function ProductForm({
   const [form, setForm] = useState<ProductFormState>(() =>
     productToForm(product, initialEan13),
   );
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
   const [mediaOpen, setMediaOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
@@ -736,7 +736,7 @@ function ProductForm({
 
   useEffect(() => {
     setForm(productToForm(product, initialEan13));
-    setImageFile(null);
+    setImageFiles([]);
     setImagePreviewUrl("");
     setCategoryDraft("");
     setCategoryError("");
@@ -980,7 +980,7 @@ function ProductForm({
           shelf_stock: Math.floor(shelfStock),
           attributes: attributeValues as never,
         },
-        imageFile,
+        imageFiles,
       );
     } catch (requestError) {
       setError(getErrorMessage(requestError, "Không lưu được sản phẩm."));
@@ -1089,7 +1089,9 @@ function ProductForm({
                 </span>
                 {previewUrl ? (
                   <span className="block truncate text-xs font-semibold text-slate-500">
-                    Đã chọn hình ảnh
+                    {imageFiles.length > 1
+                      ? `Đã chọn ${imageFiles.length} ảnh mới`
+                      : "Đã chọn hình ảnh"}
                   </span>
                 ) : null}
               </span>
@@ -2063,14 +2065,17 @@ function ProductForm({
         canUploadImage={canUploadImage}
         currentImageUrl={form.image_url}
         libraryImages={libraryImages}
+        multipleUpload
         onClose={() => setMediaOpen(false)}
-        onSave={({ imageFile: nextFile, imageUrl, previewUrl }) => {
+        onSave={({ imageFiles: nextFiles, imageUrl }) => {
           if (imagePreviewUrl.startsWith("blob:")) {
             URL.revokeObjectURL(imagePreviewUrl);
           }
 
-          setImageFile(nextFile);
-          setImagePreviewUrl(previewUrl);
+          setImageFiles(nextFiles);
+          setImagePreviewUrl(
+            nextFiles[0] ? URL.createObjectURL(nextFiles[0]) : "",
+          );
           updateField("image_url", imageUrl);
           setMediaOpen(false);
         }}
@@ -2159,7 +2164,7 @@ type ProductEditorModalProps = {
   onAddCategory: (name: string) => Promise<string>;
   onCancel: () => void;
   onDelete: (product: Product) => Promise<void>;
-  onSubmit: (input: ProductInput, imageFile: File | null) => Promise<void>;
+  onSubmit: (input: ProductInput, imageFiles: File[]) => Promise<void>;
 };
 
 function ProductEditorModal({
@@ -2602,6 +2607,9 @@ export function ProductsPage() {
   const [expiryFilter, setExpiryFilter] = useState<"all" | "soon" | "expired">(
     "all",
   );
+  const [visibilityFilter, setVisibilityFilter] = useState<
+    "all" | "visible" | "hidden"
+  >("all");
   const [receiveModalOpen, setReceiveModalOpen] = useState(false);
   const [receivingProduct, setReceivingProduct] = useState<Product | null>(
     null,
@@ -2783,7 +2791,7 @@ export function ProductsPage() {
     return savedCategory;
   }
 
-  async function handleSave(input: ProductInput, imageFile: File | null) {
+  async function handleSave(input: ProductInput, imageFiles: File[]) {
     if (
       (editingProduct && !canEditProduct) ||
       (!editingProduct && !canCreateProduct)
@@ -2791,7 +2799,7 @@ export function ProductsPage() {
       return;
     }
 
-    if (imageFile && !canUploadCloudinaryImage) {
+    if (imageFiles.length && !canUploadCloudinaryImage) {
       throw new Error("Bạn không có quyền tải ảnh lên Cloudinary.");
     }
 
@@ -2802,15 +2810,13 @@ export function ProductsPage() {
       const guardedInput = canSetProductVisibility
         ? input
         : { ...input, is_active: editingProduct?.is_active ?? true };
-      const imageUpload = imageFile
-        ? await uploadProductImageAsset(imageFile)
-        : null;
-      const imageUrl = imageUpload ? imageUpload.url : guardedInput.image_url;
+      const imageUploads = await Promise.all(
+        imageFiles.map(uploadProductImageAsset),
+      );
+      const imageUrl = imageUploads[0]?.url ?? guardedInput.image_url;
       const payload = { ...guardedInput, image_url: imageUrl };
 
-      if (imageUpload) {
-        await saveCloudinaryImageAsset(imageUpload);
-      }
+      await Promise.all(imageUploads.map(saveCloudinaryImageAsset));
 
       if (editingProduct) {
         await updateProduct(editingProduct.id, payload);
@@ -2920,7 +2926,11 @@ export function ProductsPage() {
         .filter(Boolean)
         .some((value) => value!.toLowerCase().includes(normalizedQuery)) &&
       (expiryFilter === "all" ||
-        getProductExpiryStatus(product) === expiryFilter),
+        getProductExpiryStatus(product) === expiryFilter) &&
+      (visibilityFilter === "all" ||
+        (visibilityFilter === "visible"
+          ? product.is_active
+          : !product.is_active)),
   );
   const effectiveProductCardSettings = {
     ...productSettings.card,
@@ -2986,6 +2996,7 @@ export function ProductsPage() {
     (product) => getProductExpiryStatus(product) === "soon",
   ).length;
   const hiddenCount = products.filter((product) => !product.is_active).length;
+  const visibleCount = products.length - hiddenCount;
 
   return (
     <div className="w-full max-w-[100vw] px-0 pb-24 sm:px-2 sm:pb-0">
@@ -2993,8 +3004,11 @@ export function ProductsPage() {
 
       <section className="mb-2 flex items-center gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-soft sm:mb-3 sm:p-3">
         <button
-          className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${expiryFilter === "all" ? "bg-slate-900 text-white ring-2 ring-slate-300" : "bg-slate-100 text-slate-600"}`}
-          onClick={() => setExpiryFilter("all")}
+          className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${expiryFilter === "all" && visibilityFilter === "all" ? "bg-slate-900 text-white ring-2 ring-slate-300" : "bg-slate-100 text-slate-600"}`}
+          onClick={() => {
+            setExpiryFilter("all");
+            setVisibilityFilter("all");
+          }}
           type="button"
         >
           <strong className="text-base font-black">{products.length}</strong>Mặt
@@ -3026,12 +3040,32 @@ export function ProductsPage() {
           </strong>
           Hết hạn
         </button>
-        {hiddenCount > 0 ? (
-          <div className="flex shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white">
-            <strong className="text-base font-black">{hiddenCount}</strong>Đang
-            ẩn
-          </div>
-        ) : null}
+        <button
+          className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-moss-800 ${visibilityFilter === "visible" ? "bg-moss-100 ring-2 ring-moss-400" : "bg-moss-50"}`}
+          onClick={() =>
+            setVisibilityFilter((value) =>
+              value === "visible" ? "all" : "visible",
+            )
+          }
+          type="button"
+        >
+          <Eye className="h-4 w-4" />
+          <strong className="text-base font-black">{visibleCount}</strong>
+          Đang hiện
+        </button>
+        <button
+          className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 ${visibilityFilter === "hidden" ? "bg-slate-200 ring-2 ring-slate-500" : "bg-slate-100"}`}
+          onClick={() =>
+            setVisibilityFilter((value) =>
+              value === "hidden" ? "all" : "hidden",
+            )
+          }
+          type="button"
+        >
+          <EyeOff className="h-4 w-4" />
+          <strong className="text-base font-black">{hiddenCount}</strong>
+          Đang ẩn
+        </button>
       </section>
 
       <Card className="overflow-hidden rounded-none border-0 bg-transparent p-0 shadow-none sm:rounded-2xl sm:border sm:bg-white sm:shadow-soft">

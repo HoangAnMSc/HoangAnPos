@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { clsx } from "clsx";
+import { Eye, EyeOff } from "lucide-react";
 import { formatCurrency } from "../../lib/format";
 import {
   formatExpiryDays,
@@ -94,6 +95,100 @@ function applyCardHtmlTemplate(
   return `${escapeHtml(template.slice(0, marker))}${safeHtml}${escapeHtml(template.slice(marker + 7))}`;
 }
 
+function applyCardFieldOrder(root: ShadowRoot, fieldOrder: string[]) {
+  const content = root.querySelector<HTMLElement>(".content");
+  if (!content) return;
+
+  const orderByKey = new Map(fieldOrder.map((key, index) => [key, index]));
+  const positioned = (element: HTMLElement) => {
+    const position = getComputedStyle(element).position;
+    return (
+      position === "absolute" || position === "fixed" || position === "sticky"
+    );
+  };
+  const fieldContainers = Array.from(content.children).filter(
+    (element): element is HTMLElement =>
+      element instanceof HTMLElement &&
+      (element.classList.contains("fields") ||
+        element.classList.contains("attributes")),
+  );
+  const orderedItems: Array<{
+    key: string;
+    node: HTMLElement;
+    sourceContainer: HTMLElement | null;
+    sourceIndex: number;
+  }> = [];
+  let sourceIndex = 0;
+
+  Array.from(content.children).forEach((element) => {
+    if (!(element instanceof HTMLElement)) return;
+
+    if (fieldContainers.includes(element)) {
+      Array.from(element.children).forEach((child) => {
+        if (!(child instanceof HTMLElement)) return;
+        const key = child.dataset.cardField;
+        if (!key || positioned(child)) return;
+        orderedItems.push({
+          key,
+          node: child,
+          sourceContainer: element,
+          sourceIndex: sourceIndex++,
+        });
+      });
+      return;
+    }
+
+    const field = element.dataset.cardField
+      ? element
+      : element.querySelector<HTMLElement>("[data-card-field]");
+    const key = field?.dataset.cardField;
+    if (!field || !key || positioned(element) || positioned(field)) return;
+    orderedItems.push({
+      key,
+      node: element,
+      sourceContainer: null,
+      sourceIndex: sourceIndex++,
+    });
+  });
+
+  if (orderedItems.length < 2) return;
+
+  orderedItems.sort(
+    (left, right) =>
+      (orderByKey.get(left.key) ?? Number.MAX_SAFE_INTEGER) -
+        (orderByKey.get(right.key) ?? Number.MAX_SAFE_INTEGER) ||
+      left.sourceIndex - right.sourceIndex,
+  );
+
+  let activeContainer: HTMLElement | null = null;
+  let activeSource: HTMLElement | null = null;
+  const flushContainer = () => {
+    if (activeContainer) content.append(activeContainer);
+    activeContainer = null;
+    activeSource = null;
+  };
+
+  orderedItems.forEach((item) => {
+    if (item.sourceContainer) {
+      if (activeSource !== item.sourceContainer) {
+        flushContainer();
+        activeSource = item.sourceContainer;
+        activeContainer = item.sourceContainer.cloneNode(false) as HTMLElement;
+      }
+      activeContainer?.append(item.node);
+      return;
+    }
+
+    flushContainer();
+    content.append(item.node);
+  });
+  flushContainer();
+
+  fieldContainers.forEach((container) => {
+    if (!container.children.length) container.remove();
+  });
+}
+
 function renderChoiceValue(
   values: string[],
   attribute: CustomProductAttribute,
@@ -133,7 +228,7 @@ function renderCardFieldBlocks(
       : {};
   const visible = new Set(settings.visibleFields);
   const customById = new Map(customAttributes.map((item) => [item.id, item]));
-  const reserved = new Set(["image", ...explicitlyRendered]);
+  const reserved = new Set(["image", "is_active", ...explicitlyRendered]);
   const order = [
     ...settings.order,
     ...customAttributes.map((item) => item.id),
@@ -240,16 +335,30 @@ export function ProductCardCodeRenderer({
     const defaults = getDefaultCardCode(mode);
     const source = settings.templateHtml || defaults.html;
     const tokenFields: Record<string, string> = {
+      image_url: "image",
       name: "name",
       category: "category",
+      description: "description",
       price: "price",
+      cost_price: "cost_price",
+      stock: "stock",
       shelf_stock: "shelf_stock",
       shelf_stock_text: "shelf_stock",
+      sku: "sku",
+      import_date: "import_date",
+      expiry_date: "expiry_date",
+      is_active: "is_active",
+      is_reward: "is_reward",
       reward_points_badge: "reward_points_cost",
+      reward_points_cost: "reward_points_cost",
     };
     const explicitlyRendered = new Set(
       Array.from(source.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g))
-        .map((match) => tokenFields[match[1]])
+        .map((match) =>
+          match[1].startsWith("attribute.")
+            ? match[1].slice("attribute.".length)
+            : tokenFields[match[1]],
+        )
         .filter((field): field is string => Boolean(field)),
     );
     const attributes =
@@ -332,6 +441,12 @@ export function ProductCardCodeRenderer({
             product.expiry_date ?? "",
           )
         : "",
+      is_active: "",
+      is_reward: visible.has("is_reward")
+        ? product.is_reward
+          ? "Có"
+          : "Không"
+        : "",
       attributes: fieldBlocks,
       field_blocks: fieldBlocks,
       reward_points_badge:
@@ -340,6 +455,14 @@ export function ProductCardCodeRenderer({
               settings,
               "reward_points_cost",
               `${product.reward_points_cost.toLocaleString("vi-VN")} điểm`,
+            )
+          : "",
+      reward_points_cost:
+        visible.has("reward_points_cost") && product.is_reward
+          ? applyCardTextTemplate(
+              settings,
+              "reward_points_cost",
+              String(product.reward_points_cost),
             )
           : "",
       quantity,
@@ -363,18 +486,42 @@ export function ProductCardCodeRenderer({
       ? ".card-shell{border:0!important;border-radius:inherit!important;box-shadow:none!important;transform:none!important}"
       : "";
     const editorGuard = onEditField
-      ? "[data-card-field]{cursor:pointer;transition:outline-color .15s ease,box-shadow .15s ease}[data-card-field]:hover{outline:2px solid #8fa676;outline-offset:2px;box-shadow:0 0 0 4px rgba(143,166,118,.13)}"
+      ? "[data-card-field]{pointer-events:auto!important;cursor:pointer;transition:outline-color .15s ease,box-shadow .15s ease}[data-card-field]:hover{outline:2px solid #8fa676;outline-offset:2px;box-shadow:0 0 0 4px rgba(143,166,118,.13)}"
       : "";
     const imageFitGuard = `.media>img{object-fit:${settings.imageFit === "contain" ? "contain" : "cover"}!important}`;
-    const layoutGuard = `:host{display:block;width:100%;height:100%;min-width:0;overflow:hidden}*{box-sizing:border-box}.card-shell{height:100%;min-width:0;max-width:100%;overflow:hidden}img,video{max-width:100%}${embeddedGuard}${editorGuard}${imageFitGuard}`;
+    const visibilityGuard = `.visibility-status{position:absolute;z-index:30;top:7px;right:7px;display:flex;width:28px;height:28px;align-items:center;justify-content:center;border:1px solid rgba(203,213,225,.9);border-radius:999px;background:rgba(255,255,255,.95);color:#475569;box-shadow:0 3px 10px rgba(15,23,42,.18);backdrop-filter:blur(6px)}.visibility-status.is-visible{border-color:#cbd9bd;color:#50613e}.visibility-status svg{width:15px;height:15px;pointer-events:none}`;
+    const layoutGuard = `:host{display:block;width:100%;height:100%;min-width:0;overflow:hidden}*{box-sizing:border-box}.card-shell{height:100%;min-width:0;max-width:100%;overflow:hidden}img,video{max-width:100%}${embeddedGuard}${editorGuard}${imageFitGuard}${visibilityGuard}`;
     root.innerHTML = `<style>${layoutGuard}\n${cardTypedFieldCss}\n${safeCss}</style>${sanitizeCardHtml(rendered)}`;
-    if (!onEditField) return;
+    if (visible.has("image") && visible.has("is_active")) {
+      const media = root.querySelector<HTMLElement>(".media");
+      if (media) {
+        const status = document.createElement("span");
+        status.className = `visibility-status ${product.is_active ? "is-visible" : "is-hidden"}`;
+        status.dataset.cardField = "is_active";
+        status.setAttribute(
+          "aria-label",
+          product.is_active ? "Đang hiện" : "Đang ẩn",
+        );
+        status.title = product.is_active ? "Đang hiện" : "Đang ẩn";
+        status.innerHTML = product.is_active
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.1 12a10.5 10.5 0 0 1 19.8 0 10.5 10.5 0 0 1-19.8 0"/><circle cx="12" cy="12" r="3"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 2 20 20"/><path d="M6.7 6.7A10.7 10.7 0 0 0 2.1 12a10.5 10.5 0 0 0 15.2 5.3"/><path d="M10.7 4.1A10.5 10.5 0 0 1 21.9 12a10.6 10.6 0 0 1-2.2 3.2"/><path d="M14.1 14.1A3 3 0 0 1 9.9 9.9"/></svg>';
+        media.append(status);
+      }
+    }
     const editableSelectors: Array<[string, string]> = [
       [".media", "image"],
       [".name", "name"],
       [".category", "category"],
+      [".description", "description"],
       [".price", "price"],
+      [".cost-price, .cost_price", "cost_price"],
+      [".total-stock, .total_stock", "stock"],
       [".stock", "shelf_stock"],
+      [".sku, .ean13", "sku"],
+      [".import-date, .import_date", "import_date"],
+      [".expiry-date, .expiry_date", "expiry_date"],
+      [".reward-status, .is_reward", "is_reward"],
       [".reward-badge", "reward_points_cost"],
     ];
     editableSelectors.forEach(([selector, key]) => {
@@ -385,10 +532,15 @@ export function ProductCardCodeRenderer({
     root.querySelectorAll<HTMLElement>("[data-field]").forEach((element) => {
       element.dataset.cardField = element.dataset.field;
     });
+    applyCardFieldOrder(root, settings.order);
+    if (!onEditField) return;
     const handleEdit = (event: Event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const editable = target.closest<HTMLElement>("[data-card-field]");
+      const editable = event
+        .composedPath()
+        .find(
+          (node): node is HTMLElement =>
+            node instanceof HTMLElement && Boolean(node.dataset.cardField),
+        );
       const key = editable?.dataset.cardField;
       if (!key) return;
       event.preventDefault();
@@ -588,15 +740,25 @@ export function ProductCard({
               </span>
             ) : null}
 
-            {!product.is_active ? (
+            {isVisible("is_active", false) ? (
               <span
-                className={
-                  compact
-                    ? "absolute right-1.5 top-1.5 rounded-md bg-slate-900/90 px-1.5 py-0.5 text-[9px] font-extrabold text-white shadow-sm"
-                    : "absolute right-2 top-2 rounded-full bg-slate-900/90 px-2.5 py-1 text-[11px] font-extrabold text-white shadow-sm"
-                }
+                aria-label={product.is_active ? "Đang hiện" : "Đang ẩn"}
+                className={clsx(
+                  "absolute right-1.5 top-1.5 z-20 flex items-center justify-center rounded-full bg-white/95 shadow-md ring-1 backdrop-blur-sm",
+                  compact ? "h-7 w-7" : "h-8 w-8",
+                  product.is_active
+                    ? "text-moss-700 ring-moss-200"
+                    : "text-slate-600 ring-slate-300",
+                  editableClass,
+                )}
+                onClick={(event) => editField("is_active", event)}
+                title={product.is_active ? "Đang hiện" : "Đang ẩn"}
               >
-                Đang ẩn
+                {product.is_active ? (
+                  <Eye className="h-4 w-4" />
+                ) : (
+                  <EyeOff className="h-4 w-4" />
+                )}
               </span>
             ) : null}
           </div>
@@ -654,6 +816,7 @@ export function ProductCard({
                   "price",
                   "shelf_stock",
                   "expiry_date",
+                  "is_active",
                 ].includes(key),
             )
             .map((key) => {

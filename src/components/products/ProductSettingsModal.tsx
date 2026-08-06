@@ -715,7 +715,7 @@ export function ProductSettingsModal({
                   <button
                     {...dragHandleProps(key)}
                     aria-label={`Kéo để đổi vị trí ${fieldLabel(key)}`}
-                    className={`flex h-12 w-12 shrink-0 touch-none items-center justify-center rounded-xl border transition active:cursor-grabbing ${dragged === key ? "cursor-grabbing border-moss-400 bg-moss-700 text-white" : pressing === key ? "animate-pulse cursor-grabbing border-amber-300 bg-amber-100 text-amber-700" : "cursor-grab border-slate-200 bg-slate-100 text-slate-500 hover:border-moss-300 hover:bg-moss-50 hover:text-moss-700"}`}
+                    className={`flex h-12 w-12 shrink-0 touch-none items-center justify-center bg-transparent transition active:cursor-grabbing ${dragged === key ? "cursor-grabbing text-moss-700" : pressing === key ? "animate-pulse cursor-grabbing text-amber-700" : "cursor-grab text-slate-400 hover:text-moss-700"}`}
                     title="Giữ vùng này và kéo lên hoặc xuống"
                     type="button"
                   >
@@ -855,7 +855,7 @@ export function ProductSettingsModal({
                     <button
                       {...dragHandleProps(key)}
                       aria-label={`Kéo để đổi vị trí ${fieldLabel(key)}`}
-                      className={`flex h-11 w-11 shrink-0 touch-none items-center justify-center rounded-xl border transition active:cursor-grabbing ${dragged === key ? "cursor-grabbing border-moss-400 bg-moss-700 text-white" : pressing === key ? "animate-pulse cursor-grabbing border-amber-300 bg-amber-100 text-amber-700" : "cursor-grab border-slate-200 bg-white text-slate-500 hover:border-moss-300 hover:text-moss-700"}`}
+                      className={`flex h-11 w-11 shrink-0 touch-none items-center justify-center bg-transparent transition active:cursor-grabbing ${dragged === key ? "cursor-grabbing text-moss-700" : pressing === key ? "animate-pulse cursor-grabbing text-amber-700" : "cursor-grab text-slate-400 hover:text-moss-700"}`}
                       title="Giữ vùng này và kéo lên hoặc xuống"
                       type="button"
                     >
@@ -914,7 +914,7 @@ export function ProductSettingsModal({
                   />
                 </div>
               ) : (
-                <article className="mx-auto flex w-full max-w-[210px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-md">
+                <article className="relative mx-auto flex w-full max-w-[210px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-md">
                   {previewCard.order.map((key) => (
                     <div
                       className="cursor-pointer rounded-md transition hover:ring-2 hover:ring-moss-300"
@@ -1619,6 +1619,22 @@ function PreviewBlock({
         )}
       </div>
     );
+  if (blockKey === "is_active") {
+    const active = product?.is_active !== false;
+    return (
+      <span
+        aria-label={active ? "Đang hiện" : "Đang ẩn"}
+        className={`absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 shadow-md ring-1 ${active ? "text-moss-700 ring-moss-200" : "text-slate-600 ring-slate-300"}`}
+        title={active ? "Đang hiện" : "Đang ẩn"}
+      >
+        {active ? (
+          <Eye className="h-4 w-4" />
+        ) : (
+          <EyeOff className="h-4 w-4" />
+        )}
+      </span>
+    );
+  }
   if (blockKey === "name")
     return (
       <div className="px-2 pt-2 text-sm font-black">
