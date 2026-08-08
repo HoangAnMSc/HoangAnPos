@@ -16,7 +16,6 @@ export function UnauthorizedPage() {
         <h1 className="font-display text-3xl font-bold">Không có quyền truy cập</h1>
         <p className="mt-3 text-sm leading-6 text-coal/65">
           Tài khoản đã đăng nhập nhưng chưa được gán vai trò phù hợp.
-          Hãy dùng tài khoản quản trị hoặc cập nhật vai trò trên Supabase.
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button onClick={signOut}>

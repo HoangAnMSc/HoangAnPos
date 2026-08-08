@@ -12,7 +12,7 @@ export function ProtectedRoute({ requireAdmin = false }: ProtectedRouteProps) {
 
   if (loading) {
     return (
-      <main className="min-h-screen">
+      <main className="min-h-screen flex items-center justify-center">
         <Spinner label="Đang kiểm tra phiên đăng nhập..." />
       </main>
     );
