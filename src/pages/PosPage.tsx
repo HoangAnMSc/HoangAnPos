@@ -65,6 +65,7 @@ import {
 import {
   getProductVariantDefinitions,
   getProductVariantCount,
+  isProductVariantOptionAvailable,
   resolveProductVariantSelection,
   type ProductVariantSelection,
 } from "../lib/productPageData";
@@ -83,6 +84,7 @@ import {
   type PaymentMethod,
 } from "../services/orders";
 import { fetchPaymentSettings } from "../services/paymentSettings";
+import { evaluatePromotions } from "../features/promotions/services/promotions";
 import {
   fetchProductBatches,
   fetchProducts,
@@ -117,6 +119,7 @@ type PosBill = {
   id: number;
   cart: PosCartItem[];
   cashReceived: string;
+  couponCode: string;
   customerQuery: string;
   orderNote: string;
   paymentMethod: PaymentMethod;
@@ -160,19 +163,19 @@ function createCartVariant(
 ): CartProductVariant | null {
   const resolved = resolveProductVariantSelection(product, settings, selection);
   if (!resolved) return null;
-  const variantInventoryLinked =
-    settings.linkedAttributeIds.includes("stock") &&
-    settings.linkedAttributeIds.includes("shelf_stock");
+  const variantInventoryLinked = settings.linkedAttributeIds.includes("stock");
   return {
+    id: resolved.linked_values._variant_id,
     image_url: resolved.image_url,
     key: JSON.stringify(resolved.values),
     label: resolved.label,
     linked_values: resolved.linked_values,
     source_values: resolved.matches.map((variant) => variant.values),
+    // Compatibility field for legacy cart types; inventory has one source: SKU stock.
     shelf_stock:
-      variantInventoryLinked && resolved.shelf_stock !== null
-        ? resolved.shelf_stock
-        : product.shelf_stock,
+      variantInventoryLinked && resolved.stock !== null
+        ? resolved.stock
+        : product.stock,
     stock:
       variantInventoryLinked && resolved.stock !== null
         ? resolved.stock
@@ -225,6 +228,7 @@ function createEmptyBill(id: number): PosBill {
     id,
     cart: [],
     cashReceived: "",
+    couponCode: "",
     customerQuery: "",
     orderNote: "",
     paymentMethod: "cash",
@@ -256,6 +260,7 @@ function normalizeBill(
     ...value,
     cart,
     cashReceived: String(value?.cashReceived ?? ""),
+    couponCode: String(value?.couponCode ?? ""),
     paymentMethod: value?.paymentMethod === "transfer" ? "transfer" : "cash",
     savedAt: value?.savedAt || null,
   };
@@ -318,7 +323,76 @@ function formatCustomerLabel(customer: Customer) {
 }
 
 function getSellableStock(product: Product) {
-  return Math.max(0, product.shelf_stock ?? 0);
+  return Math.max(0, product.stock ?? 0);
+}
+
+function getPosProductCardData(product: Product) {
+  const attributes =
+    product.attributes &&
+    typeof product.attributes === "object" &&
+    !Array.isArray(product.attributes)
+      ? (product.attributes as Record<string, unknown>)
+      : {};
+  const variants = Array.isArray(attributes._variants)
+    ? (attributes._variants as Array<{
+        image_url?: string;
+        linked_values?: { compare_at_price?: string; price?: string };
+      }>)
+    : [];
+  const pricedVariants = variants
+    .map((variant) => ({
+      ...variant,
+      price: Number(variant.linked_values?.price),
+      comparePrice: Number(variant.linked_values?.compare_at_price),
+    }))
+    .filter((variant) => Number.isFinite(variant.price));
+  const prices = pricedVariants.map((variant) => variant.price);
+  if (!prices.length) prices.push(Number(product.price) || 0);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const lowestVariant = pricedVariants.find((variant) => variant.price === minPrice);
+  const defaultComparePrice =
+    lowestVariant &&
+    Number.isFinite(lowestVariant.comparePrice) &&
+    lowestVariant.comparePrice > lowestVariant.price
+      ? lowestVariant.comparePrice
+      : null;
+  const images = [...new Set(variants.map((variant) => variant.image_url).filter((value): value is string => Boolean(value)))];
+  return {
+    priceLabel:
+      minPrice === maxPrice
+        ? formatCurrency(minPrice)
+        : `${formatCurrency(minPrice)} – ${formatCurrency(maxPrice)}`,
+    compareLabel:
+      defaultComparePrice == null ? null : formatCurrency(defaultComparePrice),
+    images,
+  };
+}
+
+function getLowestPriceVariantSelection(product: Product) {
+  const attributes =
+    product.attributes &&
+    typeof product.attributes === "object" &&
+    !Array.isArray(product.attributes)
+      ? (product.attributes as Record<string, unknown>)
+      : {};
+  const variants = Array.isArray(attributes._variants)
+    ? (attributes._variants as Array<{
+        linked_values?: { price?: string };
+        values?: Record<string, string | string[]>;
+      }>)
+    : [];
+  const lowest = [...variants].sort(
+    (first, second) =>
+      (Number(first.linked_values?.price) || 0) -
+      (Number(second.linked_values?.price) || 0),
+  )[0];
+  return Object.fromEntries(
+    Object.entries(lowest?.values ?? {}).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value : [value],
+    ]),
+  ) as ProductVariantSelection;
 }
 
 type QuickCustomerFormProps = {
@@ -439,6 +513,7 @@ export function PosPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState<PaymentMethod>("cash");
   const [products, setProducts] = useState<Product[]>([]);
+  const [promotionDiscount, setPromotionDiscount] = useState(0);
   const [productSettings, setProductSettings] = useState<ProductSettings>(
     defaultProductSettings,
   );
@@ -478,8 +553,9 @@ export function PosPage() {
   const hasActiveBill = workspace.bills.some(
     (bill) => bill.id === workspace.activeBillId,
   );
-  const cart = activeBill?.cart ?? [];
+  const cart = useMemo(() => activeBill?.cart ?? [], [activeBill]);
   const cashReceived = activeBill?.cashReceived ?? "";
+  const couponCode = activeBill?.couponCode ?? "";
   const customerQuery = activeBill?.customerQuery ?? "";
   const orderNote = activeBill?.orderNote ?? "";
   const paymentMethod = activeBill?.paymentMethod ?? "cash";
@@ -508,7 +584,7 @@ export function PosPage() {
         )
       : 0;
   const activeVariantRemaining = activeCartVariant
-    ? Math.max(activeCartVariant.shelf_stock - activeVariantQuantity, 0)
+    ? Math.max(activeCartVariant.stock - activeVariantQuantity, 0)
     : 0;
 
   const loadCheckoutShiftStatus = useCallback(async () => {
@@ -642,8 +718,8 @@ export function PosPage() {
                 .length > 0;
             const availableStock =
               Math.min(
-                freshBatch?.shelf_quantity ?? Number.POSITIVE_INFINITY,
-                freshVariant?.shelf_stock ?? Number.POSITIVE_INFINITY,
+                freshBatch?.quantity ?? Number.POSITIVE_INFINITY,
+                freshVariant?.stock ?? Number.POSITIVE_INFINITY,
                 getSellableStock(freshProduct),
               );
             if (item.batch?.id && (!freshBatch || freshBatch.quantity <= 0)) {
@@ -665,7 +741,7 @@ export function PosPage() {
               freshProduct !== item.product ||
               freshBatch !== item.batch ||
               freshVariant?.stock !== item.variant?.stock ||
-              freshVariant?.shelf_stock !== item.variant?.shelf_stock
+              freshVariant?.stock !== item.variant?.stock
             ) {
               changed = true;
             }
@@ -762,6 +838,9 @@ export function PosPage() {
   );
   const effectivePosCardSettings = {
     ...productSettings.posCard,
+    // Product Engine cards are data-driven; legacy custom HTML is intentionally ignored.
+    templateHtml: undefined,
+    templateCss: undefined,
     visibleFields: productSettings.posCard.visibleFields.filter(
       (key) => productSettings.enabledFields[key] !== false,
     ),
@@ -819,7 +898,27 @@ export function PosPage() {
   );
   const subtotal =
     regularSubtotal + (rewardsPaidWithPoints ? 0 : rewardSubtotal);
-  const total = subtotal;
+  useEffect(() => {
+    let active = true;
+    const items = cart
+      .filter((item) => !item.product.is_reward)
+      .map((item) => {
+        const attributes = item.product.attributes && typeof item.product.attributes === "object" && !Array.isArray(item.product.attributes) ? item.product.attributes : {};
+        return {
+          product_id: item.product.id,
+          variant_id: item.variant?.id ?? item.variant?.linked_values?._variant_id ?? String(attributes._defaultVariantId ?? ""),
+          unit_price: item.product.price,
+          quantity: item.quantity,
+        };
+      })
+      .filter((item) => item.variant_id);
+    if (!items.length) { setPromotionDiscount(0); return () => { active = false; }; }
+    void evaluatePromotions(items, selectedCustomerId || null, couponCode.trim() || null)
+      .then((results) => { if (active) setPromotionDiscount(Math.min(results.reduce((sum, result) => sum + result.discount_amount, 0), subtotal)); })
+      .catch(() => { if (active) setPromotionDiscount(0); });
+    return () => { active = false; };
+  }, [cart, couponCode, selectedCustomerId, subtotal]);
+  const total = Math.max(subtotal - promotionDiscount, 0);
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const availableProductCount = activeProducts.filter(
     (product) => getSellableStock(product) > 0,
@@ -875,9 +974,12 @@ export function PosPage() {
       .reduce((sum, item) => sum + item.quantity, 0);
   }
 
-  function getProductBatches(productId: string) {
+  function getProductBatches(productId: string, variantId?: string | null) {
     return productBatches.filter(
-      (batch) => batch.product_id === productId && batch.shelf_quantity > 0,
+      (batch) =>
+        batch.product_id === productId &&
+        batch.quantity > 0 &&
+        (!variantId || (batch as ProductBatch & { variant_id?: string }).variant_id === variantId),
     );
   }
 
@@ -965,15 +1067,18 @@ export function PosPage() {
       productSettings,
     );
     if (variant === undefined && variantDefinitions.length) {
+      const lowestPriceSelection = getLowestPriceVariantSelection(product);
       focusSearchAfterVariantRef.current = focusSearchAfterAdd;
       setProductToVariantSelect(product);
       setVariantOptionSelection(
         Object.fromEntries(
           variantDefinitions.map((definition) => [
             definition.id,
-            definition.type === "single" && definition.options[0]
-              ? [definition.options[0]]
-              : [],
+            lowestPriceSelection[definition.id]
+              ? lowestPriceSelection[definition.id]
+              : definition.type === "single" && definition.options[0]
+                ? [definition.options[0]]
+                : [],
           ]),
         ),
       );
@@ -983,12 +1088,12 @@ export function PosPage() {
 
     const selectedVariant = variant ?? null;
     const effectiveProduct = applyVariantProductData(product, selectedVariant);
-    if (selectedVariant && selectedVariant.shelf_stock <= 0) {
-      showErrorNotice("Biến thể này đã hết hàng trên kệ.", "Không thể thêm biến thể");
+    if (selectedVariant && selectedVariant.stock <= 0) {
+      showErrorNotice("SKU này đã hết hàng.", "Không thể thêm sản phẩm");
       return;
     }
 
-    const batches = getProductBatches(product.id);
+    const batches = getProductBatches(product.id, selectedVariant?.id);
     const selectedBatch =
       batch === undefined && batches.length === 1 ? batches[0] : batch;
 
@@ -1021,10 +1126,10 @@ export function PosPage() {
             .reduce((sum, item) => sum + item.quantity, 0)
         : 0;
       const maxByBatch = selectedBatch
-        ? selectedBatch.shelf_quantity - quantityInBatch
+        ? selectedBatch.quantity - quantityInBatch
         : getSellableStock(product) - quantityInCart;
       const maxByVariant = selectedVariant
-        ? selectedVariant.shelf_stock - quantityInVariant
+        ? selectedVariant.stock - quantityInVariant
         : getSellableStock(product) - quantityInCart;
 
       if (
@@ -1128,10 +1233,10 @@ export function PosPage() {
             Math.min(
               getSellableStock(item.product) - otherProductQuantity,
               item.batch
-                ? item.batch.shelf_quantity - otherBatchQuantity
+                ? item.batch.quantity - otherBatchQuantity
                 : Number.POSITIVE_INFINITY,
               item.variant
-                ? item.variant.shelf_stock - otherVariantQuantity
+                ? item.variant.stock - otherVariantQuantity
                 : Number.POSITIVE_INFINITY,
             ),
             0,
@@ -1160,7 +1265,7 @@ export function PosPage() {
       )
       .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
     const availableQuantity = Math.max(
-      nextBatch.shelf_quantity - quantityAlreadySelected,
+      nextBatch.quantity - quantityAlreadySelected,
       0,
     );
 
@@ -1464,6 +1569,7 @@ export function PosPage() {
         cashReceived: selectedPaymentMethod === "cash" ? paidAmount : total,
         cashierId: user?.id ?? null,
         cart,
+        couponCode,
         customerId: selectedCustomerId || null,
         note: normalizeNullableText(orderNote),
         paymentMethod: selectedPaymentMethod,
@@ -1630,6 +1736,7 @@ export function PosPage() {
                     <div className="max-h-[min(70vh,620px)] overflow-y-auto p-2">
                       {productResults.map((product) => {
                         const quantityInCart = getQuantityInCart(product.id);
+                        const cardData = getPosProductCardData(product);
                         const disabled =
                           !canCheckout ||
                           getSellableStock(product) <= 0 ||
@@ -1663,12 +1770,13 @@ export function PosPage() {
                               <p className="mt-1 truncate text-sm font-bold text-slate-500">
                                 EAN-13 {getProductEan13Value(product)}
                               </p>
-                              <p className="mt-1 text-sm font-extrabold tabular-nums text-moss-700 sm:hidden">
-                                {formatCurrency(product.price)}
-                              </p>
+                              <div className="mt-1 sm:hidden">
+                                {cardData.compareLabel ? <p className="text-xs font-semibold text-slate-400 line-through">{cardData.compareLabel}</p> : null}
+                                <p className="text-sm font-extrabold tabular-nums text-moss-700">{cardData.priceLabel}</p>
+                              </div>
                               <div className="mt-2 flex flex-wrap gap-2 text-xs font-extrabold">
                                 <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600">
-                                  Trên kệ {getSellableStock(product)}
+                                  Tồn {getSellableStock(product)}
                                 </span>
                                 {quantityInCart > 0 ? (
                                   <span className="rounded-lg bg-moss-50 px-2 py-1 text-moss-700">
@@ -1682,8 +1790,9 @@ export function PosPage() {
                                 Giá
                               </p>
                               <p className="mt-1 text-lg font-extrabold tabular-nums text-slate-900">
-                                {formatCurrency(product.price)}
+                                {cardData.priceLabel}
                               </p>
+                              {cardData.compareLabel ? <p className="text-xs font-semibold text-slate-400 line-through">{cardData.compareLabel}</p> : null}
                             </div>
                             {canCheckout ? (
                               <span className="flex h-11 items-center rounded-xl bg-moss-700 px-3 text-sm font-extrabold text-white shadow-sm">
@@ -1871,11 +1980,10 @@ export function PosPage() {
                       >
                         <div>
                           <h2 className="text-base font-extrabold text-slate-900">
-                            Sản phẩm nhanh
+                            Chọn sản phẩm theo danh mục
                           </h2>
                           <p className="mt-0.5 text-xs font-bold text-slate-500">
-                            Chạm đúng sản phẩm để thêm · {availableProductCount}{" "}
-                            mặt hàng sẵn bán
+                            {availableProductCount} sản phẩm đang có hàng
                           </p>
                         </div>
                         <ChevronDown
@@ -1897,7 +2005,7 @@ export function PosPage() {
                         <div
                           className="scrollbar-none flex gap-2 overflow-x-auto pb-0.5"
                           role="tablist"
-                          aria-label="Lọc nhanh theo nhóm hàng"
+                          aria-label="Lọc sản phẩm theo danh mục"
                         >
                           <button
                             aria-selected={selectedProductCategory === "all"}
@@ -1944,11 +2052,12 @@ export function PosPage() {
                               ? (product.attributes as Record<string, unknown>)
                               : {};
                           const variantCount = getProductVariantCount(product);
+                          const cardData = getPosProductCardData(product);
 
                           return (
                             <article
                               aria-label={`Thêm ${product.name} vào đơn`}
-                              className={`group relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white transition sm:rounded-2xl ${effectivePosCardSettings.templateHtml ? "p-0" : "p-1.5 sm:p-2"} ${
+                              className={`group relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white p-0 transition sm:rounded-2xl ${
                                 quantityInCart > 0
                                   ? "cursor-pointer border-moss-500 shadow-[0_8px_20px_rgba(72,84,54,0.14)] ring-1 ring-moss-200"
                                   : disabled
@@ -1989,13 +2098,13 @@ export function PosPage() {
                                 <>
                                   {posFieldVisible("image") ? (
                                     <div
-                                      className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-100"
+                                      className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100"
                                       style={{ order: posFieldOrder("image") }}
                                     >
                                       {product.image_url ? (
                                         <img
                                           alt={product.name}
-                                          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                                          className={`h-full w-full transition duration-300 group-hover:scale-[1.03] ${effectivePosCardSettings.imageFit === "contain" ? "object-contain p-2" : "object-cover"}`}
                                           src={product.image_url}
                                         />
                                       ) : (
@@ -2016,14 +2125,26 @@ export function PosPage() {
                                           điểm
                                         </span>
                                       ) : null}
-                                      {variantCount ? (
+                                      {variantCount && posFieldVisible("variant_count") ? (
                                         <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-md bg-slate-950/85 px-1.5 py-1 text-[9px] font-black text-white shadow-sm backdrop-blur-sm sm:text-[10px]">
                                           <Layers3 className="h-3 w-3" /> {variantCount} biến thể
                                         </span>
                                       ) : null}
+                                      {cardData.images.length > 1 ? (
+                                        <div className="absolute left-1.5 top-1.5 flex -space-x-1">
+                                          {cardData.images.slice(0, 3).map((imageUrl) => (
+                                            <img alt="" className="h-7 w-7 rounded-md border-2 border-white bg-white object-contain shadow-sm" key={imageUrl} src={imageUrl} />
+                                          ))}
+                                        </div>
+                                      ) : null}
                                     </div>
                                   ) : null}
-                                  <div className="flex min-w-0 flex-1 flex-col px-0.5 pb-0.5 pt-2">
+                                  <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-3.5">
+                                    {posFieldVisible("category") ? (
+                                      <p className="mb-1 truncate text-[10px] font-bold uppercase tracking-wide text-slate-400" style={{ order: posFieldOrder("category") }}>
+                                        {product.category || "Chưa có danh mục"}
+                                      </p>
+                                    ) : null}
                                     {posFieldVisible("name") ? (
                                       <h3
                                         style={{ order: posFieldOrder("name") }}
@@ -2033,11 +2154,11 @@ export function PosPage() {
                                         {product.name}
                                       </h3>
                                     ) : null}
-                                    {posFieldVisible("shelf_stock") ? (
+                                    {posFieldVisible("stock") ? (
                                       <p
-                                        className="mt-0.5 text-[11px] font-bold text-slate-500"
+                                        className="mt-1 w-fit rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"
                                         style={{
-                                          order: posFieldOrder("shelf_stock"),
+                                          order: posFieldOrder("stock"),
                                         }}
                                       >
                                         Còn{" "}
@@ -2046,7 +2167,7 @@ export function PosPage() {
                                             quantityInCart,
                                           0,
                                         )}{" "}
-                                        trên kệ
+                                        trong kho
                                       </p>
                                     ) : null}
                                     {effectivePosCardSettings.order
@@ -2056,8 +2177,11 @@ export function PosPage() {
                                           ![
                                             "image",
                                             "name",
-                                            "shelf_stock",
+                                            "stock",
                                             "price",
+                                            "category",
+                                            "compare_price",
+                                            "variant_count",
                                           ].includes(key),
                                       )
                                       .map((key) => {
@@ -2077,7 +2201,7 @@ export function PosPage() {
                                         )
                                           ? (productAttributes._variants as Array<{
                                               values?: Record<string, string>;
-                                              shelf_stock?: number;
+                                              stock?: number;
                                             }>)
                                           : [];
                                         if (
@@ -2115,7 +2239,7 @@ export function PosPage() {
                                                             sum +
                                                             Math.max(
                                                               Number(
-                                                                variant.shelf_stock,
+                                                                variant.stock,
                                                               ) || 0,
                                                               0,
                                                             ),
@@ -2257,15 +2381,10 @@ export function PosPage() {
                                       style={{ order: posFieldOrder("price") }}
                                     >
                                       {posFieldVisible("price") ? (
-                                        <span
-                                          className="min-w-0 flex-1 truncate text-xs font-black tabular-nums text-moss-800 sm:text-base"
-                                          title={formatCurrency(product.price)}
-                                        >
-                                          {formatIntegerInput(
-                                            String(product.price),
-                                          )}{" "}
-                                          đ
-                                        </span>
+                                        <div className="min-w-0 flex-1" title={cardData.priceLabel}>
+                                          {posFieldVisible("compare_price") && cardData.compareLabel ? <p className="truncate text-[10px] font-semibold text-slate-400 line-through">{cardData.compareLabel}</p> : null}
+                                          <p className="truncate text-xs font-black tabular-nums text-moss-800 sm:text-sm">{cardData.priceLabel}</p>
+                                        </div>
                                       ) : null}
                                       <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-moss-50 p-0.5 sm:gap-1 sm:p-1">
                                         <button
@@ -2475,13 +2594,13 @@ export function PosPage() {
                                                  item.product.id,
                                                  null,
                                                  item.variant.key,
-                                               ) >= item.variant.shelf_stock
+                                               ) >= item.variant.stock
                                              : false) ||
                                            (item.batch
                                              ? getQuantityInCart(
                                                  item.product.id,
                                                  item.batch.id,
-                                               ) >= item.batch.shelf_quantity
+                                               ) >= item.batch.quantity
                                              : false)
                                          }
                                         onClick={() =>
@@ -2904,7 +3023,7 @@ export function PosPage() {
         ) : (
           <div className="space-y-2">
             {cart.map((item) => {
-              const batches = getProductBatches(item.product.id);
+              const batches = getProductBatches(item.product.id, item.variant?.id);
               const quantityInProduct = getQuantityInCart(item.product.id);
               const quantityInCurrentBatch = item.batch
                 ? getQuantityInCart(item.product.id, item.batch.id)
@@ -2983,11 +3102,11 @@ export function PosPage() {
                           disabled={
                             !canCheckout ||
                             (item.batch
-                              ? quantityInCurrentBatch >= item.batch.shelf_quantity
+                              ? quantityInCurrentBatch >= item.batch.quantity
                               : false) ||
                             quantityInProduct >= getSellableStock(item.product) ||
                             (item.variant
-                              ? quantityInCurrentVariant >= item.variant.shelf_stock
+                              ? quantityInCurrentVariant >= item.variant.stock
                               : false)
                           }
                           onClick={() =>
@@ -3029,7 +3148,7 @@ export function PosPage() {
                                 0,
                               );
                             const availableForLine = Math.max(
-                              batch.shelf_quantity - selectedByOtherLines,
+                              batch.quantity - selectedByOtherLines,
                               0,
                             );
 
@@ -3174,7 +3293,7 @@ export function PosPage() {
                           getSellableStock(product) - quantityInCart,
                           0,
                         )}{" "}
-                        trên kệ
+                        trong kho
                       </span>
                     </span>
                     <span className="text-sm font-black tabular-nums text-moss-800">
@@ -3428,6 +3547,18 @@ export function PosPage() {
                     : `Quà tính theo giá bán${selectedCustomer ? " (không đủ điểm)" : ""}`}
                 </p>
               ) : null}
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+              <Input
+                label="Mã voucher"
+                onChange={(event) => updateActiveBillField("couponCode", event.target.value.toUpperCase())}
+                placeholder="Ví dụ: SUMMER20"
+                value={couponCode}
+              />
+              <div className="self-end rounded-xl bg-moss-50 px-4 py-3 text-sm font-extrabold text-moss-800">
+                Giảm {formatCurrency(promotionDiscount)}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:gap-3">
@@ -3890,9 +4021,16 @@ export function PosPage() {
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {definition.options.map((option) => {
                           const checked = selected.includes(option);
+                          const available = isProductVariantOptionAvailable(
+                            productToVariantSelect,
+                            variantOptionSelection,
+                            definition.id,
+                            option,
+                          );
                           return (
                             <button
-                              className={`relative flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold transition ${checked ? "border-moss-600 bg-moss-50 text-moss-900 ring-1 ring-moss-500" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300"}`}
+                              className={`relative flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-35 ${checked ? "border-moss-600 bg-moss-50 text-moss-900 ring-1 ring-moss-500" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300"}`}
+                              disabled={!available}
                               key={option}
                               onClick={() =>
                                 setVariantOptionSelection((current) => ({
@@ -3917,6 +4055,9 @@ export function PosPage() {
                                 />
                               ) : null}
                               {definition.optionDisplay !== "color" ? option : null}
+                              {(definition.variantDisplayType === "image" || definition.variantDisplayType === "image_text") && definition.optionImages?.[option] ? (
+                                <img alt="" className="h-12 w-12 rounded-lg object-cover" src={definition.optionImages[option]} />
+                              ) : null}
                               {checked ? (
                                 <Check className="absolute right-1.5 top-1.5 h-4 w-4 rounded-full bg-moss-700 p-0.5 text-white" />
                               ) : null}
@@ -3937,7 +4078,7 @@ export function PosPage() {
                     {activeCartVariant.label}
                   </p>
                   <p className="mt-1 text-xs font-bold text-slate-600">
-                    Tổng {activeCartVariant.stock} · Trên kệ {activeCartVariant.shelf_stock} · Còn có thể chọn {activeVariantRemaining}
+                    Tồn SKU {activeCartVariant.stock} · Còn có thể chọn {activeVariantRemaining}
                   </p>
                   {Object.entries(activeCartVariant.linked_values ?? {}).length ? (
                     <div className="mt-2 grid grid-cols-2 gap-2">
@@ -4020,12 +4161,12 @@ export function PosPage() {
                 </div>
               </div>
               <div className="grid gap-3">
-                {getProductBatches(productToBatchSelect.id).map((batch) => {
+                {getProductBatches(productToBatchSelect.id, variantToBatchSelect?.id).map((batch) => {
                   const selectedQuantity = getQuantityInCart(
                     productToBatchSelect.id,
                     batch.id,
                   );
-                  const disabled = selectedQuantity >= batch.shelf_quantity;
+                  const disabled = selectedQuantity >= batch.quantity;
 
                   return (
                     <button
@@ -4055,7 +4196,7 @@ export function PosPage() {
                           Còn lại
                         </p>
                         <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
-                          {batch.shelf_quantity - selectedQuantity}
+                          {batch.quantity - selectedQuantity}
                         </p>
                       </div>
                       <span className="rounded-xl bg-coal px-4 py-3 text-center text-sm font-extrabold text-white">

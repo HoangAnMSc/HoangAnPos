@@ -14,6 +14,7 @@ export type PaymentSettings = Database["public"]["Tables"]["payment_settings"]["
 export type AttendanceRecord = Database["public"]["Tables"]["attendance_records"]["Row"];
 
 export type CartProductVariant = {
+  id?: string;
   image_url?: string;
   key: string;
   label: string;

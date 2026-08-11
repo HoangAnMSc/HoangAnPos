@@ -1,4 +1,5 @@
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
+import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
 
 export type CustomAttributeType =
   "text" | "number" | "date" | "single" | "multiple" | "media";
@@ -9,7 +10,9 @@ export type CustomProductAttribute = {
   enabled: boolean;
   options: string[];
   optionColors?: Record<string, string>;
+  optionImages?: Record<string, string>;
   optionDisplay?: "color" | "text" | "both";
+  variantDisplayType?: "color_circle" | "text_button" | "image" | "image_text" | "dropdown";
   useForVariants?: boolean;
 };
 
@@ -61,9 +64,10 @@ export const defaultProductSettings: ProductSettings = {
     "category",
     "description",
     "price",
+    "compare_price",
     "cost_price",
     "stock",
-    "shelf_stock",
+    "variant_count",
     "import_date",
     "expiry_date",
     "is_active",
@@ -77,9 +81,11 @@ export const defaultProductSettings: ProductSettings = {
     category: true,
     description: true,
     price: true,
+    compare_price: true,
     cost_price: true,
     stock: true,
-    shelf_stock: true,
+    variant_count: true,
+    shelf_stock: false,
     import_date: true,
     expiry_date: true,
     is_active: true,
@@ -102,21 +108,22 @@ export const defaultProductSettings: ProductSettings = {
       "category",
       "description",
       "price",
+      "compare_price",
       "cost_price",
       "stock",
-      "shelf_stock",
+      "variant_count",
       "import_date",
       "expiry_date",
       "is_active",
       "is_reward",
       "reward_points_cost",
     ],
-    visibleFields: ["image", "name", "category", "price", "shelf_stock"],
+    visibleFields: ["image", "name", "category", "price", "compare_price", "stock", "variant_count"],
     textTemplates: {
       name: "{value}",
       category: "{value}",
       price: "{value}",
-      shelf_stock: "Còn {value} trên kệ",
+      stock: "Còn {value} trong kho",
       expiry_date: "Hạn: {value}",
     },
   },
@@ -129,13 +136,13 @@ export const defaultProductSettings: ProductSettings = {
     showCategory: false,
     showAttributes: false,
     imageFit: "cover",
-    order: ["image", "name", "shelf_stock", "price"],
-    visibleFields: ["image", "name", "shelf_stock", "price"],
+    order: ["image", "name", "stock", "price", "compare_price", "variant_count"],
+    visibleFields: ["image", "name", "price", "compare_price", "stock", "variant_count"],
     textTemplates: {
       name: "{value}",
       category: "{value}",
       price: "{value}",
-      shelf_stock: "Còn {value} trên kệ",
+      stock: "Còn {value} trong kho",
       expiry_date: "Hạn: {value}",
     },
   },
@@ -238,17 +245,56 @@ function fromRow(row: {
 
 export async function fetchProductSettings() {
   requireSupabaseConfig();
+  let dynamicAttributes: CustomProductAttribute[] = [];
+  try {
+    const products = await fetchEngineProducts();
+    const byId = new Map<string, CustomProductAttribute>();
+    products.forEach((product) => product.variant_attributes.forEach((attribute) => {
+      const current = byId.get(attribute.id);
+      const options = [...new Set([...(current?.options ?? []), ...attribute.values.filter((value) => value.is_active).map((value) => value.label)])];
+      byId.set(attribute.id, {
+        id: attribute.id, name: attribute.name, type: "single", enabled: true, options,
+        optionColors: Object.fromEntries(attribute.values.filter((value) => value.metadata.hex).map((value) => [value.label, value.metadata.hex as string])),
+        optionImages: Object.fromEntries(attribute.values.filter((value) => value.metadata.image_url).map((value) => [value.label, value.metadata.image_url as string])),
+        optionDisplay: attribute.display_type === "color_circle" ? "color" : attribute.display_type === "image_text" ? "both" : "text",
+        variantDisplayType: attribute.display_type,
+        useForVariants: true,
+      });
+    }));
+    dynamicAttributes = [...byId.values()];
+  } catch (engineError) {
+    if (!(engineError instanceof Error) || !/product_types|product_variant|schema cache|does not exist/i.test(engineError.message)) throw engineError;
+  }
   const { data, error } = await supabase
     .from("product_settings")
     .select("*")
     .eq("id", "default")
     .maybeSingle();
   if (error) {
-    if (error.code === "PGRST205" || error.code === "42P01")
-      return defaultProductSettings;
+    if (error.code === "PGRST205" || error.code === "42P01") {
+      return {
+        ...defaultProductSettings,
+        customAttributes: dynamicAttributes,
+        attributeOrder: [...defaultProductSettings.attributeOrder, ...dynamicAttributes.map((item) => item.id)],
+        enabledFields: { ...defaultProductSettings.enabledFields, ...Object.fromEntries(dynamicAttributes.map((item) => [item.id, true])) },
+      };
+    }
     throw error;
   }
-  return data ? fromRow(data as never) : defaultProductSettings;
+  const saved = data ? fromRow(data as never) : defaultProductSettings;
+  const dynamicIds = dynamicAttributes.map((item) => item.id);
+  return {
+    ...saved,
+    customAttributes: dynamicAttributes,
+    attributeOrder: [
+      ...saved.attributeOrder.filter((id) => !dynamicIds.includes(id)),
+      ...dynamicIds,
+    ],
+    enabledFields: {
+      ...saved.enabledFields,
+      ...Object.fromEntries(dynamicIds.map((id) => [id, true])),
+    },
+  };
 }
 
 export async function saveProductSettings(settings: ProductSettings) {

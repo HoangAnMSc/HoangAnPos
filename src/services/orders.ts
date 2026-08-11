@@ -1,6 +1,7 @@
 import { createOrderCode } from "../lib/format";
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { CartItem } from "../types";
+import { productEngineClient } from "../features/products/services/client";
 
 export type PaymentMethod = "cash" | "transfer";
 
@@ -13,6 +14,7 @@ export type CreateSaleInput = {
   paymentMethod: PaymentMethod;
   paymentProofNote?: string | null;
   paymentProofUrl?: string | null;
+  couponCode?: string | null;
 };
 
 function readOrderErrorMessage(error: unknown) {
@@ -48,11 +50,11 @@ function toOrderError(error: unknown) {
     [/reward product has invalid points cost/i, "Quà chưa được cấu hình số điểm hợp lệ."],
     [/insufficient stock for selected date/i, "Số lượng trong lô đã chọn không còn đủ."],
     [/insufficient stock for product/i, "Tồn kho sản phẩm không còn đủ để thanh toán."],
-    [/insufficient shelf stock for selected date/i, "Số lượng trên kệ của lô đã chọn không còn đủ."],
+    [/insufficient shelf stock for selected date/i, "Tồn kho của lô đã chọn không còn đủ."],
     [/product variant selection is required/i, "Cần chọn biến thể trước khi thanh toán."],
     [/selected product variant is not available/i, "Biến thể đã chọn không còn tồn tại."],
-    [/insufficient shelf stock for selected product variant/i, "Số lượng trên kệ của biến thể đã chọn không còn đủ."],
-    [/insufficient shelf stock for product/i, "Số lượng trên kệ không còn đủ. Hãy chuyển thêm hàng từ kho lên kệ."],
+    [/insufficient shelf stock for selected product variant/i, "Tồn kho của SKU đã chọn không còn đủ."],
+    [/insufficient shelf stock for product/i, "Tồn kho sản phẩm không còn đủ."],
     [/cash received is lower than total/i, "Số tiền khách đưa chưa đủ để thanh toán."],
   ];
   const translated = translations.find(([pattern]) => pattern.test(message))?.[1] ?? message;
@@ -68,6 +70,7 @@ export async function createSale({
   paymentMethod,
   paymentProofNote,
   paymentProofUrl,
+  couponCode,
 }: CreateSaleInput) {
   requireSupabaseConfig();
 
@@ -84,11 +87,18 @@ export async function createSale({
     items_input: cart.map((item) => ({
       batch_id: item.batch?.id ?? null,
       product_id: item.product.id,
+      variant_id:
+        item.variant?.id ??
+        item.variant?.linked_values?._variant_id ??
+        (item.product.attributes && typeof item.product.attributes === "object" && !Array.isArray(item.product.attributes)
+          ? String(item.product.attributes._defaultVariantId ?? "") || null
+          : null),
       quantity: item.quantity,
       variant_key: item.variant?.key ?? null,
       variant_label: item.variant?.label ?? null,
       variant_values: item.variant?.values ?? null,
       variant_source_values: item.variant?.source_values ?? null,
+      coupon_code: couponCode?.trim() || null,
     })),
     note_input: note ?? null,
     payment_method_input: paymentMethod,
@@ -113,6 +123,36 @@ export async function createSale({
 }
 
 export async function fetchOrders() {
+  requireSupabaseConfig();
+
+  try {
+    const [ordersResult, itemsResult, customersResult] = await Promise.all([
+      productEngineClient.from("orders").select("*").order("created_at", { ascending: false }),
+      productEngineClient.from("order_items").select("*"),
+      productEngineClient.from("customers").select("id,name,phone,address,points"),
+    ]);
+    if (ordersResult.error) throw ordersResult.error;
+    if (itemsResult.error) throw itemsResult.error;
+    if (customersResult.error) throw customersResult.error;
+    return (ordersResult.data ?? []).map((order) => ({
+      ...order,
+      customers: (customersResult.data ?? []).find((customer) => customer.id === order.customer_id) ?? null,
+      order_items: (itemsResult.data ?? []).filter((item) => item.order_id === order.id).map((item) => ({
+        ...item,
+        variant_key: item.variant_id ?? null,
+        variant_label: item.variant_name ?? null,
+        variant_values: item.selected_values ?? null,
+        variant_source_values: null,
+      })),
+    })) as unknown as Awaited<ReturnType<typeof fetchLegacyOrders>>;
+  } catch (engineError) {
+    if (!(engineError instanceof Error) || !/selected_values|variant_name|schema cache|does not exist/i.test(engineError.message)) throw engineError;
+  }
+
+  return fetchLegacyOrders();
+}
+
+async function fetchLegacyOrders() {
   requireSupabaseConfig();
 
   const { data, error } = await supabase

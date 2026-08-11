@@ -10,6 +10,7 @@ import {
   Warehouse,
   UsersRound,
   UserCog,
+  TicketPercent,
 } from "lucide-react";
 
 type PermissionAction = {
@@ -196,6 +197,18 @@ export const permissionGroups = [
         label: "In / tạo mã EAN-13",
         description: "Mở màn hình in tem mã vạch EAN-13.",
       },
+    ],
+  },
+  {
+    key: "promotions",
+    label: "Khuyến mãi",
+    path: "/promotions",
+    icon: TicketPercent,
+    description: "Quản lý voucher và chương trình giảm giá tự động.",
+    actions: [
+      { key: "promotions.create", label: "Tạo chương trình", description: "Tạo voucher hoặc ưu đãi tự động." },
+      { key: "promotions.update", label: "Sửa chương trình", description: "Cập nhật điều kiện, phạm vi và giới hạn sử dụng." },
+      { key: "promotions.delete", label: "Xóa chương trình", description: "Xóa chương trình không còn sử dụng." },
     ],
   },
   {

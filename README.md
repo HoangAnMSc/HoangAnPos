@@ -74,6 +74,25 @@ Nếu database đã có dữ liệu và chỉ cần nâng cấp tính năng bi�
 chạy `supabase/variant-pos-upgrade.sql` trong SQL Editor. File nâng cấp này giữ
 nguyên dữ liệu hiện có; không chạy lại `schema.sql` cho trường hợp này.
 
+### Product Engine normalized (2026-08-11)
+
+Với môi trường development/test, sau khi chạy `supabase/schema.sql`, chạy tiếp
+`supabase/20260811_ecommerce_engine.sql`. Migration này chủ động xóa dữ liệu test
+thuộc domain Product/Inventory/Order Item và thay thế bằng một schema normalized:
+Product Type → Attribute → Product → Variant Attribute/Value → SKU. Không chạy
+migration clean-cut này trên database production chưa backup.
+
+Sau migration, `product_variants` là nguồn duy nhất cho giá và tồn kho. JSON
+variant cũ trong `products.attributes` không còn được ghi vào database; adapter
+frontend chỉ dựng shape tương thích trong bộ nhớ cho màn hình POS hiện hữu.
+
+Sau đó chạy lần lượt các migration bổ sung:
+
+1. `supabase/20260811_ecommerce_starter_catalog.sql` để tạo sẵn các loại sản phẩm và thuộc tính thông dụng.
+2. `supabase/20260811_fix_variant_value_link_cascades.sql` để xóa giá trị biến thể an toàn cùng các liên kết liên quan.
+3. `supabase/20260811_unified_sku_inventory.sql` để POS, Kho và kiểm kê dùng một nguồn tồn duy nhất theo SKU; luồng chuyển kệ bị vô hiệu hóa.
+4. `supabase/20260811_product_card_settings.sql` để lưu cấu hình card dùng chung cho trang Sản phẩm và POS.
+
 Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Staff.
 
 ### 5. Cấu hình email quên mật khẩu

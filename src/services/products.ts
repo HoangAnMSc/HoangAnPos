@@ -1,6 +1,8 @@
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { Product, ProductBatch } from "../types";
 import type { Json } from "../types/database";
+import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
+import { productEngineClient } from "../features/products/services/client";
 
 const missingCategoryTableMessage =
   "Cơ sở dữ liệu chưa có bảng product_categories. Hãy chạy lại supabase/schema.sql rồi thử lại.";
@@ -136,6 +138,57 @@ function withoutDescription(input: ProductInput) {
 export async function fetchProducts() {
   requireSupabaseConfig();
 
+  try {
+    const engineProducts = await fetchEngineProducts();
+    return engineProducts.map((product): Product => {
+      const activeVariants = product.variants.filter((variant) => variant.is_active);
+      const variants = activeVariants.length ? activeVariants : product.variants;
+      const defaultVariant = [...variants].sort(
+        (first, second) =>
+          first.base_price - second.base_price ||
+          Number(second.is_default) - Number(first.is_default),
+      )[0];
+      const valuesById = new Map(product.variant_attributes.flatMap((attribute) => attribute.values.map((value) => [value.id, { attribute, value }] as const)));
+      const attributes: Record<string, Json | undefined> = {
+        _defaultVariantId: defaultVariant?.id,
+        _variantAttributeIds: product.variant_attributes.map((attribute) => attribute.id),
+        _variants: variants.map((variant) => ({
+          values: Object.fromEntries(variant.value_ids.map((id) => {
+            const item = valuesById.get(id);
+            return [item?.attribute.id ?? id, item?.value.label ?? id];
+          })),
+          stock: variant.stock_quantity,
+          shelf_stock: variant.stock_quantity,
+          image_url: variant.image_url ?? undefined,
+          linked_values: {
+            _variant_id: variant.id,
+            sku: variant.sku,
+            price: String(variant.base_price),
+            cost_price: String(variant.cost_price),
+            compare_at_price: variant.compare_at_price == null ? "" : String(variant.compare_at_price),
+          },
+        })),
+      };
+      product.variant_attributes.forEach((attribute) => { attributes[attribute.id] = attribute.values.filter((value) => value.is_active).map((value) => value.label); });
+      product.specifications.forEach((specification) => { attributes[specification.code] = specification.value; });
+      const primary = product.images.find((image) => image.is_primary) ?? product.images[0];
+      return {
+        id: product.id, name: product.name, sku: defaultVariant?.barcode ?? defaultVariant?.sku ?? null,
+        category: product.category?.name ?? product.product_type?.name ?? null, description: product.description,
+        price: defaultVariant?.base_price ?? 0, cost_price: defaultVariant?.cost_price ?? 0,
+        import_date: null, expiry_date: null,
+        stock: variants.reduce((sum, variant) => sum + variant.stock_quantity, 0),
+        shelf_stock: variants.reduce((sum, variant) => sum + variant.stock_quantity, 0),
+        image_url: defaultVariant?.image_url ?? primary?.image_url ?? null,
+        is_active: product.status === "active", is_reward: product.is_reward,
+        reward_points_cost: product.reward_points_cost, attributes: attributes as Json,
+        deleted_at: product.deleted_at, created_at: product.created_at, updated_at: product.updated_at,
+      };
+    });
+  } catch (engineError) {
+    if (!(engineError instanceof Error) || !/product_types|product_variant|schema cache|does not exist/i.test(engineError.message)) throw engineError;
+  }
+
   const { data, error } = await supabase
     .from("products")
     .select("*")
@@ -163,6 +216,32 @@ export async function fetchProducts() {
 export async function fetchInventoryCountProducts(): Promise<InventoryCountProduct[]> {
   requireSupabaseConfig();
 
+  try {
+    const products = await fetchEngineProducts();
+    return products.flatMap((product) => {
+      const labels = new Map(product.variant_attributes.flatMap((attribute) =>
+        attribute.values.map((value) => [value.id, value.label] as const),
+      ));
+      const primaryImage = product.images.find((image) => image.is_primary)?.image_url
+        ?? product.images[0]?.image_url
+        ?? null;
+      return product.variants.filter((variant) => variant.is_active).map((variant) => {
+        const selectedValues = variant.value_ids.map((id) => labels.get(id)).filter(Boolean).join(" / ");
+        return {
+          id: variant.id,
+          name: selectedValues ? `${product.name} · ${selectedValues}` : product.name,
+          sku: variant.barcode ?? variant.sku,
+          category: product.category?.name ?? null,
+          image_url: variant.image_url ?? primaryImage,
+          is_active: product.status === "active" && variant.is_active,
+          expiry_date: null,
+        };
+      });
+    });
+  } catch (engineError) {
+    if (!(engineError instanceof Error) || !/product_types|product_variant|schema cache|does not exist/i.test(engineError.message)) throw engineError;
+  }
+
   const fields = "id,name,sku,category,image_url,is_active,expiry_date";
   const { data, error } = await supabase
     .from("products")
@@ -189,6 +268,20 @@ export async function fetchInventoryCountProducts(): Promise<InventoryCountProdu
 
 export async function fetchProductBatches(productId?: string) {
   requireSupabaseConfig();
+
+  try {
+    const [{ data: batches, error }, { data: variants, error: variantError }] = await Promise.all([
+      productEngineClient.from("product_batches").select("*").gt("quantity", 0).order("expiry_date", { ascending: true, nullsFirst: false }),
+      productEngineClient.from("product_variants").select("id,product_id"),
+    ]);
+    if (error) throw error;
+    if (variantError) throw variantError;
+    const productByVariant = new Map((variants ?? []).map((variant) => [String(variant.id), String(variant.product_id)]));
+    return (batches ?? []).map((batch) => ({ ...batch, product_id: productByVariant.get(String(batch.variant_id)) ?? "" }))
+      .filter((batch) => !productId || batch.product_id === productId) as ProductBatch[];
+  } catch (engineError) {
+    if (!(engineError instanceof Error) || !/product_variant|variant_id|schema cache|does not exist/i.test(engineError.message)) throw engineError;
+  }
 
   let query = supabase
     .from("product_batches")
@@ -391,23 +484,6 @@ export async function receiveProductStock(input: ReceiveStockInput) {
   }
 
   return data;
-}
-
-export async function transferProductShelf(
-  productId: string,
-  batchId: string,
-  quantity: number,
-  direction: "to_shelf" | "to_warehouse"
-) {
-  requireSupabaseConfig();
-  const { data, error } = await supabase.rpc("transfer_product_shelf", {
-    batch_id_input: batchId,
-    direction_input: direction,
-    product_id_input: productId,
-    quantity_input: Math.floor(quantity),
-  });
-  if (error) throw error;
-  return data as ProductBatch;
 }
 
 async function createProductBatch(input: ReceiveStockInput): Promise<ProductBatch> {

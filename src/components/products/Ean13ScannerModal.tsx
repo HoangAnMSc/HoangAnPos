@@ -1,4 +1,10 @@
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { IScannerControls } from "@zxing/browser";
 import { Barcode, Camera, Keyboard } from "lucide-react";
 import { Button } from "../ui/Button";
@@ -70,7 +76,7 @@ export function Ean13ScannerModal({
       setManualCode("");
       onClose();
     },
-    [onClose, onDetected, stopScanner]
+    [onClose, onDetected, stopScanner],
   );
 
   function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
@@ -104,8 +110,13 @@ export function Ean13ScannerModal({
       }
 
       try {
-        const [{ BarcodeFormat, BrowserMultiFormatReader }, { DecodeHintType }] =
-          await Promise.all([import("@zxing/browser"), import("@zxing/library")]);
+        const [
+          { BarcodeFormat, BrowserMultiFormatReader },
+          { DecodeHintType },
+        ] = await Promise.all([
+          import("@zxing/browser"),
+          import("@zxing/library"),
+        ]);
         const hints = new Map();
         hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.EAN_13]);
         const reader = new BrowserMultiFormatReader(hints, {
@@ -147,7 +158,7 @@ export function Ean13ScannerModal({
             if (scanError) {
               setStatus("Đang quét EAN-13...");
             }
-          }
+          },
         );
         controls = scannerControls;
         controlsRef.current = scannerControls;
@@ -162,7 +173,7 @@ export function Ean13ScannerModal({
       } catch {
         setStatus("Không mở được camera.");
         setError(
-          "Kiểm tra quyền camera, dùng http://localhost/127.0.0.1 hoặc nhập EAN-13 thủ công."
+          "Kiểm tra quyền camera, dùng http://localhost/127.0.0.1 hoặc nhập EAN-13 thủ công.",
         );
       }
     }
@@ -198,6 +209,7 @@ export function Ean13ScannerModal({
       open={open}
       size="md"
       title={title}
+      zIndex={130}
     >
       <div className="space-y-4">
         <div className="rounded-2xl border border-moss-100 bg-moss-50 px-4 py-3 text-sm font-semibold text-moss-800">
@@ -205,7 +217,12 @@ export function Ean13ScannerModal({
         </div>
 
         <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-slate-950">
-          <video className="h-full w-full object-cover" muted playsInline ref={videoRef} />
+          <video
+            className="h-full w-full object-cover"
+            muted
+            playsInline
+            ref={videoRef}
+          />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="h-28 w-64 max-w-[78%] rounded-2xl border-2 border-white/80 shadow-[0_0_0_999px_rgba(15,23,42,0.35)]" />
           </div>
@@ -221,7 +238,11 @@ export function Ean13ScannerModal({
           </div>
         ) : null}
 
-        <form className="space-y-2" id="manual-ean13-form" onSubmit={handleManualSubmit}>
+        <form
+          className="space-y-2"
+          id="manual-ean13-form"
+          onSubmit={handleManualSubmit}
+        >
           <label className="block">
             <span className="mb-2 block text-sm font-extrabold text-slate-950">
               EAN-13 thủ công

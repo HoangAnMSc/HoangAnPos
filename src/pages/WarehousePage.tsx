@@ -127,19 +127,44 @@ export function WarehousePage() {
       ),
     [comparisonRows]
   );
+  const inventoryRows = useMemo(() => products.flatMap((product) => {
+    const attributes = product.attributes && typeof product.attributes === "object" && !Array.isArray(product.attributes)
+      ? product.attributes as Record<string, unknown>
+      : {};
+    const variants = Array.isArray(attributes._variants)
+      ? attributes._variants as Array<{
+          image_url?: string;
+          linked_values?: { _variant_id?: string; sku?: string };
+          stock?: number;
+          values?: Record<string, string | string[]>;
+        }>
+      : [];
+    if (!variants.length) return [product];
+    return variants.map((variant, index) => {
+      const selectedValues = Object.values(variant.values ?? {}).flat().filter(Boolean).join(" / ");
+      return {
+        ...product,
+        id: variant.linked_values?._variant_id ?? `${product.id}-${index}`,
+        image_url: variant.image_url ?? product.image_url,
+        name: selectedValues ? `${product.name} · ${selectedValues}` : product.name,
+        sku: variant.linked_values?.sku ?? product.sku,
+        stock: Math.max(0, Number(variant.stock) || 0),
+      };
+    });
+  }), [products]);
   const warehouseStats = useMemo(
     () => ({
-      outOfStock: products.filter((product) => product.stock <= 0).length,
-      totalStock: products.reduce((total, product) => total + Math.max(0, product.stock), 0),
-      shelfStock: products.reduce((total, product) => total + Math.max(0, product.shelf_stock), 0),
-      backroomStock: products.reduce((total, product) => total + Math.max(0, product.stock - product.shelf_stock), 0),
+      outOfStock: inventoryRows.filter((product) => product.stock <= 0).length,
+      totalStock: inventoryRows.reduce((total, product) => total + Math.max(0, product.stock), 0),
+      lowStock: inventoryRows.filter((product) => product.stock > 0 && product.stock <= 5).length,
+      products: products.length,
     }),
-    [products]
+    [inventoryRows, products.length]
   );
   const normalizedQuery = query.trim().toLocaleLowerCase("vi");
   const visibleProducts = useMemo(
     () =>
-      [...products]
+      [...inventoryRows]
         .filter((product) =>
           normalizedQuery
             ? [product.name, product.sku, product.category, getProductEan13Value(product)]
@@ -148,7 +173,7 @@ export function WarehousePage() {
             : true
         )
         .sort((first, second) => first.name.localeCompare(second.name, "vi")),
-    [normalizedQuery, products]
+    [inventoryRows, normalizedQuery]
   );
 
   async function confirmDeleteAudit() {
@@ -188,15 +213,15 @@ export function WarehousePage() {
           },
           {
             icon: PackageCheck,
-            label: "Trên kệ",
+            label: "Sản phẩm",
             tone: "bg-sky-100 text-sky-700",
-            value: warehouseStats.shelfStock,
+            value: warehouseStats.products,
           },
           {
             icon: Boxes,
-            label: "Trong kho",
+            label: "Sắp hết",
             tone: "bg-amber-100 text-amber-700",
-            value: warehouseStats.backroomStock,
+            value: warehouseStats.lowStock,
           },
           {
             icon: PackageMinus,
@@ -338,7 +363,7 @@ export function WarehousePage() {
           <div>
             <h3 className="text-base font-extrabold text-slate-950 sm:text-lg">Kho hiện tại</h3>
             <p className="mt-0.5 text-xs font-semibold text-slate-500 sm:text-sm">
-              Toàn bộ số lượng đang được hệ thống ghi nhận.
+              Tồn khả dụng của từng SKU; không còn tách kho và trên kệ.
             </p>
           </div>
           <SearchInput
@@ -363,18 +388,16 @@ export function WarehousePage() {
           </div>
         ) : (
           <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="hidden grid-cols-[minmax(220px,1fr)_140px_100px_80px_80px_80px] gap-3 bg-slate-100 px-3 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
+            <div className="hidden grid-cols-[minmax(220px,1fr)_160px_110px_100px] gap-3 bg-slate-100 px-3 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
               <span>Sản phẩm</span>
               <span>Nhóm hàng</span>
               <span>Trạng thái</span>
-              <span className="text-right">Tổng tồn</span>
-              <span className="text-right text-sky-700">Trên kệ</span>
-              <span className="text-right text-amber-700">Trong kho</span>
+              <span className="text-right">Tồn kho</span>
             </div>
             <div className="max-h-[60dvh] divide-y divide-slate-100 overflow-y-auto overscroll-contain">
               {visibleProducts.map((product) => (
                 <article
-                  className={`grid gap-2 px-3 py-3 transition md:grid-cols-[minmax(220px,1fr)_140px_100px_80px_80px_80px] md:items-center md:gap-3 ${
+                  className={`grid gap-2 px-3 py-3 transition md:grid-cols-[minmax(220px,1fr)_160px_110px_100px] md:items-center md:gap-3 ${
                     product.stock <= 0
                       ? "bg-red-50/35 hover:bg-red-50/70"
                       : product.stock <= 5
@@ -386,7 +409,7 @@ export function WarehousePage() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-extrabold text-slate-950">{product.name}</p>
                     <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500 sm:text-xs">
-                      EAN-13 {getProductEan13Value(product)}
+                      SKU / EAN-13 {getProductEan13Value(product)}
                     </p>
                   </div>
                   <div className="flex min-w-0 items-center gap-2 md:contents">
@@ -400,18 +423,10 @@ export function WarehousePage() {
                       {product.is_active ? "Đang bán" : "Đang ẩn"}
                     </Badge>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 md:contents">
+                  <div className="grid grid-cols-1 gap-2 md:contents">
                     <div className="rounded-xl bg-slate-100 px-2 py-2 text-center md:bg-transparent md:p-0 md:text-right">
-                      <span className="block text-[9px] font-extrabold uppercase text-slate-400 md:hidden">Tổng tồn</span>
+                      <span className="block text-[9px] font-extrabold uppercase text-slate-400 md:hidden">Tồn kho</span>
                       <strong className="text-lg tabular-nums text-slate-950">{product.stock}</strong>
-                    </div>
-                    <div className="rounded-xl bg-sky-50 px-2 py-2 text-center md:bg-transparent md:p-0 md:text-right">
-                      <span className="block text-[9px] font-extrabold uppercase text-sky-600 md:hidden">Trên kệ</span>
-                      <strong className="text-lg tabular-nums text-sky-700">{product.shelf_stock}</strong>
-                    </div>
-                    <div className="rounded-xl bg-amber-50 px-2 py-2 text-center md:bg-transparent md:p-0 md:text-right">
-                      <span className="block text-[9px] font-extrabold uppercase text-amber-600 md:hidden">Trong kho</span>
-                      <strong className="text-lg tabular-nums text-amber-700">{product.stock - product.shelf_stock}</strong>
                     </div>
                   </div>
                 </article>

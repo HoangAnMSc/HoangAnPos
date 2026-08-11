@@ -6,8 +6,10 @@ type MediaPickerModalProps = {
   canUploadImage: boolean;
   currentImageUrl: string;
   libraryImages: string[];
+  loading?: boolean;
   multipleUpload?: boolean;
   open: boolean;
+  saving?: boolean;
   onClose: () => void;
   onSave: (value: {
     imageUrl: string;
@@ -21,10 +23,12 @@ export function MediaPickerModal({
   canUploadImage,
   currentImageUrl,
   libraryImages,
+  loading = false,
   multipleUpload = false,
   onClose,
   onSave,
   open,
+  saving = false,
 }: MediaPickerModalProps) {
   const [activeTab, setActiveTab] = useState<"library" | "upload">("library");
   const [draftFiles, setDraftFiles] = useState<File[]>([]);
@@ -70,9 +74,7 @@ export function MediaPickerModal({
     const acceptedFiles = multipleUpload ? nextFiles : nextFiles.slice(0, 1);
 
     setDraftFiles(acceptedFiles);
-    setDraftPreviews(
-      acceptedFiles.map((file) => URL.createObjectURL(file)),
-    );
+    setDraftPreviews(acceptedFiles.map((file) => URL.createObjectURL(file)));
     event.currentTarget.value = "";
   }
 
@@ -109,11 +111,11 @@ export function MediaPickerModal({
           </button>
           <button
             className="rounded-2xl bg-coal px-5 py-3 text-sm font-extrabold text-white shadow-lg disabled:opacity-50"
-            disabled={!canSave}
+            disabled={!canSave || loading || saving}
             onClick={handleSave}
             type="button"
           >
-            Lưu
+            {saving ? "Đang lưu..." : "Lưu"}
           </button>
         </div>
       }
@@ -121,6 +123,7 @@ export function MediaPickerModal({
       open={open}
       size="md"
       title="Thêm ảnh"
+      zIndex={120}
     >
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -159,8 +162,12 @@ export function MediaPickerModal({
         </div>
 
         {activeTab === "library" ? (
-          libraryImages.length ? (
-            <div className="grid max-h-[52dvh] grid-cols-3 gap-3 overflow-y-auto pr-1">
+          loading ? (
+            <div className="flex min-h-44 items-center justify-center rounded-2xl bg-slate-50 text-sm font-bold text-slate-500">
+              Đang tải thư viện Cloudinary...
+            </div>
+          ) : libraryImages.length ? (
+            <div className="grid max-h-[52dvh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
               {libraryImages.map((imageUrl) => {
                 const selected = selectedUrl === imageUrl;
                 return (

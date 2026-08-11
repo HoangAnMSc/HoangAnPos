@@ -14,6 +14,7 @@ type ModalProps = {
   size?: ModalSize;
   title: string;
   onClose: () => void;
+  zIndex?: number;
 };
 
 const sizeClassNames: Record<ModalSize, string> = {
@@ -33,6 +34,7 @@ export function Modal({
   open,
   size = "lg",
   title,
+  zIndex = 100,
 }: ModalProps) {
   useEffect(() => {
     if (!open) {
@@ -62,14 +64,15 @@ export function Modal({
   return createPortal(
     <div
       aria-modal="true"
-      className="fixed left-0 top-0 z-[100] m-0 flex h-dvh w-screen items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed left-0 top-0 m-0 flex h-dvh w-screen items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
+      style={{ zIndex }}
     >
       <div
         className={clsx(
           "flex h-[calc(100dvh-3.5rem)] w-full flex-col overflow-hidden rounded-t-[1.5rem] bg-white text-slate-950 shadow-2xl sm:h-auto sm:max-h-[86vh] sm:rounded-[2rem]",
           sizeClassNames[size],
-          contentClassName
+          contentClassName,
         )}
       >
         <div className="mx-auto mt-2 h-1 w-10 flex-none rounded-full bg-slate-200 sm:hidden" />
@@ -87,17 +90,22 @@ export function Modal({
           </button>
         </header>
 
-        <div className={clsx("min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-7", bodyClassName)}>
+        <div
+          className={clsx(
+            "min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-7",
+            bodyClassName,
+          )}
+        >
           {children}
         </div>
 
         {footer ? (
-          <footer className="flex flex-none items-center justify-end gap-3 border-t border-slate-100 bg-white px-4 py-3 sm:px-8 sm:py-5">
+          <footer className="flex flex-none items-center justify-end gap-3 overflow-x-auto border-t border-slate-100 bg-white px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-8 sm:py-5">
             {footer}
           </footer>
         ) : null}
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

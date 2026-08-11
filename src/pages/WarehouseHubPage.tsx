@@ -1,5 +1,4 @@
 import {
-  ArrowLeftRight,
   Boxes,
   ClipboardCheck,
   PackageMinus,
@@ -10,11 +9,10 @@ import { WarehouseHistoryModal } from "../components/warehouse/WarehouseHistoryM
 import { PageContainer } from "../components/ui/Page";
 import { useAuth } from "../contexts/AuthContext";
 import { InventoryPage } from "./InventoryPage";
-import { ShelfTransferPage } from "./ShelfTransferPage";
 import { StockMovementPage } from "./StockMovementPage";
 import { WarehousePage } from "./WarehousePage";
 
-type WarehouseTab = "overview" | "inventory" | "in" | "shelf" | "out";
+type WarehouseTab = "overview" | "inventory" | "in" | "out";
 
 export function WarehouseHubPage() {
   const { canAccess } = useAuth();
@@ -38,12 +36,6 @@ export function WarehouseHubPage() {
       label: "Xuất kho",
       icon: PackageMinus,
       allowed: canAccess("warehouse.stock-out"),
-    },
-    {
-      key: "shelf" as const,
-      label: "Chuyển kệ",
-      icon: ArrowLeftRight,
-      allowed: canAccess("warehouse") || canAccess("products.receive-stock"),
     },
   ].filter((tab) => tab.allowed);
   const requested = searchParams.get("tab") as WarehouseTab | null;
@@ -91,11 +83,6 @@ export function WarehouseHubPage() {
 
       {active === "overview" ? <WarehousePage /> : null}
       {active === "inventory" ? <InventoryPage /> : null}
-      {active === "shelf" ? (
-        <PageContainer maxWidth="none">
-          <ShelfTransferPage />
-        </PageContainer>
-      ) : null}
       {active === "in" || active === "out" ? (
         <PageContainer maxWidth="none">
           <StockMovementPage key={active} type={active} />

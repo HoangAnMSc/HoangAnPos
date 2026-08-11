@@ -48,8 +48,25 @@ export type ResolvedProductVariant = {
 
 export type ProductVariantDefinition = Pick<
   CustomProductAttribute,
-  "id" | "name" | "optionColors" | "optionDisplay" | "options" | "type"
+  "id" | "name" | "optionColors" | "optionDisplay" | "optionImages" | "options" | "type" | "variantDisplayType"
 >;
+
+export function isProductVariantOptionAvailable(
+  product: Product,
+  selection: ProductVariantSelection,
+  attributeId: string,
+  option: string,
+) {
+  const candidate = { ...selection, [attributeId]: [option] };
+  return getProductVariants(product).some((variant) => {
+    if (getVariantStock(variant, true) <= 0) return false;
+    return Object.entries(candidate).every(([id, selected]) => {
+      if (!selected.length) return true;
+      const value = variant.values[id];
+      return value !== undefined && selected.includes(String(value));
+    });
+  });
+}
 
 export function getProductAttributes(product: Product) {
   return product.attributes &&

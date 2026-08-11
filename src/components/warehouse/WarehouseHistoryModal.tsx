@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
-  ArrowUpToLine,
   Bell,
 } from "lucide-react";
 import { Badge } from "../ui/Badge";
@@ -16,7 +15,7 @@ import {
   type StockMovement,
 } from "../../services/stockMovements";
 
-type HistoryFilter = "all" | "in" | "out" | "shelf";
+type HistoryFilter = "all" | "in" | "out";
 
 type WarehouseHistoryModalProps = {
   open: boolean;
@@ -32,7 +31,6 @@ const filters: { key: HistoryFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
   { key: "in", label: "Nhập kho" },
   { key: "out", label: "Xuất kho" },
-  { key: "shelf", label: "Chuyển kệ" },
 ];
 
 function getMovementDisplay(movement: StockMovement) {
@@ -53,19 +51,27 @@ function getMovementDisplay(movement: StockMovement) {
         quantity: `−${movement.quantity}`,
         quantityClassName: "text-red-700",
       };
-    case "to_shelf":
+    case "sale":
       return {
-        Icon: ArrowUpToLine,
-        iconClassName: "bg-sky-50 text-sky-700",
-        label: "Lên kệ",
-        quantity: String(movement.quantity),
-        quantityClassName: "text-sky-700",
+        Icon: ArrowUpFromLine,
+        iconClassName: "bg-red-50 text-red-700",
+        label: "Bán hàng",
+        quantity: `−${movement.quantity}`,
+        quantityClassName: "text-red-700",
+      };
+    case "return":
+      return {
+        Icon: ArrowDownToLine,
+        iconClassName: "bg-emerald-50 text-emerald-700",
+        label: "Hoàn kho",
+        quantity: `+${movement.quantity}`,
+        quantityClassName: "text-emerald-700",
       };
     default:
       return {
         Icon: ArrowDownToLine,
         iconClassName: "bg-amber-50 text-amber-700",
-        label: "Về kho",
+        label: "Điều chỉnh",
         quantity: String(movement.quantity),
         quantityClassName: "text-amber-700",
       };
@@ -105,9 +111,6 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
     () =>
       movements.filter((movement) => {
         if (filter === "all") return true;
-        if (filter === "shelf") {
-          return movement.movement_type === "to_shelf" || movement.movement_type === "to_warehouse";
-        }
         return movement.movement_type === filter;
       }),
     [filter, movements]
@@ -126,7 +129,7 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
       title="Lịch sử kho"
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
             {filters.map((item) => (
               <button
                 className={`rounded-lg px-2 py-2 text-xs font-extrabold transition sm:px-3 ${
@@ -149,7 +152,7 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
           <Spinner label="Đang tải lịch sử kho..." />
         ) : visibleMovements.length === 0 ? (
           <EmptyState
-            description="Các lần nhập kho, xuất kho và chuyển kệ sẽ xuất hiện tại đây."
+            description="Các lần nhập, xuất, bán hàng và điều chỉnh sẽ xuất hiện tại đây."
             icon={Bell}
             title="Chưa có lịch sử"
           />
