@@ -65,6 +65,11 @@ assert.equal(
 );
 
 const collar = attribute("Kiểu cổ", ["Cổ tròn", "Cổ V"], "image_text");
+const cable = attribute(
+  "Loại cáp",
+  ["C9-blue", "C9-hồng", "C9-xanh"],
+  "image_text_horizontal",
+);
 assert.equal(
   countVariantCombinations([color, size, collar]),
   12,
@@ -74,6 +79,11 @@ assert.deepEqual(
   [color.display_type, size.display_type, collar.display_type],
   ["color_circle", "text_button", "image_text"],
   "CASE 4 display types are data-driven",
+);
+assert.equal(
+  cable.display_type,
+  "image_text_horizontal",
+  "Horizontal image-text variants must remain data-driven",
 );
 
 const drafts = mergeGeneratedVariants([color, size], [], "SHIRT");
@@ -150,6 +160,11 @@ assert.match(
   sql,
   /product_variants_barcode_key[\s\S]*unique\s*\(barcode\)/i,
   "EAN-13 must be unique per SKU",
+);
+assert.match(
+  sql,
+  /product_variant_attributes_display_type_check[\s\S]*image_text_horizontal/i,
+  "Schema must accept horizontal image-text display type",
 );
 for (const typeCode of [
   "general",

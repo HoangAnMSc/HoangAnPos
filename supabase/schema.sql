@@ -2449,7 +2449,7 @@ CREATE TABLE public.product_type_attributes (
     display_type text,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT product_type_attributes_display_type_check CHECK (((display_type IS NULL) OR (display_type = ANY (ARRAY['color_circle'::text, 'text_button'::text, 'image'::text, 'image_text'::text, 'dropdown'::text])))),
+    CONSTRAINT product_type_attributes_display_type_check CHECK (((display_type IS NULL) OR (display_type = ANY (ARRAY['color_circle'::text, 'text_button'::text, 'image'::text, 'image_text'::text, 'image_text_horizontal'::text, 'dropdown'::text])))),
     CONSTRAINT product_type_attributes_role_check CHECK ((role = ANY (ARRAY['specification'::text, 'variant'::text])))
 );
 
@@ -2486,7 +2486,7 @@ CREATE TABLE public.product_variant_attributes (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT product_variant_attributes_data_type_check CHECK ((data_type = ANY (ARRAY['text'::text, 'number'::text, 'boolean'::text, 'date'::text, 'option'::text, 'json'::text]))),
-    CONSTRAINT product_variant_attributes_display_type_check CHECK ((display_type = ANY (ARRAY['color_circle'::text, 'text_button'::text, 'image'::text, 'image_text'::text, 'dropdown'::text])))
+    CONSTRAINT product_variant_attributes_display_type_check CHECK ((display_type = ANY (ARRAY['color_circle'::text, 'text_button'::text, 'image'::text, 'image_text'::text, 'image_text_horizontal'::text, 'dropdown'::text])))
 );
 
 

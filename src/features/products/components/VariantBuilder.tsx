@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Maximize2, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { CloudinaryImageField } from "../../../components/media/CloudinaryImageField";
 import { Button } from "../../../components/ui/Button";
@@ -23,6 +23,7 @@ const displayOptions: Array<{ value: VariantDisplayType; label: string }> = [
   { value: "text_button", label: "Nút chữ" },
   { value: "image", label: "Hình ảnh" },
   { value: "image_text", label: "Hình ảnh + chữ" },
+  { value: "image_text_horizontal", label: "Hình ảnh + chữ ngang" },
   { value: "dropdown", label: "Dropdown" },
 ];
 const slug = (value: string) =>
@@ -40,6 +41,10 @@ export function VariantBuilder({
   onDimensionsChanged,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{
+    label: string;
+    url: string;
+  } | null>(null);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [display, setDisplay] = useState<VariantDisplayType>("text_button");
@@ -171,73 +176,113 @@ export function VariantBuilder({
               </Select>
             </div>
           </div>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div
+            className={
+              attribute.display_type === "image_text_horizontal"
+                ? "mt-3 grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,190px))]"
+                : attribute.display_type === "image_text" ||
+                    attribute.display_type === "image"
+                  ? "mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(128px,160px))]"
+                : "mt-2 flex flex-wrap gap-2"
+            }
+          >
             {!attribute.values.length ? (
               <p className="w-full rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">
                 Chưa có giá trị. Thêm ít nhất một lựa chọn để tạo SKU.
               </p>
             ) : null}
-            {attribute.values.map((value) => (
-              <div
-                className="min-w-[96px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
-                key={value.id}
-              >
-                <div>
-                  {formatVariantValueLabel(value.label, attribute.unit)}
-                  <button
-                    className="ml-2 text-red-600"
-                    onClick={() => {
-                      updateAttribute(attribute.id, {
-                        values: attribute.values.filter(
-                          (item) => item.id !== value.id,
-                        ),
-                      });
-                      onDimensionsChanged();
-                    }}
-                    type="button"
-                  >
-                    ×
-                  </button>
-                </div>
-                {attribute.display_type === "color_circle" ? (
-                  <input
-                    aria-label={`Màu ${value.label}`}
-                    className="mt-1 h-7 w-12"
-                    onChange={(event) =>
-                      updateValue(attribute, value.id, {
-                        ...value.metadata,
-                        hex: event.target.value,
-                      })
-                    }
-                    type="color"
-                    value={value.metadata.hex || "#000000"}
-                  />
-                ) : null}
-                {attribute.display_type === "image" ||
-                attribute.display_type === "image_text" ? (
-                  <div className="mt-2">
-                    <CloudinaryImageField
-                      compact
-                      imageUrl={value.metadata.image_url as string | undefined}
-                      label={`Ảnh ${value.label}`}
-                      onChange={(selected) =>
-                        updateValue(attribute, value.id, {
-                          ...value.metadata,
-                          image_url: selected.imageUrl,
-                          cloudinary_public_id: selected.publicId ?? undefined,
-                        })
-                      }
-                      publicId={
-                        value.metadata.cloudinary_public_id as
-                          string | undefined
-                      }
-                    />
+            {attribute.values.map((value) => {
+              const label = formatVariantValueLabel(value.label, attribute.unit);
+              const imageUrl = value.metadata.image_url as string | undefined;
+              const removeValue = () => {
+                updateAttribute(attribute.id, {
+                  values: attribute.values.filter((item) => item.id !== value.id),
+                });
+                onDimensionsChanged();
+              };
+              const imageField = (
+                <CloudinaryImageField
+                  appearance={
+                    attribute.display_type === "image_text_horizontal"
+                      ? "horizontal-tile"
+                      : "tile"
+                  }
+                  imageUrl={imageUrl}
+                  label={label}
+                  onChange={(selected) =>
+                    updateValue(attribute, value.id, {
+                      ...value.metadata,
+                      image_url: selected.imageUrl,
+                      cloudinary_public_id: selected.publicId ?? undefined,
+                    })
+                  }
+                  onRemove={removeValue}
+                  publicId={
+                    value.metadata.cloudinary_public_id as string | undefined
+                  }
+                  showTileLabel={attribute.display_type !== "image"}
+                />
+              );
+
+              if (
+                attribute.display_type === "image" ||
+                attribute.display_type === "image_text" ||
+                attribute.display_type === "image_text_horizontal"
+              ) {
+                return (
+                  <div className="relative min-w-0 rounded-xl bg-slate-50 p-1.5" key={value.id}>
+                    {imageField}
+                    {imageUrl && attribute.display_type !== "image_text_horizontal" ? (
+                      <button
+                        aria-label={`Phóng to ảnh ${value.label}`}
+                        className="absolute left-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-full bg-slate-900/75 text-white shadow-md backdrop-blur transition hover:bg-slate-900"
+                        onClick={() => setPreviewImage({ label, url: imageUrl })}
+                        type="button"
+                      >
+                        <Maximize2 className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
-            ))}
+                );
+              }
+
+              if (attribute.display_type === "color_circle") {
+                return (
+                  <div className="relative flex w-20 flex-col items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-2" key={value.id}>
+                    <label className="relative cursor-pointer" title={`Đổi màu ${value.label}`}>
+                      <span
+                        className="block h-10 w-10 rounded-full border-2 border-white shadow ring-1 ring-slate-300"
+                        style={{ backgroundColor: value.metadata.hex || "#000000" }}
+                      />
+                      <input
+                        aria-label={`Màu ${value.label}`}
+                        className="absolute inset-0 cursor-pointer opacity-0"
+                        onChange={(event) =>
+                          updateValue(attribute, value.id, {
+                            ...value.metadata,
+                            hex: event.target.value,
+                          })
+                        }
+                        type="color"
+                        value={value.metadata.hex || "#000000"}
+                      />
+                    </label>
+                    <span className="w-full truncate text-center text-[11px] font-bold text-slate-700">{label}</span>
+                    <button aria-label={`Xóa ${value.label}`} className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-red-50 text-red-600 shadow" onClick={removeValue} type="button">×</button>
+                  </div>
+                );
+              }
+
+              return (
+                <div className={`flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold ${attribute.display_type === "dropdown" ? "min-w-44 justify-between" : ""}`} key={value.id}>
+                  <span>{label}</span>
+                  {attribute.display_type === "dropdown" ? <span className="ml-auto text-slate-400">⌄</span> : null}
+                  <button aria-label={`Xóa ${value.label}`} className="ml-auto text-red-600" onClick={removeValue} type="button">×</button>
+                </div>
+              );
+            })}
             <button
-              className="rounded-lg border border-dashed border-moss-400 px-3 py-1.5 text-sm font-bold text-moss-700"
+              className={`rounded-lg border border-dashed border-moss-400 px-3 py-1.5 text-sm font-bold text-moss-700 ${attribute.display_type === "image_text" || attribute.display_type === "image" ? "min-h-24" : attribute.display_type === "image_text_horizontal" ? "min-h-14" : ""}`}
               onClick={() => {
                 const label = window
                   .prompt(`Giá trị mới cho ${attribute.name}`)
@@ -359,6 +404,28 @@ export function VariantBuilder({
             + Thêm giá trị
           </Button>
         </div>
+      </Modal>
+      <Modal
+        footer={
+          <Button className="w-full sm:w-auto" onClick={() => setPreviewImage(null)}>
+            Đóng
+          </Button>
+        }
+        onClose={() => setPreviewImage(null)}
+        open={Boolean(previewImage)}
+        size="lg"
+        title={previewImage?.label ?? "Xem hình ảnh"}
+        zIndex={130}
+      >
+        {previewImage ? (
+          <div className="grid min-h-64 place-items-center overflow-hidden rounded-2xl bg-slate-100 p-2 sm:min-h-96">
+            <img
+              alt={previewImage.label}
+              className="max-h-[65dvh] max-w-full rounded-xl object-contain"
+              src={previewImage.url}
+            />
+          </div>
+        ) : null}
       </Modal>
     </div>
   );

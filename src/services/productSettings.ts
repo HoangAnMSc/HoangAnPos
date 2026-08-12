@@ -13,7 +13,7 @@ export type CustomProductAttribute = {
   optionColors?: Record<string, string>;
   optionImages?: Record<string, string>;
   optionDisplay?: "color" | "text" | "both";
-  variantDisplayType?: "color_circle" | "text_button" | "image" | "image_text" | "dropdown";
+  variantDisplayType?: "color_circle" | "text_button" | "image" | "image_text" | "image_text_horizontal" | "dropdown";
   useForVariants?: boolean;
 };
 
@@ -258,7 +258,7 @@ export async function fetchProductSettings() {
         unit: attribute.unit,
         optionColors: Object.fromEntries(attribute.values.filter((value) => value.metadata.hex).map((value) => [value.label, value.metadata.hex as string])),
         optionImages: Object.fromEntries(attribute.values.filter((value) => value.metadata.image_url).map((value) => [value.label, value.metadata.image_url as string])),
-        optionDisplay: attribute.display_type === "color_circle" ? "color" : attribute.display_type === "image_text" ? "both" : "text",
+        optionDisplay: attribute.display_type === "color_circle" ? "color" : attribute.display_type === "image_text" || attribute.display_type === "image_text_horizontal" ? "both" : "text",
         variantDisplayType: attribute.display_type,
         useForVariants: true,
       });

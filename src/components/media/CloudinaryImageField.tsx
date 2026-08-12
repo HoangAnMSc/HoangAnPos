@@ -18,12 +18,14 @@ export type CloudinaryImageValue = {
 };
 
 type Props = {
-  appearance?: "default" | "row";
+  appearance?: "default" | "horizontal-tile" | "row" | "tile";
   compact?: boolean;
   imageUrl: string | null | undefined;
   label?: string;
   onChange: (value: CloudinaryImageValue) => void;
+  onRemove?: () => void;
   publicId?: string | null;
+  showTileLabel?: boolean;
 };
 
 export function CloudinaryImageField({
@@ -32,7 +34,9 @@ export function CloudinaryImageField({
   imageUrl,
   label = "Ảnh",
   onChange,
+  onRemove,
   publicId,
+  showTileLabel = true,
 }: Props) {
   const { canAccess } = useAuth();
   const [open, setOpen] = useState(false);
@@ -111,9 +115,89 @@ export function CloudinaryImageField({
     }
   }
 
+  function remove() {
+    if (onRemove) onRemove();
+    else onChange({ imageUrl: "", publicId: null });
+  }
+
   return (
     <>
-      {appearance === "row" ? (
+      {appearance === "horizontal-tile" ? (
+        <div className="space-y-2">
+          <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-moss-400 hover:shadow-sm">
+            <button
+              className="group flex min-h-14 w-full items-center gap-2 p-1.5 pr-10 text-left"
+              onClick={() => setOpen(true)}
+              type="button"
+            >
+              <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
+                {imageUrl ? (
+                  <img alt={label} className="h-full w-full object-cover" src={imageUrl} />
+                ) : (
+                  <ImageIcon className="h-5 w-5" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs font-extrabold text-slate-900">
+                {label}
+              </span>
+            </button>
+            {imageUrl || onRemove ? (
+              <button
+                aria-label={`Xóa ${label}`}
+                className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
+                onClick={remove}
+                type="button"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+          {error ? <p className="text-xs font-semibold text-red-600">{error}</p> : null}
+        </div>
+      ) : appearance === "tile" ? (
+        <div className="space-y-2">
+          <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-moss-400 hover:shadow-sm">
+            <button
+              className="group block w-full text-left"
+              onClick={() => setOpen(true)}
+              type="button"
+            >
+              <span className="grid aspect-square w-full place-items-center overflow-hidden bg-slate-100 text-slate-400">
+                {imageUrl ? (
+                  <img
+                    alt={label}
+                    className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                    src={imageUrl}
+                  />
+                ) : (
+                  <span className="flex flex-col items-center gap-2 text-xs font-bold">
+                    <ImageIcon className="h-7 w-7" />
+                    Chọn hình ảnh
+                  </span>
+                )}
+              </span>
+              {showTileLabel ? (
+                <span className="block min-h-11 border-t border-slate-200 px-2.5 py-2 text-center text-xs font-extrabold leading-4 text-slate-900">
+                  {label}
+                </span>
+              ) : null}
+            </button>
+            {imageUrl ? (
+              <button
+                aria-label={`Bỏ ${label}`}
+                className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/95 text-red-600 shadow-md transition hover:bg-red-50"
+                onClick={remove}
+                type="button"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+          {error ? (
+            <p className="text-xs font-semibold text-red-600">{error}</p>
+          ) : null}
+        </div>
+      ) : appearance === "row" ? (
         <div className="space-y-2">
           {label ? (
             <span className="block text-sm font-bold text-slate-800">{label}</span>

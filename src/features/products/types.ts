@@ -25,6 +25,7 @@ export type VariantDisplayType =
   | "text_button"
   | "image"
   | "image_text"
+  | "image_text_horizontal"
   | "dropdown";
 export type ProductStatus = "draft" | "active" | "inactive";
 

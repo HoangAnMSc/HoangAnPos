@@ -1,4 +1,5 @@
 import {
+  Barcode,
   Boxes,
   ChevronLeft,
   ChevronRight,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloudinaryImageField } from "../components/media/CloudinaryImageField";
+import { Ean13LabelsModal } from "../components/products/Ean13LabelsModal";
 import { Ean13PickerModal } from "../components/products/Ean13PickerModal";
 import { ConfigurableProductCard } from "../components/products/ConfigurableProductCard";
 import { Button } from "../components/ui/Button";
@@ -262,6 +264,7 @@ export function ProductPage() {
   const canCreateProduct = canAccess("products.create");
   const canUpdateProduct = canAccess("products.update");
   const canDeleteProduct = canAccess("products.delete");
+  const canPrintEan13 = canAccess("products.ean13.print");
   const canManageProductTypes =
     canAccess("products.types.manage") || canUpdateProduct;
   const canManageProductAttributes =
@@ -284,6 +287,7 @@ export function ProductPage() {
   const [form, setForm] = useState<ProductEditorInput>(emptyInput());
   const [open, setOpen] = useState(false);
   const [ean13GateOpen, setEan13GateOpen] = useState(false);
+  const [ean13LabelsOpen, setEan13LabelsOpen] = useState(false);
   const [defaultEanOpen, setDefaultEanOpen] = useState(false);
   const [hasVariants, setHasVariants] = useState(false);
   const [manualCombinationOpen, setManualCombinationOpen] = useState(false);
@@ -738,6 +742,9 @@ export function ProductPage() {
           <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_32px_rgba(15,23,42,0.12)] backdrop-blur-xl lg:left-72">
             <div className="mx-auto flex max-w-4xl items-center gap-2">
             <ProductSectionSelect onChange={setPageTab} value={pageTab} />
+            {canPrintEan13 ? <Button aria-label="In tem EAN-13 toàn bộ sản phẩm" className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setEan13LabelsOpen(true)} title="In tem EAN-13" variant="secondary">
+              <Barcode className="h-4 w-4" />
+            </Button> : null}
             <Button aria-label="Tìm sản phẩm" className="relative h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setProductSearchOpen(true)} variant="secondary">
               <Search className="h-4 w-4" />
               {query ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-moss-600" /> : null}
@@ -1561,6 +1568,11 @@ export function ProductPage() {
         open={defaultEanOpen}
         title="EAN-13 của SKU mặc định"
         usedCodes={usedEan13Codes}
+      />
+      <Ean13LabelsModal
+        onClose={() => setEan13LabelsOpen(false)}
+        open={ean13LabelsOpen}
+        products={products}
       />
     </div>
   );

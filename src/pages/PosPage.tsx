@@ -357,7 +357,10 @@ function getPosProductCardData(product: Product) {
   return {
     price: minPrice,
     compareAtPrice: defaultComparePrice,
-    imageUrl: lowestVariant?.image_url ?? product.image_url,
+    // Keep the POS catalogue consistent with ProductPage: the neutral product
+    // image is shown until a concrete SKU is selected. The cheapest SKU still
+    // controls the initial price, but must not silently replace the product image.
+    imageUrl: product.image_url ?? lowestVariant?.image_url ?? null,
     priceLabel:
       minPrice === maxPrice
         ? formatCurrency(minPrice)
@@ -3610,9 +3613,27 @@ export function PosPage() {
                           {multiple ? "Chọn nhiều" : "Chọn 1"}
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      <div
+                        className={
+                          definition.variantDisplayType === "image_text_horizontal"
+                            ? "grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(145px,190px))]"
+                            : definition.variantDisplayType === "image_text" ||
+                                definition.variantDisplayType === "image"
+                            ? "grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(128px,160px))]"
+                            : "grid grid-cols-2 gap-2 sm:grid-cols-3"
+                        }
+                      >
                         {definition.options.map((option) => {
                           const checked = selected.includes(option);
+                          const isImageText =
+                            definition.variantDisplayType === "image_text";
+                          const isImageOnly =
+                            definition.variantDisplayType === "image";
+                          const isHorizontalImageText =
+                            definition.variantDisplayType ===
+                            "image_text_horizontal";
+                          const isImageCard = isImageText || isImageOnly;
+                          const optionImage = definition.optionImages?.[option];
                           const available = isProductVariantOptionAvailable(
                             productToVariantSelect,
                             variantOptionSelection,
@@ -3621,7 +3642,7 @@ export function PosPage() {
                           );
                           return (
                             <button
-                              className={`relative flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-35 ${checked ? "border-moss-600 bg-moss-50 text-moss-900 ring-1 ring-moss-500" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300"}`}
+                              className={`relative overflow-hidden rounded-xl border text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-35 ${isImageCard ? "flex min-h-0 flex-col p-0" : isHorizontalImageText ? "flex min-h-14 items-center gap-2 p-1.5 pr-8 text-left" : "flex min-h-12 items-center justify-center gap-2 px-3 py-2"} ${checked ? "border-moss-600 bg-moss-50 text-moss-900 ring-2 ring-moss-500" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300"}`}
                               disabled={!available}
                               key={option}
                               onClick={() =>
@@ -3636,7 +3657,41 @@ export function PosPage() {
                               }
                               type="button"
                             >
-                              {definition.optionDisplay !== "text" &&
+                              {isImageCard ? (
+                                <>
+                                  <span className="grid aspect-square w-full place-items-center overflow-hidden bg-slate-100 text-slate-400">
+                                    {optionImage ? (
+                                      <img
+                                        alt={formatVariantValueLabel(option, definition.unit)}
+                                        className="h-full w-full object-cover"
+                                        src={optionImage}
+                                      />
+                                    ) : (
+                                      <ImagePlus className="h-7 w-7" />
+                                    )}
+                                  </span>
+                                  {isImageText ? (
+                                    <span className="flex min-h-11 w-full items-center justify-center border-t border-slate-200 px-2 py-2 text-center leading-4">
+                                      {formatVariantValueLabel(option, definition.unit)}
+                                    </span>
+                                  ) : null}
+                                </>
+                              ) : null}
+                              {isHorizontalImageText ? (
+                                <>
+                                  <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
+                                    {optionImage ? (
+                                      <img alt="" className="h-full w-full object-cover" src={optionImage} />
+                                    ) : (
+                                      <ImagePlus className="h-5 w-5" />
+                                    )}
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate leading-4">
+                                    {formatVariantValueLabel(option, definition.unit)}
+                                  </span>
+                                </>
+                              ) : null}
+                              {!isImageCard && !isHorizontalImageText && definition.optionDisplay !== "text" &&
                               definition.optionColors?.[option] ? (
                                 <span
                                   className="h-6 w-6 rounded-full border border-white shadow ring-1 ring-slate-300"
@@ -3646,12 +3701,9 @@ export function PosPage() {
                                   }}
                                 />
                               ) : null}
-                              {definition.optionDisplay !== "color"
+                              {!isImageCard && !isHorizontalImageText && definition.optionDisplay !== "color"
                                 ? formatVariantValueLabel(option, definition.unit)
                                 : null}
-                              {(definition.variantDisplayType === "image" || definition.variantDisplayType === "image_text") && definition.optionImages?.[option] ? (
-                                <img alt="" className="h-12 w-12 rounded-lg object-cover" src={definition.optionImages[option]} />
-                              ) : null}
                               {checked ? (
                                 <Check className="absolute right-1.5 top-1.5 h-4 w-4 rounded-full bg-moss-700 p-0.5 text-white" />
                               ) : null}
