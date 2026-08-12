@@ -94,6 +94,7 @@ export type VariantAttribute = {
   name: string;
   code: string;
   data_type: AttributeDataType;
+  unit?: string | null;
   display_type: VariantDisplayType;
   is_required: boolean;
   sort_order: number;

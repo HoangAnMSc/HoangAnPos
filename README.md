@@ -95,6 +95,9 @@ Sau đó chạy lần lượt các migration bổ sung:
 5. `supabase/20260812_product_card_compare_price.sql` để bổ sung giá so sánh vào cấu hình card cũ mà không ghi đè tùy chọn khác.
 6. `supabase/20260812_promotions_permissions.sql` để trang Khuyến mãi đọc/ghi dữ liệu theo quyền Marketing thay vì chỉ tài khoản admin.
 7. `supabase/20260812_restore_loyalty_points.sql` để POS cộng/trừ/hoàn điểm trong transaction và hỗ trợ điều kiện khuyến mãi theo điểm tích lũy của khách.
+8. `supabase/20260812_promotion_product_type_scope.sql` để phạm vi Danh mục của khuyến mãi dùng đúng danh mục trong tab Sản phẩm (`product_types`).
+9. `supabase/20260812_receipt_promotion_details.sql` để POS và lịch sử đơn đọc tên, số tiền ưu đãi khi hiển thị hoặc in hóa đơn.
+10. `supabase/20260812_product_promotion_permissions.sql` để áp dụng phân quyền tạo/sửa/xóa riêng cho Sản phẩm và Khuyến mãi ở database.
 
 Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Staff.
 

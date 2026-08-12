@@ -8,6 +8,7 @@ import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { fetchProducts } from "../features/products/services/productEngine";
 import type { Product, ProductVariant } from "../features/products/types";
+import { getVariantLabel } from "../features/products/utils/variants";
 import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { issueVariantStock, receiveVariantStock } from "../services/stockMovements";
 
@@ -15,13 +16,7 @@ type Props = { type: "in" | "out" };
 type SkuOption = { product: Product; variant: ProductVariant; label: string };
 
 function variantLabel(product: Product, variant: ProductVariant) {
-  const values = new Map(
-    product.variant_attributes.flatMap((attribute) =>
-      attribute.values.map((value) => [value.id, value.label] as const),
-    ),
-  );
-  const selected = variant.value_ids.map((id) => values.get(id)).filter(Boolean);
-  return selected.length ? selected.join(" / ") : "Mặc định";
+  return getVariantLabel(variant, product.variant_attributes);
 }
 
 export function StockMovementPage({ type }: Props) {

@@ -39,6 +39,10 @@ type EngineDatabase = {
     Views: Record<string, never>;
     Functions: {
       save_product_engine: { Args: { payload: Json }; Returns: string };
+      soft_delete_product: {
+        Args: { product_id_input: string };
+        Returns: BaseRow;
+      };
       evaluate_promotions: {
         Args: {
           items_input: Json;

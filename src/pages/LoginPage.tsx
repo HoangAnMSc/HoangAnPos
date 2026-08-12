@@ -4,6 +4,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
+import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
 import { isEmailIdentifier } from "../lib/phone";
 
@@ -171,6 +172,14 @@ export function LoginPage() {
 
   if (mode === "login" && !loading && user && isAdmin) {
     return <Navigate replace to={from} />;
+  }
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-cream">
+        <Spinner label="Đang tải phiên đăng nhập..." />
+      </main>
+    );
   }
 
   const title = mode === "login" ? "Đăng nhập" : "Quên mật khẩu";

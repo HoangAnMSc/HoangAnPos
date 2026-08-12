@@ -6,6 +6,7 @@ import type {
 import type { Product } from "../types";
 import { formatCurrency } from "./format";
 import { getProductEan13Value } from "./productDisplay";
+import { formatVariantValueLabel } from "../features/products/utils/variants";
 
 export type ProductFormState = {
   name: string;
@@ -48,7 +49,7 @@ export type ResolvedProductVariant = {
 
 export type ProductVariantDefinition = Pick<
   CustomProductAttribute,
-  "id" | "name" | "optionColors" | "optionDisplay" | "optionImages" | "options" | "type" | "variantDisplayType"
+  "id" | "name" | "optionColors" | "optionDisplay" | "optionImages" | "options" | "type" | "unit" | "variantDisplayType"
 >;
 
 export function isProductVariantOptionAvailable(
@@ -148,7 +149,12 @@ export function getProductVariantLabel(
   definitions: ProductVariantDefinition[],
 ) {
   return definitions
-    .map((definition) => variant.values[definition.id])
+    .map((definition) => {
+      const value = variant.values[definition.id];
+      return value == null
+        ? value
+        : formatVariantValueLabel(String(value), definition.unit);
+    })
     .filter(Boolean)
     .join(" / ");
 }
@@ -263,7 +269,9 @@ export function resolveProductVariantSelection(
     label: definitions
       .map(
         (definition) =>
-          `${definition.name}: ${normalizedSelection[definition.id].join(", ")}`,
+          `${definition.name}: ${normalizedSelection[definition.id]
+            .map((value) => formatVariantValueLabel(value, definition.unit))
+            .join(", ")}`,
       )
       .join(" · "),
     linked_values: linkedValues,

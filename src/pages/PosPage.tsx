@@ -78,11 +78,15 @@ import {
 } from "../services/cashManagement";
 import {
   createSale,
+  fetchOrderPromotionDetails,
   recordOrderPrint,
   type PaymentMethod,
 } from "../services/orders";
 import { fetchPaymentSettings } from "../services/paymentSettings";
 import { evaluatePromotions } from "../features/promotions/services/promotions";
+import type { PromotionEvaluation } from "../features/promotions/types";
+import { formatVariantValueLabel } from "../features/products/utils/variants";
+import type { ReceiptPromotion } from "../lib/receipt";
 import {
   fetchProducts,
   getActiveProducts,
@@ -109,6 +113,7 @@ type CompletedSale = {
   customer: Customer | null;
   items: PosCartItem[];
   order: Order;
+  promotions: ReceiptPromotion[];
 };
 
 type PosBill = {
@@ -486,7 +491,7 @@ export function PosPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState<PaymentMethod>("cash");
   const [products, setProducts] = useState<Product[]>([]);
-  const [promotionDiscount, setPromotionDiscount] = useState(0);
+  const [appliedPromotions, setAppliedPromotions] = useState<PromotionEvaluation[]>([]);
   const [productSettings, setProductSettings] = useState<ProductSettings>(
     defaultProductSettings,
   );
@@ -868,12 +873,21 @@ export function PosPage() {
         };
       })
       .filter((item) => item.variant_id);
-    if (!items.length) { setPromotionDiscount(0); return () => { active = false; }; }
+    if (!items.length) { setAppliedPromotions([]); return () => { active = false; }; }
     void evaluatePromotions(items, selectedCustomerId || null, couponCode.trim() || null)
-      .then((results) => { if (active) setPromotionDiscount(Math.min(results.reduce((sum, result) => sum + result.discount_amount, 0), subtotal)); })
-      .catch(() => { if (active) setPromotionDiscount(0); });
+      .then((results) => {
+        if (!active) return;
+        let remaining = subtotal;
+        setAppliedPromotions(results.map((result) => {
+          const discount_amount = Math.min(Math.max(Number(result.discount_amount) || 0, 0), remaining);
+          remaining -= discount_amount;
+          return { ...result, discount_amount };
+        }).filter((result) => result.discount_amount > 0 || result.free_shipping));
+      })
+      .catch(() => { if (active) setAppliedPromotions([]); });
     return () => { active = false; };
   }, [cart, couponCode, selectedCustomerId, subtotal]);
+  const promotionDiscount = appliedPromotions.reduce((sum, promotion) => sum + promotion.discount_amount, 0);
   const total = Math.max(subtotal - promotionDiscount, 0);
   const estimatedEarnedPoints = selectedCustomer
     ? Math.floor(total / 100000)
@@ -1446,6 +1460,15 @@ export function PosPage() {
       });
       const completedItems = [...cart];
       const completedCustomer = selectedCustomer;
+      let completedPromotions: ReceiptPromotion[] = appliedPromotions.map(
+        ({ name, discount_amount }) => ({ name, discount_amount }),
+      );
+      try {
+        completedPromotions = await fetchOrderPromotionDetails(order.id);
+      } catch {
+        // The sale already succeeded. Keep the evaluated detail as a safe
+        // fallback if receipt read policies have not been migrated yet.
+      }
 
       updateActiveBill((bill) => createEmptyBill(bill.id));
       setPaymentModalOpen(false);
@@ -1466,6 +1489,7 @@ export function PosPage() {
         customer: completedCustomer,
         items: completedItems,
         order,
+        promotions: completedPromotions,
       });
       await loadPosData();
     } catch (requestError) {
@@ -2345,6 +2369,13 @@ export function PosPage() {
                         </span>
                       </div>
 
+                      {appliedPromotions.map((promotion) => (
+                        <div className="flex items-center justify-between gap-4 text-emerald-700" key={promotion.promotion_id}>
+                          <span className="min-w-0 truncate text-sm font-extrabold">{promotion.name}</span>
+                          <span className="shrink-0 text-right text-sm font-extrabold tabular-nums">-{formatCurrency(promotion.discount_amount)}</span>
+                        </div>
+                      ))}
+
                       <div className="flex items-center justify-between gap-4">
                         <span className="text-sm font-extrabold text-slate-600">
                           Thành tiền
@@ -2670,6 +2701,29 @@ export function PosPage() {
                 </article>
               );
             })}
+            <div className="rounded-2xl bg-slate-50 p-3.5">
+              <div className="flex items-center justify-between gap-3 text-sm font-bold text-slate-600">
+                <span>Tạm tính</span>
+                <span className="tabular-nums">{formatCurrency(subtotal)}</span>
+              </div>
+              {appliedPromotions.map((promotion) => (
+                <div
+                  className="mt-2 flex items-start justify-between gap-3 text-sm text-emerald-700"
+                  key={promotion.promotion_id}
+                >
+                  <span className="min-w-0 font-extrabold">{promotion.name}</span>
+                  <strong className="shrink-0 tabular-nums">
+                    -{formatCurrency(promotion.discount_amount)}
+                  </strong>
+                </div>
+              ))}
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+                <span className="font-black text-slate-900">Cần thu</span>
+                <span className="text-lg font-black tabular-nums text-moss-800">
+                  {formatCurrency(total)}
+                </span>
+              </div>
+            </div>
             {canCheckout ? (
               <button
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 text-sm font-extrabold text-red-700 transition hover:border-red-300 hover:bg-red-100"
@@ -3062,8 +3116,13 @@ export function PosPage() {
                 placeholder="Ví dụ: SUMMER20"
                 value={couponCode}
               />
-              <div className="self-end rounded-xl bg-moss-50 px-4 py-3 text-sm font-extrabold text-moss-800">
-                Giảm {formatCurrency(promotionDiscount)}
+              <div className="self-end rounded-xl bg-moss-50 px-3 py-2.5 text-sm text-moss-900">
+                {appliedPromotions.length ? appliedPromotions.map((promotion) => (
+                  <div className="flex items-center justify-between gap-3" key={promotion.promotion_id}>
+                    <span className="min-w-0 truncate font-bold">{promotion.name}</span>
+                    <strong className="shrink-0">-{formatCurrency(promotion.discount_amount)}</strong>
+                  </div>
+                )) : <span className="font-bold text-moss-700">Chưa có ưu đãi</span>}
               </div>
             </div>
 
@@ -3304,6 +3363,21 @@ export function PosPage() {
               <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">
                 {formatCurrency(completedSale.order.total)}
               </p>
+              {completedSale.promotions.length ? (
+                <div className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 text-sm">
+                  {completedSale.promotions.map((promotion, index) => (
+                    <div
+                      className="flex items-start justify-between gap-3 text-emerald-700"
+                      key={`${promotion.name}-${index}`}
+                    >
+                      <span className="min-w-0 text-left font-bold">{promotion.name}</span>
+                      <strong className="shrink-0 tabular-nums">
+                        -{formatCurrency(promotion.discount_amount)}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="mt-4 text-left">
               <Select
@@ -3569,7 +3643,9 @@ export function PosPage() {
                                   }}
                                 />
                               ) : null}
-                              {definition.optionDisplay !== "color" ? option : null}
+                              {definition.optionDisplay !== "color"
+                                ? formatVariantValueLabel(option, definition.unit)
+                                : null}
                               {(definition.variantDisplayType === "image" || definition.variantDisplayType === "image_text") && definition.optionImages?.[option] ? (
                                 <img alt="" className="h-12 w-12 rounded-lg object-cover" src={definition.optionImages[option]} />
                               ) : null}

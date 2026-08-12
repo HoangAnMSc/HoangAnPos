@@ -136,6 +136,7 @@ export async function fetchProducts(): Promise<Product[]> {
     imagesResult,
     typesResult,
     categoriesResult,
+    productAttributesResult,
   ] = await Promise.all([
     productEngineClient
       .from("products")
@@ -162,6 +163,7 @@ export async function fetchProducts(): Promise<Product[]> {
     productEngineClient.from("product_images").select("*").order("sort_order"),
     productEngineClient.from("product_types").select("id,name,code"),
     productEngineClient.from("product_categories").select("id,name,slug"),
+    productEngineClient.from("product_attributes").select("id,unit"),
   ]);
   [
     productsResult,
@@ -173,6 +175,7 @@ export async function fetchProducts(): Promise<Product[]> {
     imagesResult,
     typesResult,
     categoriesResult,
+    productAttributesResult,
   ].forEach((result) => throwIfError(result.error));
   const specs = (specsResult.data ?? []) as ProductSpecification[];
   const attributes = (attributesResult.data ?? []) as Array<
@@ -197,6 +200,11 @@ export async function fetchProducts(): Promise<Product[]> {
     name: string;
     slug: string;
   }>;
+  const attributeUnits = new Map(
+    ((productAttributesResult.data ?? []) as Array<{ id: string; unit: string | null }>).map(
+      (attribute) => [attribute.id, attribute.unit] as const,
+    ),
+  );
   return (
     (productsResult.data ?? []) as Array<
       Omit<
@@ -215,6 +223,10 @@ export async function fetchProducts(): Promise<Product[]> {
       .filter((item) => item.product_id === product.id)
       .map((attribute) => ({
         ...attribute,
+        unit: attribute.unit ??
+          (attribute.source_attribute_id
+            ? (attributeUnits.get(attribute.source_attribute_id) ?? null)
+            : null),
         values: values.filter(
           (value) => value.variant_attribute_id === attribute.id,
         ),
@@ -321,10 +333,9 @@ export async function saveProduct(input: ProductEditorInput) {
 }
 
 export async function archiveProduct(productId: string) {
-  const { error } = await productEngineClient
-    .from("products")
-    .update({ deleted_at: new Date().toISOString(), status: "inactive" })
-    .eq("id", productId);
+  const { error } = await productEngineClient.rpc("soft_delete_product", {
+    product_id_input: productId,
+  });
   throwIfError(error);
 }
 

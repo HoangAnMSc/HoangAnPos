@@ -11,6 +11,7 @@ import type {
   VariantValue,
 } from "../types";
 import { countVariantCombinations } from "../utils/variants";
+import { formatVariantValueLabel } from "../utils/variants";
 
 type Props = {
   attributes: VariantAttribute[];
@@ -182,7 +183,7 @@ export function VariantBuilder({
                 key={value.id}
               >
                 <div>
-                  {value.label}
+                  {formatVariantValueLabel(value.label, attribute.unit)}
                   <button
                     className="ml-2 text-red-600"
                     onClick={() => {

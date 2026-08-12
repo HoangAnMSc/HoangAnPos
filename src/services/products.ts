@@ -2,6 +2,7 @@ import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { Product, ProductBatch } from "../types";
 import type { Json } from "../types/database";
 import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
+import { getVariantLabel } from "../features/products/utils/variants";
 import { productEngineClient } from "../features/products/services/client";
 
 const missingCategoryTableMessage =
@@ -169,7 +170,11 @@ export async function fetchProducts() {
           },
         })),
       };
-      product.variant_attributes.forEach((attribute) => { attributes[attribute.id] = attribute.values.filter((value) => value.is_active).map((value) => value.label); });
+      product.variant_attributes.forEach((attribute) => {
+        attributes[attribute.id] = attribute.values
+          .filter((value) => value.is_active)
+          .map((value) => value.label);
+      });
       product.specifications.forEach((specification) => { attributes[specification.code] = specification.value; });
       const primary = product.images.find((image) => image.is_primary) ?? product.images[0];
       return {
@@ -221,17 +226,15 @@ export async function fetchInventoryCountProducts(): Promise<InventoryCountProdu
   try {
     const products = await fetchEngineProducts();
     return products.flatMap((product) => {
-      const labels = new Map(product.variant_attributes.flatMap((attribute) =>
-        attribute.values.map((value) => [value.id, value.label] as const),
-      ));
       const primaryImage = product.images.find((image) => image.is_primary)?.image_url
         ?? product.images[0]?.image_url
         ?? null;
       return product.variants.filter((variant) => variant.is_active).map((variant) => {
-        const selectedValues = variant.value_ids.map((id) => labels.get(id)).filter(Boolean).join(" / ");
+        const selectedValues = getVariantLabel(variant, product.variant_attributes);
+        const variantSuffix = selectedValues === "Mặc định" ? "" : selectedValues;
         return {
           id: variant.id,
-          name: selectedValues ? `${product.name} · ${selectedValues}` : product.name,
+          name: variantSuffix ? `${product.name} · ${variantSuffix}` : product.name,
           sku: variant.barcode ?? variant.sku,
           category: product.category?.name ?? null,
           image_url: variant.image_url ?? primaryImage,

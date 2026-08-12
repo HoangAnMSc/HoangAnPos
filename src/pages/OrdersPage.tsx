@@ -14,9 +14,11 @@ import { formatCurrency, formatDateTime } from "../lib/format";
 import { getErrorMessage } from "../lib/errors";
 import { formatProductDate } from "../lib/productDisplay";
 import { printSavedReceipt } from "../lib/receipt";
+import type { ReceiptPromotion } from "../lib/receipt";
 import {
   cancelOrder,
   deleteOrders,
+  fetchOrderPromotionDetails,
   fetchOrders,
   recordOrderPrint,
   type OrderWithItems,
@@ -42,6 +44,7 @@ type InvoiceItem = {
 type Invoice = OrderWithItems & {
   customers?: { address: string | null; name: string; phone: string | null } | null;
   order_items?: InvoiceItem[] | null;
+  promotions?: ReceiptPromotion[];
 };
 
 function getPaymentLabel(method: string) {
@@ -272,7 +275,10 @@ export function OrdersPage() {
 
     setPrinting(true);
     try {
-      const updatedOrder = await recordOrderPrint(selectedOrder.id);
+      const [updatedOrder, promotions] = await Promise.all([
+        recordOrderPrint(selectedOrder.id),
+        fetchOrderPromotionDetails(selectedOrder.id),
+      ]);
       const nextOrder = { ...selectedOrder, print_count: updatedOrder.print_count };
 
       setSelectedOrder(nextOrder);
@@ -283,6 +289,7 @@ export function OrdersPage() {
         customer: nextOrder.customers ?? null,
         items: nextOrder.order_items ?? [],
         order: nextOrder,
+        promotions,
       });
     } catch (requestError) {
       setErrorNotice({
@@ -632,6 +639,36 @@ export function OrdersPage() {
                     </p>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3 text-sm font-bold text-slate-600">
+                <span>Tạm tính</span>
+                <span className="tabular-nums">{formatCurrency(selectedOrder.subtotal)}</span>
+              </div>
+              {(selectedOrder.promotions ?? []).map((promotion, index) => (
+                <div
+                  className="mt-2 flex items-start justify-between gap-3 text-sm text-emerald-700"
+                  key={`${promotion.name}-${index}`}
+                >
+                  <span className="min-w-0 font-extrabold">{promotion.name}</span>
+                  <strong className="shrink-0 tabular-nums">
+                    -{formatCurrency(promotion.discount_amount)}
+                  </strong>
+                </div>
+              ))}
+              {selectedOrder.discount > 0 && !selectedOrder.promotions?.length ? (
+                <div className="mt-2 flex items-center justify-between gap-3 text-sm text-emerald-700">
+                  <span className="font-extrabold">Khuyến mãi</span>
+                  <strong className="tabular-nums">-{formatCurrency(selectedOrder.discount)}</strong>
+                </div>
+              ) : null}
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+                <span className="font-black text-slate-900">Đã thanh toán</span>
+                <strong className="text-lg font-black tabular-nums text-moss-800">
+                  {formatCurrency(selectedOrder.total)}
+                </strong>
               </div>
             </div>
 

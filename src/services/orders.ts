@@ -2,6 +2,9 @@ import { createOrderCode } from "../lib/format";
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { CartItem } from "../types";
 import { productEngineClient } from "../features/products/services/client";
+import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
+import { getVariantLabel } from "../features/products/utils/variants";
+import type { ReceiptPromotion } from "../lib/receipt";
 
 export type PaymentMethod = "cash" | "transfer";
 
@@ -126,21 +129,42 @@ export async function fetchOrders() {
   requireSupabaseConfig();
 
   try {
-    const [ordersResult, itemsResult, customersResult] = await Promise.all([
+    const [ordersResult, itemsResult, customersResult, redemptionsResult, promotionsResult, products] = await Promise.all([
       productEngineClient.from("orders").select("*").order("created_at", { ascending: false }),
       productEngineClient.from("order_items").select("*"),
       productEngineClient.from("customers").select("id,name,phone,address,points"),
+      productEngineClient.from("promotion_redemptions").select("promotion_id,order_id,discount_amount"),
+      productEngineClient.from("promotions").select("id,name"),
+      fetchEngineProducts(),
     ]);
     if (ordersResult.error) throw ordersResult.error;
     if (itemsResult.error) throw itemsResult.error;
     if (customersResult.error) throw customersResult.error;
+    if (redemptionsResult.error) throw redemptionsResult.error;
+    if (promotionsResult.error) throw promotionsResult.error;
+    const promotionNames = new Map(
+      (promotionsResult.data ?? []).map((promotion) => [String(promotion.id), String(promotion.name)]),
+    );
+    const productsById = new Map(products.map((product) => [product.id, product] as const));
     return (ordersResult.data ?? []).map((order) => ({
       ...order,
+      promotions: (redemptionsResult.data ?? [])
+        .filter((redemption) => redemption.order_id === order.id)
+        .map((redemption): ReceiptPromotion => ({
+          name: promotionNames.get(String(redemption.promotion_id)) ?? "Khuyến mãi",
+          discount_amount: Number(redemption.discount_amount) || 0,
+        })),
       customers: (customersResult.data ?? []).find((customer) => customer.id === order.customer_id) ?? null,
       order_items: (itemsResult.data ?? []).filter((item) => item.order_id === order.id).map((item) => ({
         ...item,
         variant_key: item.variant_id ?? null,
-        variant_label: item.variant_name ?? null,
+        variant_label: (() => {
+          const product = productsById.get(String(item.product_id));
+          const variant = product?.variants.find((candidate) => candidate.id === item.variant_id);
+          return product && variant
+            ? getVariantLabel(variant, product.variant_attributes)
+            : (item.variant_name ?? null);
+        })(),
         variant_values: item.selected_values ?? null,
         variant_source_values: null,
       })),
@@ -150,6 +174,27 @@ export async function fetchOrders() {
   }
 
   return fetchLegacyOrders();
+}
+
+export async function fetchOrderPromotionDetails(orderId: string): Promise<ReceiptPromotion[]> {
+  requireSupabaseConfig();
+  const { data: redemptions, error: redemptionError } = await productEngineClient
+    .from("promotion_redemptions")
+    .select("promotion_id,discount_amount")
+    .eq("order_id", orderId);
+  if (redemptionError) throw redemptionError;
+  const promotionIds = (redemptions ?? []).map((item) => String(item.promotion_id));
+  if (!promotionIds.length) return [];
+  const { data: promotions, error: promotionError } = await productEngineClient
+    .from("promotions")
+    .select("id,name")
+    .in("id", promotionIds);
+  if (promotionError) throw promotionError;
+  const names = new Map((promotions ?? []).map((item) => [String(item.id), String(item.name)]));
+  return (redemptions ?? []).map((item) => ({
+    name: names.get(String(item.promotion_id)) ?? "Khuyến mãi",
+    discount_amount: Number(item.discount_amount) || 0,
+  }));
 }
 
 async function fetchLegacyOrders() {

@@ -25,6 +25,8 @@ import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Select } from "../components/ui/Select";
 import { Textarea } from "../components/ui/Textarea";
+import { Spinner } from "../components/ui/Spinner";
+import { useAuth } from "../contexts/AuthContext";
 import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { VariantBuilder } from "../features/products/components/VariantBuilder";
 import { SkuMatrix } from "../features/products/components/SkuMatrix";
@@ -56,6 +58,7 @@ import type {
 import {
   countVariantCombinations,
   createSkuPrefix,
+  formatVariantValueLabel,
   mergeGeneratedVariants,
   variantCombinationKey,
 } from "../features/products/utils/variants";
@@ -253,6 +256,10 @@ const emptyInput = (ean13: string | null = null): ProductEditorInput => ({
 });
 
 export function ProductPage() {
+  const { canAccess } = useAuth();
+  const canCreateProduct = canAccess("products.create");
+  const canUpdateProduct = canAccess("products.update");
+  const canDeleteProduct = canAccess("products.delete");
   const [pageTab, setPageTab] = useState<PageTab>("products");
   const [editorTab, setEditorTab] = useState<EditorTab>("general");
   const [products, setProducts] = useState<Product[]>([]);
@@ -324,6 +331,7 @@ export function ProductPage() {
     [products],
   );
   function edit(product: Product) {
+    if (!canUpdateProduct && !canDeleteProduct) return;
     setForm({
       ...product,
       specifications: product.specifications,
@@ -341,6 +349,7 @@ export function ProductPage() {
     setOpen(true);
   }
   function createProductWithEan13(ean13: string) {
+    if (!canCreateProduct) return;
     const base = emptyInput(ean13);
     const simpleType = types.find((type) => type.code === "general");
     const configured = simpleType
@@ -379,6 +388,10 @@ export function ProductPage() {
     setOpen(true);
   }
   async function submit() {
+    if (form.id ? !canUpdateProduct : !canCreateProduct) {
+      setError("Tài khoản không có quyền lưu sản phẩm này.");
+      return;
+    }
     if (!form.name.trim() || !form.slug.trim()) {
       setError("Tên và slug là bắt buộc.");
       return;
@@ -463,6 +476,10 @@ export function ProductPage() {
     }
   }
   async function removeCurrentProduct() {
+    if (!canDeleteProduct) {
+      setError("Tài khoản không có quyền xóa sản phẩm.");
+      return;
+    }
     if (!form.id || !window.confirm(`Xóa sản phẩm “${form.name}”?`)) return;
     setSaving(true);
     setError("");
@@ -617,6 +634,7 @@ export function ProductPage() {
             name: attribute.name,
             code: attribute.code,
             data_type: "option" as const,
+            unit: attribute.unit,
             display_type: item.display_type ?? "text_button",
             is_required: item.is_required,
             sort_order: item.sort_order,
@@ -666,6 +684,7 @@ export function ProductPage() {
               name: attribute.name,
               code: attribute.code,
               data_type: "option" as const,
+              unit: attribute.unit,
               display_type: item.display_type ?? "text_button",
               is_required: item.is_required,
               sort_order: item.sort_order,
@@ -710,13 +729,15 @@ export function ProductPage() {
               <Search className="h-4 w-4" />
               {query ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-moss-600" /> : null}
             </Button>
-            <Button aria-label="Thêm sản phẩm" className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setEan13GateOpen(true)}>
+            {canCreateProduct ? <Button aria-label="Thêm sản phẩm" className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setEan13GateOpen(true)}>
               <Plus className="h-4 w-4" />
-            </Button>
+            </Button> : null}
             </div>
           </div>
           {loading ? (
-            <Card>Đang tải...</Card>
+            <Card className="grid min-h-48 place-items-center">
+              <Spinner label="Đang tải sản phẩm..." />
+            </Card>
           ) : (
             <>
               <Card className="hidden overflow-hidden p-0">
@@ -825,7 +846,7 @@ export function ProductPage() {
                 {filtered.map((product) => (
                   <ProductAdminCard
                     key={product.id}
-                    onEdit={() => edit(product)}
+                    onEdit={canUpdateProduct || canDeleteProduct ? () => edit(product) : undefined}
                     product={product}
                     settings={productSettings.card}
                   />
@@ -917,6 +938,8 @@ export function ProductPage() {
           onSectionChange={setPageTab}
           records={types}
           onSaved={load}
+          canDelete={canDeleteProduct}
+          canManage={canUpdateProduct}
         />
       ) : null}
       {pageTab === "attributes" ? (
@@ -926,16 +949,25 @@ export function ProductPage() {
           onSectionChange={setPageTab}
           records={attributes}
           onSaved={load}
+          canDelete={canDeleteProduct}
+          canManage={canUpdateProduct}
         />
       ) : null}
       {pageTab === "card" ? (
-        <CardAppearanceEditor
-          currentSection={pageTab}
-          onChange={setProductSettings}
-          onSectionChange={setPageTab}
-          products={products}
-          settings={productSettings}
-        />
+        canUpdateProduct ? <CardAppearanceEditor
+            currentSection={pageTab}
+            onChange={setProductSettings}
+            onSectionChange={setPageTab}
+            products={products}
+            settings={productSettings}
+          /> : <>
+            <Card className="grid min-h-48 place-items-center p-6 text-center text-sm font-semibold text-slate-500">
+              Tài khoản chỉ có quyền xem sản phẩm, không có quyền sửa giao diện card.
+            </Card>
+            <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 lg:left-72">
+              <div className="mx-auto flex max-w-4xl"><ProductSectionSelect onChange={setPageTab} value={pageTab} /></div>
+            </div>
+          </>
       ) : null}
       <ProductSearchPopup
         onChange={setQuery}
@@ -948,7 +980,7 @@ export function ProductPage() {
       <Modal
         footer={
           <div className={`grid w-full gap-2 sm:flex sm:w-auto sm:items-center ${form.id ? "grid-cols-4" : "grid-cols-3"}`}>
-            {form.id ? (
+            {form.id && canDeleteProduct ? (
               <Button
                 aria-label="Xóa sản phẩm"
                 className="px-2 sm:px-4"
@@ -1008,13 +1040,13 @@ export function ProductPage() {
             ) : (
               <span className="sm:hidden" />
             )}
-            <Button
+            {(form.id ? canUpdateProduct : canCreateProduct) ? <Button
               className="px-2 sm:px-4"
               disabled={saving}
               onClick={() => void submit()}
             >
               {saving ? "Đang lưu..." : "Lưu"}
-            </Button>
+            </Button> : null}
           </div>
         }
         onClose={() => setOpen(false)}
@@ -1492,7 +1524,7 @@ export function ProductPage() {
                 .filter((value) => value.is_active)
                 .map((value) => (
                   <option key={value.id} value={value.id}>
-                    {value.label}
+                    {formatVariantValueLabel(value.label, attribute.unit)}
                   </option>
                 ))}
             </Select>
@@ -1642,7 +1674,7 @@ function ProductAdminCard({
   product,
   settings,
 }: {
-  onEdit: () => void;
+  onEdit?: () => void;
   posPreview?: boolean;
   preview?: boolean;
   product: Product;
@@ -2000,6 +2032,8 @@ function AttributePickerPopup({
 
 function DefinitionManager({
   attributes = [],
+  canDelete,
+  canManage,
   currentSection,
   kind,
   mappings = [],
@@ -2008,6 +2042,8 @@ function DefinitionManager({
   records,
 }: {
   attributes?: ProductAttribute[];
+  canDelete: boolean;
+  canManage: boolean;
   currentSection: PageTab;
   kind: "type" | "attribute";
   mappings?: ProductTypeAttribute[];
@@ -2034,6 +2070,7 @@ function DefinitionManager({
     `${record.name} ${record.code}`.toLowerCase().includes(query.toLowerCase()),
   );
   function editDefinition(record?: ProductType | ProductAttribute) {
+    if (!canManage) return;
     setEditingId(record?.id ?? null);
     setName(record?.name ?? "");
     setCode(record?.code ?? "");
@@ -2054,6 +2091,7 @@ function DefinitionManager({
     setOpenEditor(true);
   }
   async function save() {
+    if (!canManage) return;
     if (!name.trim()) return;
     setSavingDefinition(true);
     setLocalError("");
@@ -2097,6 +2135,7 @@ function DefinitionManager({
     }
   }
   async function remove(record: ProductType | ProductAttribute) {
+    if (!canDelete) return;
     const label = kind === "type" ? "loại sản phẩm" : "thuộc tính";
     if (
       !window.confirm(
@@ -2169,9 +2208,9 @@ function DefinitionManager({
             <Search className="h-4 w-4" />
             {query ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-moss-600" /> : null}
           </Button>
-          <Button aria-label={kind === "type" ? "Thêm danh mục" : "Thêm thuộc tính"} className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => editDefinition()}>
+          {canManage ? <Button aria-label={kind === "type" ? "Thêm danh mục" : "Thêm thuộc tính"} className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => editDefinition()}>
             <Plus className="h-4 w-4" />
-          </Button>
+          </Button> : null}
         </div>
       </div>
       <Card className="hidden overflow-hidden p-0 md:block">
@@ -2194,7 +2233,7 @@ function DefinitionManager({
           <tbody>
             {filteredRecords.map((record) => (
               <tr
-                className="cursor-pointer border-t border-slate-100 transition hover:bg-slate-50"
+                className={`border-t border-slate-100 transition ${canManage ? "cursor-pointer hover:bg-slate-50" : ""}`}
                 key={record.id}
                 onClick={() => editDefinition(record)}
               >
@@ -2228,7 +2267,7 @@ function DefinitionManager({
       <div className="grid gap-3 md:hidden">
         {filteredRecords.map((record) => (
           <button
-            className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-soft"
+            className={`w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-soft ${canManage ? "" : "cursor-default"}`}
             key={record.id}
             onClick={() => editDefinition(record)}
             type="button"
@@ -2267,7 +2306,7 @@ function DefinitionManager({
       <Modal
         footer={
           <div className="flex w-full flex-wrap gap-2">
-            {editingId ? (
+            {editingId && canDelete ? (
               <Button
                 className="mr-auto"
                 onClick={() => {
@@ -2284,12 +2323,12 @@ function DefinitionManager({
             <Button onClick={() => setOpenEditor(false)} variant="secondary">
               Hủy
             </Button>
-            <Button
+            {canManage ? <Button
               disabled={savingDefinition || !name.trim()}
               onClick={() => void save()}
             >
               {savingDefinition ? "Đang lưu..." : editingId ? "Lưu" : "Tạo mới"}
-            </Button>
+            </Button> : null}
           </div>
         }
         onClose={() => setOpenEditor(false)}

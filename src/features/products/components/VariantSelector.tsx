@@ -3,7 +3,7 @@ import type {
   VariantAttribute,
   VariantSelection,
 } from "../types";
-import { isVariantValueAvailable } from "../utils/variants";
+import { formatVariantValueLabel, isVariantValueAvailable } from "../utils/variants";
 
 type Props = {
   attribute: VariantAttribute;
@@ -43,7 +43,7 @@ export function VariantSelector({
               key={value.id}
               value={value.id}
             >
-              {value.label}
+              {formatVariantValueLabel(value.label, attribute.unit)}
             </option>
           ))}
         </select>
@@ -83,11 +83,13 @@ export function VariantSelector({
                   )}
                 </span>
                 {attribute.display_type === "image_text" ? (
-                  <span className="text-xs font-bold">{value.label}</span>
+                  <span className="text-xs font-bold">
+                    {formatVariantValueLabel(value.label, attribute.unit)}
+                  </span>
                 ) : null}
               </>
             ) : (
-              <span>{value.label}</span>
+              <span>{formatVariantValueLabel(value.label, attribute.unit)}</span>
             );
           return (
             <button

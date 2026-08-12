@@ -6,8 +6,10 @@ import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Select } from "../components/ui/Select";
-import { fetchCategories, fetchProducts } from "../features/products/services/productEngine";
+import { Spinner } from "../components/ui/Spinner";
+import { fetchProducts, fetchProductTypes } from "../features/products/services/productEngine";
 import type { Product } from "../features/products/types";
+import { getVariantLabel } from "../features/products/utils/variants";
 import { deletePromotion, fetchPromotions, savePromotion } from "../features/promotions/services/promotions";
 import type { DiscountType, Promotion, PromotionCondition, PromotionScope, PromotionTrigger } from "../features/promotions/types";
 import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
@@ -28,6 +30,9 @@ const discountLabel = (item: Pick<Promotion, "discount_type" | "discount_value">
 
 export function PromotionsPage() {
   const { canAccess } = useAuth();
+  const canCreatePromotion = canAccess("promotions.create");
+  const canUpdatePromotion = canAccess("promotions.update");
+  const canDeletePromotion = canAccess("promotions.delete");
   const [items, setItems] = useState<Promotion[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
@@ -47,11 +52,11 @@ export function PromotionsPage() {
     try {
       const promotions = await fetchPromotions();
       setItems(promotions);
-      const [productsResult, categoriesResult] = await Promise.allSettled([
-        fetchProducts(), fetchCategories(),
+      const [nextProducts, productTypes] = await Promise.all([
+        fetchProducts(), fetchProductTypes(),
       ]);
-      if (productsResult.status === "fulfilled") setProducts(productsResult.value);
-      if (categoriesResult.status === "fulfilled") setCategories(categoriesResult.value);
+      setProducts(nextProducts);
+      setCategories(productTypes.map(({ id, name }) => ({ id, name })));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Không tải được dữ liệu khuyến mãi.");
     } finally {
@@ -66,12 +71,17 @@ export function PromotionsPage() {
   }), [items, query, status]);
 
   function edit(item?: Promotion) {
+    if (item ? (!canUpdatePromotion && !canDeletePromotion) : !canCreatePromotion) return;
     setError("");
     setDraft(item ? { ...item, conditions: [...item.conditions], scopes: [...item.scopes] } : emptyDraft());
     setOpen(true);
   }
 
   async function submit() {
+    if (draft.id ? !canUpdatePromotion : !canCreatePromotion) {
+      setError("Tài khoản không có quyền lưu chương trình này.");
+      return;
+    }
     setError("");
     if (!draft.name.trim()) return setError("Vui lòng nhập tên chương trình.");
     if (draft.trigger_type === "coupon" && !draft.code?.trim()) return setError("Vui lòng nhập mã voucher.");
@@ -123,7 +133,7 @@ export function PromotionsPage() {
       </Card>
 
       {loading ? (
-        <Card className="grid min-h-40 place-items-center p-4 text-sm font-semibold text-slate-500">Đang tải dữ liệu từ Supabase...</Card>
+        <Card className="grid min-h-40 place-items-center p-4"><Spinner label="Đang tải chương trình ưu đãi..." /></Card>
       ) : <Card className="hidden overflow-x-auto p-0 md:block">
         <table className="w-full min-w-[880px] text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr>
@@ -132,17 +142,17 @@ export function PromotionsPage() {
           <tbody>{filtered.map((item) => <tr className="cursor-pointer border-t border-slate-100 transition hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-moss-400" key={item.id} onClick={() => edit(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); edit(item); } }} tabIndex={0}>
             <td className="p-4"><p className="font-extrabold">{item.name}</p><p className="mt-0.5 font-mono text-xs text-slate-500">{item.code ?? "Không cần mã"}</p></td>
             <td>{triggerLabel(item.trigger_type)}</td><td className="font-bold text-moss-700">{discountLabel(item)}</td>
-            <td className="text-xs text-slate-600">{item.start_at ? new Date(item.start_at).toLocaleDateString("vi-VN") : "Áp dụng ngay"} → {item.end_at ? new Date(item.end_at).toLocaleDateString("vi-VN") : "Không giới hạn"}</td>
+            <td className="text-xs text-slate-600">{item.start_at ? new Date(item.start_at).toLocaleDateString("vi-VN") : "Áp dụng ngay"} → {item.end_at ? new Date(item.end_at).toLocaleDateString("vi-VN") : "∞"}</td>
             <td>{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</td><td className="pr-4"><div className="flex items-center justify-between gap-2"><Status active={item.is_active} /><ChevronRight className="h-4 w-4 text-slate-300" /></div></td>
           </tr>)}</tbody>
         </table>
       </Card>}
 
-      {!loading ? <div className="grid gap-2.5 md:hidden">{filtered.map((item) => <button className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-soft transition active:scale-[0.99] active:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400" key={item.id} onClick={() => edit(item)} type="button">
+      {!loading ? <div className="grid gap-2.5 md:hidden">{filtered.map((item) => <button className={`w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 ${canUpdatePromotion || canDeletePromotion ? "active:scale-[0.99] active:bg-slate-50" : "cursor-default"}`} key={item.id} onClick={() => edit(item)} type="button">
         <div className="flex items-start gap-3 p-3.5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-moss-50 text-moss-700"><TicketPercent className="h-5 w-5" /></span>
           <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><h3 className="truncate font-black text-slate-950">{item.name}</h3><Status active={item.is_active} /></div><p className="mt-0.5 font-mono text-[11px] font-semibold uppercase text-slate-500">{item.code ?? "Tự động"}</p></div></div>
         <div className="mx-3.5 grid grid-cols-2 divide-x divide-slate-200 rounded-xl bg-slate-50 px-3 py-2.5 text-sm"><div className="pr-3"><p className="text-[11px] font-semibold text-slate-500">Ưu đãi</p><strong className="mt-0.5 block text-moss-800">{discountLabel(item)}</strong></div><div className="pl-3"><p className="text-[11px] font-semibold text-slate-500">Lượt dùng</p><strong className="mt-0.5 block">{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</strong></div></div>
-        <div className="mt-3 flex items-center gap-2 border-t border-slate-100 px-3.5 py-3 text-xs font-medium text-slate-500"><CalendarDays className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1 truncate">{item.start_at ? new Date(item.start_at).toLocaleDateString("vi-VN") : "Áp dụng ngay"} → {item.end_at ? new Date(item.end_at).toLocaleDateString("vi-VN") : "Không giới hạn"}</span><ChevronRight className="h-4 w-4 shrink-0 text-slate-300" /></div>
+        <div className="mt-3 flex items-center gap-2 border-t border-slate-100 px-3.5 py-3 text-xs font-medium text-slate-500"><CalendarDays className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1 truncate">{item.start_at ? new Date(item.start_at).toLocaleDateString("vi-VN") : "Áp dụng ngay"} → {item.end_at ? new Date(item.end_at).toLocaleDateString("vi-VN") : "∞"}</span><ChevronRight className="h-4 w-4 shrink-0 text-slate-300" /></div>
       </button>)}</div> : null}
       {!loading && !filtered.length ? <Card className="p-8 text-center text-sm text-slate-500">Không tìm thấy chương trình phù hợp trong database.</Card> : null}
 
@@ -163,13 +173,13 @@ export function PromotionsPage() {
               <option value="all">Tất cả</option><option value="active">Hoạt động</option><option value="inactive">Tạm dừng</option>
             </Select>
           </div>
-          <Button aria-label="Thêm chương trình" className="h-12 min-h-12 w-12 shrink-0 px-0 sm:w-auto sm:px-4" onClick={() => edit()}>
+          {canCreatePromotion ? <Button aria-label="Thêm chương trình" className="h-12 min-h-12 w-12 shrink-0 px-0 sm:w-auto sm:px-4" onClick={() => edit()}>
             <Plus className="h-4 w-4" /><span className="hidden sm:inline">Thêm chương trình</span>
-          </Button>
+          </Button> : null}
         </div>
       </div>
 
-      <Modal footer={<div className="flex w-full items-center gap-2">{draft.id && canAccess("promotions.delete") ? <Button aria-label="Xóa chương trình" className="mr-auto px-3" disabled={saving} onClick={() => setDeleteConfirmOpen(true)} variant="danger"><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Xóa</span></Button> : <span className="mr-auto" />}<Button onClick={() => setOpen(false)} variant="secondary">Hủy</Button><Button isLoading={saving} onClick={() => void submit()}>Lưu</Button></div>} onClose={() => setOpen(false)} open={open} size="xl" title={draft.id ? "Chỉnh sửa chương trình" : "Thêm chương trình"}>
+      <Modal footer={<div className="flex w-full items-center gap-2">{draft.id && canDeletePromotion ? <Button aria-label="Xóa chương trình" className="mr-auto px-3" disabled={saving} onClick={() => setDeleteConfirmOpen(true)} variant="danger"><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Xóa</span></Button> : <span className="mr-auto" />}<Button onClick={() => setOpen(false)} variant="secondary">Hủy</Button>{(draft.id ? canUpdatePromotion : canCreatePromotion) ? <Button isLoading={saving} onClick={() => void submit()}>Lưu</Button> : null}</div>} onClose={() => setOpen(false)} open={open} size="xl" title={draft.id ? "Chỉnh sửa chương trình" : "Thêm chương trình"}>
         <div className="space-y-4">
           {error ? <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
           <FormSection description="Tên, cách kích hoạt và mức ưu đãi." title="Thông tin chung">
@@ -265,12 +275,12 @@ function Conditions({ onChange, value }: { onChange: (value: PromotionCondition[
   </FormSection>;
 }
 
-function variantName(product: Product, variantId: string) { const variant = product.variants.find((item) => item.id === variantId); if (!variant) return variantId; const values = new Map(product.variant_attributes.flatMap((attribute) => attribute.values.map((value) => [value.id, value.label] as const))); const label = variant.value_ids.map((id) => values.get(id)).filter(Boolean).join(" / "); return `${product.name} · ${label || "Mặc định"} · ${variant.sku}`; }
+function variantName(product: Product, variantId: string) { const variant = product.variants.find((item) => item.id === variantId); if (!variant) return variantId; return `${product.name} · ${getVariantLabel(variant, product.variant_attributes)} · ${variant.sku}`; }
 function Scopes({ categories, onChange, products, value }: { categories: CategoryOption[]; onChange: (value: PromotionScope[]) => void; products: Product[]; value: PromotionScope[] }) {
   const options = (scope: PromotionScope) => scope.scope_type === "category" ? categories.map((item) => ({ id: item.id, label: item.name })) : scope.scope_type === "product" ? products.map((item) => ({ id: item.id, label: item.name })) : scope.scope_type === "variant" ? products.flatMap((product) => product.variants.map((variant) => ({ id: variant.id, label: variantName(product, variant.id) }))) : [];
-  return <FormSection description="Chọn sản phẩm được hưởng ưu đãi. SKU là một tổ hợp cụ thể." title="Phạm vi sản phẩm">
+  return <FormSection description="Danh mục được lấy trực tiếp từ tab Danh mục sản phẩm. SKU là một tổ hợp cụ thể." title="Phạm vi sản phẩm">
     <div className="space-y-2">{value.map((scope, index) => <div className="grid gap-2 rounded-xl bg-slate-50 p-2.5 sm:grid-cols-[1fr_2fr_auto]" key={`${scope.scope_type}-${index}`}>
-      <Select aria-label="Loại phạm vi" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, scope_type: event.target.value as PromotionScope["scope_type"], scope_id: null } : item))} value={scope.scope_type}><option value="all">Tất cả sản phẩm</option><option value="category">Danh mục</option><option value="product">Sản phẩm</option><option value="variant">SKU cụ thể</option></Select>
+      <Select aria-label="Loại phạm vi" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, scope_type: event.target.value as PromotionScope["scope_type"], scope_id: null } : item))} value={scope.scope_type}><option value="all">Tất cả sản phẩm</option><option value="category">Danh mục sản phẩm</option><option value="product">Sản phẩm</option><option value="variant">SKU cụ thể</option></Select>
       {scope.scope_type === "all" ? <div className="flex min-h-11 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-500">Áp dụng cho toàn bộ sản phẩm</div> : <Select aria-label="Đối tượng áp dụng" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, scope_id: event.target.value || null } : item))} value={scope.scope_id ?? ""}><option value="">Chọn đối tượng áp dụng</option>{options(scope).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</Select>}
       <Button aria-label="Xóa phạm vi" className="px-3" disabled={value.length === 1} onClick={() => onChange(value.filter((_, position) => position !== index))} variant="danger"><Trash2 className="h-4 w-4" /></Button>
     </div>)}</div>

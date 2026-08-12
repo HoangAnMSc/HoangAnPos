@@ -8,6 +8,7 @@ export type CustomProductAttribute = {
   name: string;
   type: CustomAttributeType;
   enabled: boolean;
+  unit?: string | null;
   options: string[];
   optionColors?: Record<string, string>;
   optionImages?: Record<string, string>;
@@ -254,6 +255,7 @@ export async function fetchProductSettings() {
       const options = [...new Set([...(current?.options ?? []), ...attribute.values.filter((value) => value.is_active).map((value) => value.label)])];
       byId.set(attribute.id, {
         id: attribute.id, name: attribute.name, type: "single", enabled: true, options,
+        unit: attribute.unit,
         optionColors: Object.fromEntries(attribute.values.filter((value) => value.metadata.hex).map((value) => [value.label, value.metadata.hex as string])),
         optionImages: Object.fromEntries(attribute.values.filter((value) => value.metadata.image_url).map((value) => [value.label, value.metadata.image_url as string])),
         optionDisplay: attribute.display_type === "color_circle" ? "color" : attribute.display_type === "image_text" ? "both" : "text",

@@ -51,13 +51,28 @@ export async function savePromotion(
   },
 ) {
   requireSupabaseConfig();
-  const { conditions, scopes, id: inputId, ...values } = input;
-  const promotion = inputId ? { ...values, id: inputId } : values;
-  const { data, error } = await productEngineClient
-    .from("promotions")
-    .upsert(promotion)
-    .select("id")
-    .single();
+  const { conditions, scopes, id: inputId } = input;
+  // Build the persisted row explicitly. `usage_count` is a calculated field
+  // attached by fetchPromotions and must never be sent to the promotions table.
+  const values = {
+    name: input.name,
+    code: input.code,
+    trigger_type: input.trigger_type,
+    discount_type: input.discount_type,
+    discount_value: input.discount_value,
+    max_discount_amount: input.max_discount_amount,
+    start_at: input.start_at,
+    end_at: input.end_at,
+    total_usage_limit: input.total_usage_limit,
+    usage_per_customer: input.usage_per_customer,
+    priority: input.priority,
+    is_stackable: input.is_stackable,
+    is_active: input.is_active,
+  };
+  const query = inputId
+    ? productEngineClient.from("promotions").update(values).eq("id", inputId)
+    : productEngineClient.from("promotions").insert(values);
+  const { data, error } = await query.select("id").single();
   fail(error);
   if (!data) throw new Error("Supabase không trả về promotion vừa lưu.");
   const id = String(data.id);
@@ -78,9 +93,11 @@ export async function savePromotion(
           .from("promotion_conditions")
           .insert(
             conditions.map((condition) => ({
-              ...condition,
-              id: condition.id || undefined,
               promotion_id: id,
+              condition_type: condition.condition_type,
+              operator: condition.operator,
+              value: condition.value,
+              group_id: condition.group_id ?? null,
             })),
           )
       ).error,
@@ -92,9 +109,9 @@ export async function savePromotion(
           .from("promotion_scopes")
           .insert(
             scopes.map((scope) => ({
-              ...scope,
-              id: scope.id || undefined,
               promotion_id: id,
+              scope_type: scope.scope_type,
+              scope_id: scope.scope_id,
             })),
           )
       ).error,

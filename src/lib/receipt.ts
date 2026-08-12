@@ -6,6 +6,12 @@ type ReceiptInput = {
   order: Order;
   pointsBalance?: number | null;
   paperSize?: ReceiptPaperSize;
+  promotions?: ReceiptPromotion[];
+};
+
+export type ReceiptPromotion = {
+  name: string;
+  discount_amount: number;
 };
 
 export type ReceiptPaperSize = "58mm" | "80mm";
@@ -24,6 +30,7 @@ type SavedReceiptInput = {
   customer: { address?: string | null; name: string; phone: string | null; points?: number } | null;
   items: Array<{ product_name: string; variant_label?: string | null; quantity: number; unit_price: number; reward_points_cost?: number }>;
   order: Order;
+  promotions?: ReceiptPromotion[];
 };
 
 function escapeHtml(value: string | number | null | undefined) {
@@ -45,7 +52,7 @@ function dateTime(value: string) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())} · ${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
 }
 
-export function printPosReceipt({ customer, items, order, paperSize = getReceiptPaperSize(), pointsBalance }: ReceiptInput) {
+export function printPosReceipt({ customer, items, order, paperSize = getReceiptPaperSize(), pointsBalance, promotions = [] }: ReceiptInput) {
   const isCompact = paperSize === "58mm";
   const pageMargin = isCompact ? "3mm" : "4mm";
   const bodyWidth = isCompact ? "52mm" : "72mm";
@@ -120,7 +127,8 @@ export function printPosReceipt({ customer, items, order, paperSize = getReceipt
   </table>
   <section class="total">
     <div><span>Tổng cộng</span><b>${money(order.subtotal)}đ</b></div>
-    ${order.discount > 0 ? `<div><span>Giảm giá</span><b>-${money(order.discount)}đ</b></div>` : ""}
+    ${promotions.filter((promotion) => promotion.discount_amount > 0).map((promotion) => `<div><span>${escapeHtml(promotion.name)}</span><b>-${money(promotion.discount_amount)}đ</b></div>`).join("")}
+    ${order.discount > 0 && !promotions.length ? `<div><span>Khuyến mãi</span><b>-${money(order.discount)}đ</b></div>` : ""}
     <div class="grand"><span>Thanh toán</span><b>${money(order.total)}đ</b></div>
     <div><span>Khách đưa</span><b>${money(order.cash_received)}đ</b></div>
     <div><span>Tiền thừa</span><b>${money(order.change_amount)}đ</b></div>
@@ -141,7 +149,7 @@ export function printPosReceipt({ customer, items, order, paperSize = getReceipt
   }, 200);
 }
 
-export function printSavedReceipt({ customer, items, order }: SavedReceiptInput) {
+export function printSavedReceipt({ customer, items, order, promotions = [] }: SavedReceiptInput) {
   printPosReceipt({
     customer: customer as Customer | null,
     items: items.map((item) => ({
@@ -163,6 +171,7 @@ export function printSavedReceipt({ customer, items, order }: SavedReceiptInput)
         : null,
     })) as unknown as CartItem[],
     order,
+    promotions,
     pointsBalance: customer && "points" in customer ? Number(customer.points) : null,
   });
 }

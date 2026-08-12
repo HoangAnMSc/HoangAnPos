@@ -7,6 +7,19 @@ import type {
 
 export const MAX_VARIANT_COMBINATIONS = 5000;
 
+export function formatVariantValueLabel(
+  label: string,
+  unit?: string | null,
+) {
+  const cleanLabel = label.trim();
+  const cleanUnit = unit?.trim();
+  if (!cleanUnit || !cleanLabel) return cleanLabel;
+  const escapedUnit = cleanUnit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\s)${escapedUnit}$`, "i").test(cleanLabel)
+    ? cleanLabel
+    : `${cleanLabel} ${cleanUnit}`;
+}
+
 export function createSkuPrefix(slug: string) {
   return (
     slug
@@ -117,7 +130,10 @@ export function getVariantLabel(
 ) {
   const values = new Map(
     attributes.flatMap((attribute) =>
-      attribute.values.map((value) => [value.id, value.label] as const),
+      attribute.values.map((value) => [
+        value.id,
+        formatVariantValueLabel(value.label, attribute.unit),
+      ] as const),
     ),
   );
   return (
