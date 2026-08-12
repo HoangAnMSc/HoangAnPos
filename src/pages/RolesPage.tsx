@@ -9,6 +9,7 @@ import { Modal } from "../components/ui/Modal";
 import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../lib/errors";
 import {
   allRolePermissionKeys,
@@ -340,6 +341,7 @@ function RoleEditorModal({
 }
 
 export function RolesPage() {
+  const { showSuccess } = useActionNotice();
   const { canAccess } = useAuth();
   const [editingRole, setEditingRole] = useState<AppRole | null>(null);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
@@ -401,6 +403,7 @@ export function RolesPage() {
     setSubmitting(true);
 
     try {
+      const wasEditing = Boolean(editingRole);
       if (editingRole) {
         await updateRole(editingRole.id, input);
       } else {
@@ -411,6 +414,7 @@ export function RolesPage() {
       setEditingRole(null);
       setViewingRole(null);
       await loadRoles();
+      showSuccess(wasEditing ? "Đã lưu thay đổi vai trò." : "Đã thêm vai trò mới.");
     } finally {
       setSubmitting(false);
     }
@@ -424,6 +428,7 @@ export function RolesPage() {
     try {
       await setRoleActive(role.id, !role.is_active);
       await loadRoles();
+      showSuccess(`Đã ${role.is_active ? "tắt" : "bật"} vai trò.`);
     } catch (requestError) {
       setErrorNotice({
         message: getErrorMessage(requestError, "Đổi trạng thái vai trò thất bại."),
@@ -447,6 +452,7 @@ export function RolesPage() {
       setEditingRole(null);
       setViewingRole(null);
       await loadRoles();
+      showSuccess("Đã xóa vai trò.");
     } catch (requestError) {
       setErrorNotice({
         message: getErrorMessage(requestError, "Xóa vai trò thất bại."),

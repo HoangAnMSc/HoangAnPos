@@ -10,6 +10,7 @@ import { PageContainer, PageToolbar, SearchInput } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { formatCurrency, formatDateTime } from "../lib/format";
 import { getErrorMessage } from "../lib/errors";
 import { formatProductDate } from "../lib/productDisplay";
@@ -62,6 +63,7 @@ function formatOrderTime(value: string) {
 
 export function OrdersPage() {
   const { canAccess } = useAuth();
+  const { showSuccess } = useActionNotice();
   const location = useLocation();
   const navigate = useNavigate();
   const [activeList, setActiveList] = useState<"paid" | "cancelled">("paid");
@@ -225,6 +227,7 @@ export function OrdersPage() {
       setOrders((current) => current.filter((order) => !selectedOrderIds.has(order.id)));
       if (selectedOrder && selectedOrderIds.has(selectedOrder.id)) setSelectedOrder(null);
       setSelectedOrderIds(new Set());
+      showSuccess(`Đã xóa ${selected.length} hóa đơn.`);
     } catch (requestError) {
       setErrorNotice({ message: getErrorMessage(requestError, "Không xóa được hóa đơn."), title: "Xóa hóa đơn thất bại" });
     } finally {
@@ -260,6 +263,7 @@ export function OrdersPage() {
       setSelectedOrder(null);
       setActiveList("cancelled");
       await loadOrders();
+      showSuccess("Đã hủy hóa đơn và hoàn lại tồn kho.");
     } catch (requestError) {
       setErrorNotice({
         message: getErrorMessage(requestError, "Không hủy được hóa đơn."),

@@ -9,6 +9,7 @@ import { Textarea } from "../components/ui/Textarea";
 import { fetchProducts } from "../features/products/services/productEngine";
 import type { Product, ProductVariant } from "../features/products/types";
 import { getVariantLabel } from "../features/products/utils/variants";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { issueVariantStock, receiveVariantStock } from "../services/stockMovements";
 
@@ -20,6 +21,7 @@ function variantLabel(product: Product, variant: ProductVariant) {
 }
 
 export function StockMovementPage({ type }: Props) {
+  const { showSuccess } = useActionNotice();
   const inbound = type === "in";
   const [products, setProducts] = useState<Product[]>([]);
   const [variantId, setVariantId] = useState("");
@@ -30,7 +32,6 @@ export function StockMovementPage({ type }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,7 +59,6 @@ export function StockMovementPage({ type }: Props) {
     event.preventDefault();
     const amount = Number(quantity);
     setError("");
-    setSuccess("");
     if (!selected || !Number.isInteger(amount) || amount <= 0) {
       setError("Chọn SKU và nhập số lượng nguyên lớn hơn 0.");
       return;
@@ -87,7 +87,7 @@ export function StockMovementPage({ type }: Props) {
       setReason("");
       setImportDate("");
       setExpiryDate("");
-      setSuccess(inbound ? "Đã nhập kho cho SKU." : "Đã xuất kho cho SKU.");
+      showSuccess(inbound ? "Đã nhập kho cho SKU." : "Đã xuất kho cho SKU.");
       await load();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Không cập nhật được tồn kho.");
@@ -158,7 +158,6 @@ export function StockMovementPage({ type }: Props) {
         )}
 
         {error ? <p className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700 sm:col-span-2">{error}</p> : null}
-        {success ? <p className="rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-700 sm:col-span-2">{success}</p> : null}
         <div className="sm:col-span-2 sm:flex sm:justify-end">
           <Button className="w-full sm:w-auto" isLoading={saving} type="submit"><Icon className="h-4 w-4" />Xác nhận {actionLabel.toLowerCase()}</Button>
         </div>

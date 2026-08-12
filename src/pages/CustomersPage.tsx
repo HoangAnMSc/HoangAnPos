@@ -20,6 +20,7 @@ import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../lib/errors";
 import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { normalizeNullableText } from "../lib/text";
@@ -168,6 +169,7 @@ function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
 }
 
 export function CustomersPage() {
+  const { showSuccess } = useActionNotice();
   const { canAccess } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -229,6 +231,7 @@ export function CustomersPage() {
     setSubmitting(true);
 
     try {
+      const wasEditing = Boolean(editingCustomer);
       if (editingCustomer) {
         await updateCustomer(editingCustomer.id, input);
       } else {
@@ -239,6 +242,7 @@ export function CustomersPage() {
       setEditingCustomer(null);
       setViewingCustomer(null);
       await loadCustomers();
+      showSuccess(wasEditing ? "Đã lưu thay đổi khách hàng." : "Đã thêm khách hàng mới.");
     } catch (requestError) {
       throw new Error(getErrorMessage(requestError, "Lưu khách hàng thất bại."));
     } finally {
@@ -262,6 +266,7 @@ export function CustomersPage() {
       setModalOpen(false);
       setEditingCustomer(null);
       setViewingCustomer(null);
+      showSuccess("Đã xóa khách hàng.");
     } catch (requestError) {
       setErrorNotice({
         message: getErrorMessage(requestError, "Xóa khách hàng thất bại."),

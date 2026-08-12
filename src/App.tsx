@@ -4,6 +4,7 @@ import { AdminLayout } from "./components/layout/AdminLayout";
 import { ProtectedRoute } from "./components/routing/ProtectedRoute";
 import { Spinner } from "./components/ui/Spinner";
 import { useAuth } from "./contexts/AuthContext";
+import { ActionNoticeProvider } from "./components/ui/ActionNoticeProvider";
 import { appPermissions } from "./lib/permissions";
 
 const AttendancePage = lazy(() =>
@@ -85,14 +86,15 @@ function DefaultAdminRedirect() {
 
 export function App() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-[#f7f8f5]">
-          <Spinner label="Đang mở trang..." />
-        </div>
-      }
-    >
-      <Routes>
+    <ActionNoticeProvider>
+      <Suspense
+        fallback={
+          <div className="flex min-h-screen items-center justify-center bg-[#f7f8f5]">
+            <Spinner label="Đang mở trang..." />
+          </div>
+        }
+      >
+        <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/unauthorized" element={<UnauthorizedPage />} />
         <Route element={<ProtectedRoute requireAdmin />}>
@@ -124,7 +126,8 @@ export function App() {
           </Route>
         </Route>
         <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </ActionNoticeProvider>
   );
 }

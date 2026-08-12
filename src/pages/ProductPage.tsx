@@ -27,6 +27,7 @@ import { Select } from "../components/ui/Select";
 import { Textarea } from "../components/ui/Textarea";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { VariantBuilder } from "../features/products/components/VariantBuilder";
 import { SkuMatrix } from "../features/products/components/SkuMatrix";
@@ -256,6 +257,7 @@ const emptyInput = (ean13: string | null = null): ProductEditorInput => ({
 });
 
 export function ProductPage() {
+  const { showSuccess } = useActionNotice();
   const { canAccess } = useAuth();
   const canCreateProduct = canAccess("products.create");
   const canUpdateProduct = canAccess("products.update");
@@ -470,9 +472,13 @@ export function ProductPage() {
       const payload =
         uniqueSlug === form.slug ? form : { ...form, slug: uniqueSlug };
       if (uniqueSlug !== form.slug) setForm(payload);
+      const wasEditing = Boolean(form.id);
       await saveProduct(payload);
       setOpen(false);
       await load();
+      showSuccess(
+        wasEditing ? "Đã lưu thay đổi của sản phẩm." : "Đã thêm sản phẩm mới.",
+      );
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Không lưu được sản phẩm.",
@@ -493,6 +499,7 @@ export function ProductPage() {
       await archiveProduct(form.id);
       setOpen(false);
       await load();
+      showSuccess("Đã xóa sản phẩm.");
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Không xóa được sản phẩm.",
@@ -915,9 +922,10 @@ export function ProductPage() {
                         <Button
                           onClick={async () => {
                             if (window.confirm(`Ẩn ${product.name}?`)) {
-                              await archiveProduct(product.id);
-                              await load();
-                            }
+                               await archiveProduct(product.id);
+                               await load();
+                               showSuccess("Đã ẩn sản phẩm.");
+                             }
                           }}
                           variant="danger"
                         >
@@ -929,7 +937,7 @@ export function ProductPage() {
                 })}
               </div>
               {!filtered.length ? (
-                <EmptyState label="Không tìm thấy sản phẩm phù hợp." />
+                <ProductListEmptyState label="Không tìm thấy sản phẩm phù hợp." />
               ) : null}
             </>
           )}
@@ -1581,6 +1589,7 @@ function CardAppearanceEditor({
   products: Product[];
   settings: ProductSettings;
 }) {
+  const { showSuccess } = useActionNotice();
   const [target, setTarget] = useState<"card" | "posCard">("card");
   const [savingCard, setSavingCard] = useState(false);
   const [message, setMessage] = useState("");
@@ -1608,7 +1617,7 @@ function CardAppearanceEditor({
     setMessage("");
     try {
       onChange(await saveProductSettings(settings));
-      setMessage("Đã lưu giao diện card.");
+      showSuccess("Đã lưu giao diện card.");
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Không lưu được giao diện card.");
     } finally {
@@ -1755,7 +1764,7 @@ function CompactSwitch({
   );
 }
 
-function EmptyState({ label }: { label: string }) {
+function ProductListEmptyState({ label }: { label: string }) {
   return (
     <Card className="grid min-h-48 place-items-center text-center">
       <div>
@@ -1974,65 +1983,52 @@ function AttributePickerPopup({
         .includes(query.toLowerCase()),
   );
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/55 p-0 sm:items-center sm:p-4">
-      <button
-        aria-label="Đóng"
-        className="absolute inset-0"
-        onClick={onClose}
-        type="button"
-      />
-      <div className="relative flex max-h-[78dvh] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-lg sm:rounded-3xl">
-        <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
-        <header className="flex items-center justify-between border-b border-slate-100 px-4 py-4 sm:px-6">
-          <div>
-            <h3 className="font-black text-slate-950">{title}</h3>
-            <p className="text-xs text-slate-500">Chọn một mục để thêm</p>
-          </div>
-          <button
-            className="grid h-10 w-10 place-items-center rounded-full hover:bg-slate-100"
-            onClick={onClose}
-            type="button"
-          >
-            <span className="text-xl">×</span>
-          </button>
-        </header>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
-          <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              autoFocus
-              className="min-h-11 w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-moss-500 focus:ring-2 focus:ring-moss-100"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm tên hoặc mã thuộc tính..."
-              value={query}
-            />
-          </label>
-          <div className="space-y-2">
-            {available.map((attribute) => (
-              <button
-                className="flex min-h-14 w-full items-center justify-between rounded-xl border border-slate-200 px-4 text-left transition hover:border-moss-400 hover:bg-moss-50"
-                key={attribute.id}
-                onClick={() => onSelect(attribute.id)}
-                type="button"
-              >
-                <span>
-                  <strong className="block text-sm">{attribute.name}</strong>
-                  <span className="text-xs text-slate-500">
-                    {attribute.code} · {attribute.data_type}
-                  </span>
+    <Modal
+      onClose={onClose}
+      open={open}
+      size="sm"
+      title={title}
+      zIndex={120}
+    >
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-slate-500">
+          Chọn một mục để thêm
+        </p>
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            autoFocus
+            className="min-h-11 w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-moss-500 focus:ring-2 focus:ring-moss-100"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Tìm tên hoặc mã thuộc tính..."
+            value={query}
+          />
+        </label>
+        <div className="space-y-2">
+          {available.map((attribute) => (
+            <button
+              className="flex min-h-14 w-full items-center justify-between rounded-xl border border-slate-200 px-4 text-left transition hover:border-moss-400 hover:bg-moss-50"
+              key={attribute.id}
+              onClick={() => onSelect(attribute.id)}
+              type="button"
+            >
+              <span>
+                <strong className="block text-sm">{attribute.name}</strong>
+                <span className="text-xs text-slate-500">
+                  {attribute.code} · {attribute.data_type}
                 </span>
-                <Plus className="h-4 w-4 text-moss-700" />
-              </button>
-            ))}
-            {!available.length ? (
-              <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
-                Không còn thuộc tính phù hợp để thêm.
-              </div>
-            ) : null}
-          </div>
+              </span>
+              <Plus className="h-4 w-4 text-moss-700" />
+            </button>
+          ))}
+          {!available.length ? (
+            <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+              Không còn thuộc tính phù hợp để thêm.
+            </div>
+          ) : null}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -2057,6 +2053,7 @@ function DefinitionManager({
   onSaved: () => Promise<void>;
   records: ProductType[] | ProductAttribute[];
 }) {
+  const { showSuccess } = useActionNotice();
   const [openEditor, setOpenEditor] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -2102,6 +2099,7 @@ function DefinitionManager({
     setSavingDefinition(true);
     setLocalError("");
     try {
+      const wasEditing = Boolean(editingId);
       if (kind === "type") {
         const savedType = await saveProductType({
           id: editingId ?? undefined,
@@ -2132,6 +2130,9 @@ function DefinitionManager({
         });
       setOpenEditor(false);
       await onSaved();
+      showSuccess(
+        `${wasEditing ? "Đã lưu thay đổi" : "Đã thêm"} ${kind === "type" ? "danh mục sản phẩm" : "thuộc tính sản phẩm"}.`,
+      );
     } catch (reason) {
       setLocalError(
         reason instanceof Error ? reason.message : "Không thể lưu dữ liệu.",
@@ -2155,6 +2156,9 @@ function DefinitionManager({
       else await deleteAttribute(record.id);
       setOpenEditor(false);
       await onSaved();
+      showSuccess(
+        `Đã xóa ${kind === "type" ? "danh mục sản phẩm" : "thuộc tính sản phẩm"}.`,
+      );
     } catch (reason) {
       setLocalError(
         reason instanceof Error ? reason.message : `Không thể xóa ${label}.`,

@@ -9,6 +9,7 @@ import { Modal } from "../components/ui/Modal";
 import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../lib/errors";
 import {
   deleteCloudinaryProductImage,
@@ -97,6 +98,7 @@ function createImageLibraryItems(
 
 export function CloudinaryImagesPage() {
   const { canAccess } = useAuth();
+  const { showSuccess } = useActionNotice();
   const [deletingUrls, setDeletingUrls] = useState<string[]>([]);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [images, setImages] = useState<ImageLibraryItem[]>([]);
@@ -203,6 +205,7 @@ export function CloudinaryImagesPage() {
       const imageUploads = await Promise.all(files.map(uploadProductImageAsset));
       await Promise.all(imageUploads.map(saveCloudinaryImageAsset));
       await loadImages();
+      showSuccess(`Đã thêm ${files.length} ảnh vào thư viện Cloudinary.`);
     } catch (requestError) {
       setErrorNotice({
         message: getErrorMessage(requestError, "Tải ảnh lên Cloudinary thất bại."),
@@ -244,6 +247,7 @@ export function CloudinaryImagesPage() {
       });
       setPreviewImage((current) => (current && urls.includes(current.url) ? null : current));
       await loadImages();
+      showSuccess(`Đã xóa ${items.length} ảnh khỏi thư viện Cloudinary.`);
     } catch (requestError) {
       setErrorNotice({
         detail:

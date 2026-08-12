@@ -40,6 +40,7 @@ import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
 import { uploadPaymentProof } from "../lib/cloudinary";
 import {
@@ -456,6 +457,7 @@ function QuickCustomerForm({
 
 export function PosPage() {
   const { canAccess, user } = useAuth();
+  const { showSuccess } = useActionNotice();
   const productSearchRef = useRef<HTMLInputElement>(null);
   const mobileProductSearchRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLInputElement>(null);
@@ -1318,6 +1320,7 @@ export function PosPage() {
       setCustomers((current) => [customer, ...current]);
       selectCustomer(customer);
       setCustomerModalOpen(false);
+      showSuccess("Đã thêm khách hàng mới và chọn cho đơn hàng.");
     } catch (requestError) {
       showErrorNotice(
         requestError instanceof Error

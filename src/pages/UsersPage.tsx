@@ -9,6 +9,7 @@ import { Modal } from "../components/ui/Modal";
 import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../lib/errors";
 import { formatDateTime } from "../lib/format";
 import { formatPhoneNumber, normalizePhoneNumber } from "../lib/phone";
@@ -257,6 +258,7 @@ function UserEditorModal({
 }
 
 export function UsersPage() {
+  const { showSuccess } = useActionNotice();
   const { canAccess } = useAuth();
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
@@ -335,6 +337,7 @@ export function UsersPage() {
     setSubmitting(true);
 
     try {
+      const wasEditing = Boolean(editingUser);
       if (editingUser) {
         await updateManagedUser(editingUser.id, input);
       } else {
@@ -345,6 +348,7 @@ export function UsersPage() {
       setEditingUser(null);
       setViewingUser(null);
       await loadData();
+      showSuccess(wasEditing ? "Đã lưu thay đổi nhân viên." : "Đã thêm nhân viên mới.");
     } finally {
       setSubmitting(false);
     }
@@ -367,6 +371,7 @@ export function UsersPage() {
       setEditingUser(null);
       setViewingUser(null);
       await loadData();
+      showSuccess(`Đã ${user.is_active ? "tắt" : "bật"} tài khoản nhân viên.`);
     } catch (requestError) {
       setErrorNotice({
         message: getErrorMessage(requestError, "Đổi trạng thái nhân viên thất bại."),
@@ -390,6 +395,7 @@ export function UsersPage() {
       setEditingUser(null);
       setViewingUser(null);
       await loadData();
+      showSuccess("Đã xóa nhân viên.");
     } catch (requestError) {
       setErrorNotice({
         message: getErrorMessage(requestError, "Xóa nhân viên thất bại."),

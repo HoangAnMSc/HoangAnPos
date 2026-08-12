@@ -10,6 +10,7 @@ import { Modal } from "../components/ui/Modal";
 import { PageContainer, PageToolbar } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../lib/errors";
 import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { supabase } from "../lib/supabase";
@@ -61,6 +62,7 @@ function FundCard({ description, icon: Icon, label, tone, value }: FundCardProps
 
 export function CashManagementPage({ embedded = false, onCashBalanceChange }: { embedded?: boolean; onCashBalanceChange?: (value: number) => void }) {
   const { canAccess } = useAuth();
+  const { showSuccess } = useActionNotice();
   const [searchParams, setSearchParams] = useSearchParams();
   const [sessions, setSessions] = useState<CashDrawerSession[]>([]);
   const [handover, setHandover] = useState<CashDrawerHandover | null>(null);
@@ -155,6 +157,7 @@ export function CashManagementPage({ embedded = false, onCashBalanceChange }: { 
       await adjustCashDrawerBalance(cash);
       await loadData(true);
       closeAdjust();
+      showSuccess("Đã lưu số tiền quỹ.");
     } catch (error) {
       setErrorNotice({ title: "Không điều chỉnh được quỹ", message: getErrorMessage(error, "Không thể lưu số tiền quỹ.") });
     } finally {

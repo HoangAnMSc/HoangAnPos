@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Barcode, Boxes, CheckCircle2, ClipboardCheck, Edit3, Trash2 } from "lucide-react";
+import { Barcode, Boxes, ClipboardCheck, Edit3, Trash2 } from "lucide-react";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -11,6 +11,7 @@ import { Modal } from "../components/ui/Modal";
 import { PageContainer, SearchInput, StateNotice } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
 import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import {
@@ -97,6 +98,7 @@ function QuantityModal({
 }
 
 export function InventoryPage() {
+  const { showSuccess } = useActionNotice();
   const { canAccess, profile, user } = useAuth();
   const [counts, setCounts] = useState<InventoryCountMap>({});
   const [countingProduct, setCountingProduct] = useState<InventoryCountProduct | null>(null);
@@ -109,7 +111,6 @@ export function InventoryPage() {
   const [quantityError, setQuantityError] = useState("");
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState("");
   const { clearErrorNotice, errorNotice, showErrorNotice } = useErrorNotice(setError);
   const canCountInventory = canAccess("inventory.count");
   const canSubmitInventory = canAccess("inventory.submit");
@@ -170,7 +171,6 @@ export function InventoryPage() {
     setCountingProduct(product);
     setQuantityDraft(counts[product.id] ?? "");
     setQuantityError("");
-    setSuccess("");
   }
 
   function closeQuantityModal() {
@@ -191,7 +191,7 @@ export function InventoryPage() {
     }
 
     setCounts((current) => ({ ...current, [countingProduct.id]: String(parsed) }));
-    setSuccess(`Đã ghi nhận ${countingProduct.name}.`);
+    showSuccess(`Đã ghi nhận số lượng thực tế của ${countingProduct.name}.`);
     setQuery("");
     closeQuantityModal();
   }
@@ -202,7 +202,6 @@ export function InventoryPage() {
       delete next[productId];
       return next;
     });
-    setSuccess("");
   }
 
   function handleEan13Detected(value: string) {
@@ -243,7 +242,7 @@ export function InventoryPage() {
       );
       setCounts({});
       setSubmitConfirmOpen(false);
-      setSuccess("Đã hoàn tất phiên kiểm kê và gửi kết quả sang trang Kho.");
+      showSuccess("Đã hoàn tất phiên kiểm kê và gửi kết quả sang trang Kho.");
     } catch (requestError) {
       showErrorNotice(
         requestError instanceof Error
@@ -289,7 +288,6 @@ export function InventoryPage() {
       </Card>
 
       {error ? <StateNotice message={error} tone="error" /> : null}
-      {success ? <StateNotice icon={CheckCircle2} message={success} tone="success" /> : null}
 
       <div className="grid gap-3 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
         <Card className="min-w-0 border border-sky-100 p-3 shadow-[0_10px_28px_rgba(14,165,233,0.07)] sm:p-4">

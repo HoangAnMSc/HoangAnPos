@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { clsx } from "clsx";
@@ -25,6 +25,27 @@ const sizeClassNames: Record<ModalSize, string> = {
   wide: "sm:max-w-6xl",
 };
 
+const openModalIds: symbol[] = [];
+let originalBodyOverflow = "";
+let nextModalLayer = 0;
+
+function registerOpenModal(id: symbol) {
+  openModalIds.push(id);
+  if (openModalIds.length === 1) {
+    originalBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+  }
+
+  return () => {
+    const index = openModalIds.lastIndexOf(id);
+    if (index >= 0) openModalIds.splice(index, 1);
+    if (openModalIds.length === 0) {
+      document.body.style.overflow = originalBodyOverflow;
+      nextModalLayer = 0;
+    }
+  };
+}
+
 export function Modal({
   bodyClassName,
   children,
@@ -36,26 +57,40 @@ export function Modal({
   title,
   zIndex = 100,
 }: ModalProps) {
+  const modalId = useRef(Symbol("modal"));
+  const layer = useRef<number | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  if (open && layer.current === null) {
+    nextModalLayer += 1;
+    layer.current = nextModalLayer;
+  } else if (!open) {
+    layer.current = null;
+  }
+
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unregister = registerOpenModal(modalId.current);
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
+      if (
+        event.key === "Escape" &&
+        openModalIds[openModalIds.length - 1] === modalId.current
+      ) {
+        onCloseRef.current();
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      unregister();
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open) {
     return null;
@@ -66,7 +101,7 @@ export function Modal({
       aria-modal="true"
       className="fixed left-0 top-0 m-0 flex h-dvh w-screen items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
-      style={{ zIndex }}
+      style={{ zIndex: zIndex + (layer.current ?? 0) }}
     >
       <div
         className={clsx(

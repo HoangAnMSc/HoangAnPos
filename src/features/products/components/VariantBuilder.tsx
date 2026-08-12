@@ -294,6 +294,7 @@ export function VariantBuilder({
         onClose={() => setOpen(false)}
         open={open}
         title="Thêm chiều biến thể"
+        zIndex={110}
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <Input

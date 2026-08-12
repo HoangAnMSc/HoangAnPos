@@ -28,6 +28,7 @@ import { Modal } from "../components/ui/Modal";
 import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import {
   downloadAttendanceExcel,
   downloadAttendanceImages,
@@ -644,6 +645,7 @@ async function getCurrentAttendanceLocation(): Promise<AttendanceLocationInput> 
 
 export function AttendancePage() {
   const { canAccess, profile, requiresCashReconciliation, user } = useAuth();
+  const { showSuccess } = useActionNotice();
   const [activeTab, setActiveTab] = useState<AttendanceTab>("clock");
   const [allHistoryEmployees, setAllHistoryEmployees] = useState<
     AttendanceEmployee[]
@@ -710,6 +712,9 @@ export function AttendancePage() {
   const [openRecord, setOpenRecord] = useState<AttendanceRecord | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState("");
+  useEffect(() => {
+    if (success) showSuccess(success);
+  }, [showSuccess, success]);
   const canOpenAttendancePage = canAccess("attendance");
   const canClock = canAccess("attendance.clock");
   const canViewHistory = canAccess("attendance.history.view");
@@ -1465,12 +1470,6 @@ export function AttendancePage() {
       {error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
           {error}
-        </div>
-      ) : null}
-
-      {success ? (
-        <div className="rounded-2xl border border-moss-200 bg-moss-50 px-5 py-4 text-sm font-bold text-moss-700">
-          {success}
         </div>
       ) : null}
 

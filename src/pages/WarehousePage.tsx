@@ -18,6 +18,7 @@ import { PageContainer, SearchInput, StateNotice } from "../components/ui/Page";
 import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
 import {
   getInventoryDifferenceStatus,
@@ -55,6 +56,7 @@ function getDifferenceTone(difference: number): "amber" | "green" | "red" {
 
 export function WarehousePage() {
   const { canAccess } = useAuth();
+  const { showSuccess } = useActionNotice();
   const [audits, setAudits] = useState<InventoryAuditSession[]>([]);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -188,6 +190,7 @@ export function WarehousePage() {
       setAudits(nextAudits);
       setSelectedAuditId(nextAudits[0]?.id ?? "");
       setDeleteConfirmOpen(false);
+      showSuccess("Đã xóa phiên kiểm kê.");
     } catch (requestError) {
       showErrorNotice(
         requestError instanceof Error

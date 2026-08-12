@@ -9,6 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import { useActionNotice } from "../../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../../lib/errors";
 import { formatCurrency, formatDateTime } from "../../lib/format";
 import { formatIntegerInput, normalizeIntegerInput } from "../../lib/format";
@@ -112,6 +113,7 @@ function MoneyItem({ label, value }: { label: string; value: number | null }) {
 
 export function CashManagementHistoryModal({ onClose, open }: CashManagementHistoryModalProps) {
   const { canAccess } = useAuth();
+  const { showSuccess } = useActionNotice();
   const [checks, setChecks] = useState<CashDrawerCheck[]>([]);
   const [sessions, setSessions] = useState<CashDrawerSession[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -162,6 +164,7 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
       );
       setEditingCheck(null);
       await loadHistory();
+      showSuccess("Đã lưu thay đổi bản ghi đối soát.");
     } catch (requestError) {
       setEditError(getErrorMessage(requestError, "Không sửa được bản ghi đối soát."));
     } finally {
@@ -176,6 +179,7 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
       await deleteCashReconciliation(check.id);
       setExpandedId(null);
       await loadHistory();
+      showSuccess("Đã xóa bản ghi đối soát.");
     } catch (requestError) {
       setError(getErrorMessage(requestError, "Không xóa được bản ghi đối soát."));
     }

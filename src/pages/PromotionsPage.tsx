@@ -1,6 +1,7 @@
 import { CalendarDays, ChevronRight, Plus, Search, TicketPercent, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
@@ -30,6 +31,7 @@ const discountLabel = (item: Pick<Promotion, "discount_type" | "discount_value">
 
 export function PromotionsPage() {
   const { canAccess } = useAuth();
+  const { showSuccess } = useActionNotice();
   const canCreatePromotion = canAccess("promotions.create");
   const canUpdatePromotion = canAccess("promotions.update");
   const canDeletePromotion = canAccess("promotions.delete");
@@ -91,9 +93,11 @@ export function PromotionsPage() {
     if (draft.scopes.some((scope) => scope.scope_type !== "all" && !scope.scope_id)) return setError("Vui lòng chọn đầy đủ phạm vi áp dụng.");
     setSaving(true);
     try {
+      const wasEditing = Boolean(draft.id);
       await savePromotion({ ...draft, code: draft.trigger_type === "coupon" ? draft.code!.trim().toUpperCase() : null });
       setOpen(false);
       await load();
+      showSuccess(wasEditing ? "Đã lưu thay đổi chương trình khuyến mãi." : "Đã thêm chương trình khuyến mãi.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Không lưu được chương trình.");
     } finally { setSaving(false); }
@@ -108,6 +112,7 @@ export function PromotionsPage() {
       setDeleteConfirmOpen(false);
       setOpen(false);
       await load();
+      showSuccess("Đã xóa chương trình khuyến mãi.");
     } catch (reason) {
       setDeleteConfirmOpen(false);
       setError(reason instanceof Error ? reason.message : "Không xóa được chương trình.");

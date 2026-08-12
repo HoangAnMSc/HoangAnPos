@@ -4,10 +4,11 @@ import { MediaPickerModal } from "../components/media/MediaPickerModal";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
-import { PageContainer, StateNotice } from "../components/ui/Page";
+import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
+import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { fetchCloudinaryImageResources, uploadPaymentQr } from "../lib/cloudinary";
 import { getErrorMessage } from "../lib/errors";
 import { normalizeNullableText } from "../lib/text";
@@ -15,6 +16,7 @@ import { fetchPaymentSettings, savePaymentSettings } from "../services/paymentSe
 
 export function PaymentSettingsPage() {
   const { canAccess } = useAuth();
+  const { showSuccess } = useActionNotice();
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
   const [libraryImages, setLibraryImages] = useState<string[]>([]);
@@ -24,7 +26,6 @@ export function PaymentSettingsPage() {
   const [qrPreview, setQrPreview] = useState("");
   const [qrUrl, setQrUrl] = useState("");
   const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState("");
   const canUpdateSettings = canAccess("payment-settings.update");
 
   const loadSettings = useCallback(async () => {
@@ -98,8 +99,6 @@ export function PaymentSettingsPage() {
     }
 
     setSaving(true);
-    setSuccess("");
-
     try {
       const nextQrUrl = qrFile ? await uploadPaymentQr(qrFile) : normalizeNullableText(qrUrl);
       const settings = await savePaymentSettings({
@@ -111,7 +110,7 @@ export function PaymentSettingsPage() {
       setQrUrl(settings.transfer_qr_url ?? "");
       setQrPreview(settings.transfer_qr_url ?? "");
       setNote(settings.transfer_note ?? "");
-      setSuccess("Đã lưu cấu hình thanh toán.");
+      showSuccess("Đã lưu cấu hình thanh toán.");
     } catch (requestError) {
       setErrorNotice({
         message:
@@ -126,10 +125,6 @@ export function PaymentSettingsPage() {
   return (
     <PageContainer maxWidth="5xl">
         <ConfigNotice />
-
-        {success ? (
-          <StateNotice message={success} tone="success" />
-        ) : null}
 
         {loading ? (
           <div className="rounded-3xl bg-white p-8 shadow-soft">

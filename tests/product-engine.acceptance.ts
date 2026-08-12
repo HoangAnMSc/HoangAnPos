@@ -123,21 +123,7 @@ assert.equal(
 );
 
 const sql = readFileSync(
-  new URL("../supabase/20260811_ecommerce_engine.sql", import.meta.url),
-  "utf8",
-);
-const starterSql = readFileSync(
-  new URL(
-    "../supabase/20260811_ecommerce_starter_catalog.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const variantLinkFixSql = readFileSync(
-  new URL(
-    "../supabase/20260811_fix_variant_value_link_cascades.sql",
-    import.meta.url,
-  ),
+  new URL("../supabase/schema.sql", import.meta.url),
   "utf8",
 );
 for (const table of [
@@ -160,7 +146,11 @@ for (const table of [
 }
 assert.match(sql, /for update/i, "stock checkout must lock rows");
 assert.match(sql, /evaluate_promotions/i, "promotion engine must be installed");
-assert.match(sql, /barcode text unique/i, "EAN-13 must be unique per SKU");
+assert.match(
+  sql,
+  /product_variants_barcode_key[\s\S]*unique\s*\(barcode\)/i,
+  "EAN-13 must be unique per SKU",
+);
 for (const typeCode of [
   "general",
   "clothing",
@@ -170,23 +160,23 @@ for (const typeCode of [
   "machine",
 ]) {
   assert.match(
-    starterSql,
+    sql,
     new RegExp(`'${typeCode}'`, "i"),
     `Starter catalog must include ${typeCode}`,
   );
 }
 assert.match(
-  starterSql,
+  sql,
   /on conflict/i,
-  "Starter catalog migration must be safe to rerun",
+  "Starter catalog seed must be safe to rerun",
 );
 assert.match(
-  variantLinkFixSql,
+  sql,
   /variant_value_links_variant_value_id_fkey[\s\S]*on delete cascade/i,
   "Removing a variant value must cascade its junction links",
 );
 assert.match(
-  variantLinkFixSql,
+  sql,
   /variant_value_links_variant_value_id_variant_attribute_id_fkey[\s\S]*on delete cascade/i,
   "Composite variant-value ownership FK must cascade",
 );
