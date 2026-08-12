@@ -69,6 +69,18 @@ function createAttendanceError(error: SupabaseErrorLike) {
     );
   }
 
+  if (/a manager must initialize the first drawer balance/i.test(message)) {
+    return new Error(
+      "Hệ thống két chưa được cập nhật. Quản lý cần chạy migration mở ca mới trước khi nhân viên xác nhận tiền két.",
+    );
+  }
+
+  if (/opening cash does not match the system balance and requires manager approval/i.test(message)) {
+    return new Error(
+      "Số tiền thực tế không khớp số dư hệ thống. Cần quản lý xác nhận chênh lệch và bổ sung ảnh đối soát.",
+    );
+  }
+
   if (
     error.code === "PGRST202" ||
     message.includes("Could not find the function") ||

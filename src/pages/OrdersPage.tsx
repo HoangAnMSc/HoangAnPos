@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image as ImageIcon, Printer, ReceiptText, Search, Trash2 } from "lucide-react";
+import { FileCheck2, Image as ImageIcon, Printer, ReceiptText, Search, Trash2 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
@@ -78,10 +78,12 @@ export function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Invoice | null>(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [selectedYear, setSelectedYear] = useState("");
-  const [transferImageQuery, setTransferImageQuery] = useState("");
+  const [transferHistoryQuery, setTransferHistoryQuery] = useState("");
   const canCancelOrder = canAccess("orders.cancel");
   const canDeleteOrders = canAccess("orders.delete");
-  const transferImagesOpen = new URLSearchParams(location.search).get("transfer-images") === "1";
+  const transferHistoryOpen =
+    new URLSearchParams(location.search).get("transfer-history") === "1" ||
+    new URLSearchParams(location.search).get("transfer-images") === "1";
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -155,32 +157,32 @@ export function OrdersPage() {
   }, [activeList, orders, query, selectedDay, selectedMonth, selectedYear]);
   const paidCount = orders.filter((order) => order.status === "paid").length;
   const cancelledCount = orders.filter((order) => order.status === "cancelled").length;
-  const transferProofOrders = useMemo(() => {
-    const normalizedQuery = transferImageQuery.trim().toLowerCase();
+  const transferHistoryOrders = useMemo(() => {
+    const normalizedQuery = transferHistoryQuery.trim().toLowerCase();
 
     return orders.filter((order) => {
       if (
-        order.status !== "paid" ||
         order.payment_method !== "transfer" ||
-        !order.payment_proof_url
+        (!order.payment_proof_url && !order.payment_proof_note?.trim())
       ) {
         return false;
       }
 
       return (
         !normalizedQuery ||
-        [order.code, order.customers?.name, order.customers?.phone]
+        [order.code, order.customers?.name, order.customers?.phone, order.payment_proof_note]
           .filter(Boolean)
           .some((value) => value!.toLowerCase().includes(normalizedQuery))
       );
     });
-  }, [orders, transferImageQuery]);
+  }, [orders, transferHistoryQuery]);
   const allFilteredSelected = filteredOrders.length > 0 && filteredOrders.every((order) => selectedOrderIds.has(order.id));
 
-  function closeTransferImages() {
+  function closeTransferHistory() {
     const nextParams = new URLSearchParams(location.search);
     nextParams.delete("transfer-images");
-    setTransferImageQuery("");
+    nextParams.delete("transfer-history");
+    setTransferHistoryQuery("");
     void navigate(
       nextParams.size > 0 ? `${location.pathname}?${nextParams.toString()}` : location.pathname,
       { replace: true }
@@ -415,8 +417,8 @@ export function OrdersPage() {
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-extrabold uppercase tracking-wide text-slate-500">
                   {canDeleteOrders ? <th className="w-12 px-3 py-3 text-center"><input aria-label="Chọn tất cả hóa đơn đang hiển thị" checked={allFilteredSelected} className="h-5 w-5 rounded border-slate-300 text-moss-700 focus:ring-moss-500" onChange={toggleAllFiltered} type="checkbox" /></th> : null}
-                  <th className="w-[40%] px-3 py-3 sm:px-5">Tên khách hàng</th>
-                  <th className="px-3 py-3 sm:px-5">Thời gian</th>
+                  <th className="w-[38%] px-2 py-3 sm:w-[40%] sm:px-5">Tên khách hàng</th>
+                  <th className="px-2 py-3 sm:px-5">Thời gian</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -438,14 +440,14 @@ export function OrdersPage() {
                         />
                       </td>
                     ) : null}
-                    <td className="px-3 py-3 text-xs font-bold text-slate-800 sm:px-5 sm:text-sm">
+                    <td className="min-w-0 px-2 py-3 text-xs font-bold text-slate-800 sm:px-5 sm:text-sm">
                       <span className="block truncate">{order.customers?.name ?? "Khách lẻ"}</span>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-xs font-semibold text-slate-600 sm:px-5 sm:text-sm">
-                      <div className="flex items-center gap-2">
-                        <span>{formatOrderTime(order.created_at)}</span>
+                    <td className="min-w-0 px-2 py-3 text-[11px] font-semibold text-slate-600 sm:px-5 sm:text-sm">
+                      <div className="flex min-w-0 flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
+                        <span className="whitespace-nowrap">{formatOrderTime(order.created_at)}</span>
                         {order.status === "paid" && order.payment_method === "transfer" ? (
-                          <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-sky-100 px-2.5 text-[10px] font-black uppercase tracking-wide text-sky-800 ring-1 ring-sky-200">
+                          <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-sky-100 px-2 text-[9px] font-black uppercase tracking-wide text-sky-800 ring-1 ring-sky-200 sm:h-6 sm:px-2.5 sm:text-[10px]">
                             CK
                           </span>
                         ) : null}
@@ -462,52 +464,56 @@ export function OrdersPage() {
         bodyClassName="px-3 py-3 sm:px-6 sm:py-5"
         contentClassName="max-h-[calc(100dvh-1rem)] sm:max-h-[90dvh]"
         footer={
-          <Button onClick={closeTransferImages} type="button" variant="secondary">
+          <Button onClick={closeTransferHistory} type="button" variant="secondary">
             Đóng
           </Button>
         }
-        onClose={closeTransferImages}
-        open={transferImagesOpen}
+        onClose={closeTransferHistory}
+        open={transferHistoryOpen}
         size="wide"
-        title={`Ảnh chuyển khoản (${transferProofOrders.length})`}
+        title={`Lịch sử chuyển khoản (${transferHistoryOrders.length})`}
       >
         <div className="space-y-3">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
             <input
               className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm font-bold text-slate-900 outline-none transition focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
-              onChange={(event) => setTransferImageQuery(event.target.value)}
-              placeholder="Tìm mã hóa đơn, tên hoặc số điện thoại khách"
-              value={transferImageQuery}
+              onChange={(event) => setTransferHistoryQuery(event.target.value)}
+              placeholder="Tìm hóa đơn, khách hàng hoặc nội dung xác nhận"
+              value={transferHistoryQuery}
             />
           </label>
 
-          {transferProofOrders.length === 0 ? (
+          {loading ? (
+            <div className="grid min-h-60 place-items-center rounded-2xl bg-slate-50">
+              <Spinner label="Đang tải lịch sử chuyển khoản..." />
+            </div>
+          ) : transferHistoryOrders.length === 0 ? (
             <div className="flex min-h-60 flex-col items-center justify-center rounded-2xl bg-slate-50 px-5 text-center">
               <ImageIcon className="h-11 w-11 text-slate-400" />
-              <p className="mt-3 font-extrabold text-slate-800">Không có ảnh chuyển khoản phù hợp</p>
+              <p className="mt-3 font-extrabold text-slate-800">Chưa có giao dịch chuyển khoản phù hợp</p>
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                Chỉ hiển thị hóa đơn thành công bằng chuyển khoản có ảnh xác nhận.
+                Lịch sử sẽ lưu ảnh chuyển khoản hoặc nội dung xác nhận thủ công của từng hóa đơn.
               </p>
             </div>
           ) : (
             <div className="space-y-2">
-              {transferProofOrders.map((order) => (
+              {transferHistoryOrders.map((order) => (
                 <button
                   className="flex w-full min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2 text-left transition hover:border-moss-300 hover:bg-moss-50/40 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-moss-100 sm:gap-3"
                   key={order.id}
                   onClick={() => {
-                    closeTransferImages();
+                    closeTransferHistory();
                     setSelectedOrder(order);
                   }}
                   type="button"
                 >
-                  <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-slate-100 sm:h-20 sm:w-24">
-                    <img
-                      alt={`Ảnh chuyển khoản hóa đơn ${order.code}`}
-                      className="h-full w-full object-cover"
-                      src={order.payment_proof_url!}
-                    />
+                  <div className="relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-lg bg-sky-50 text-sky-700 sm:h-20 sm:w-24">
+                    {order.payment_proof_url ? <img
+                        alt={`Ảnh chuyển khoản hóa đơn ${order.code}`}
+                        className="h-full w-full object-cover"
+                        src={order.payment_proof_url}
+                      /> : <FileCheck2 className="h-7 w-7" />}
                     <span className="absolute right-1 top-1 rounded-full bg-sky-600 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-white shadow-sm">
                       CK
                     </span>
@@ -519,10 +525,18 @@ export function OrdersPage() {
                     <p className="mt-1 truncate text-[10px] font-semibold text-slate-500 sm:text-xs">
                       {order.customers?.name ?? "Khách lẻ"} · {formatOrderTime(order.created_at)}
                     </p>
+                    <p className="mt-1 line-clamp-2 text-[11px] font-bold text-sky-700 sm:text-xs">
+                      {order.payment_proof_note?.trim()
+                        ? `Xác nhận: ${order.payment_proof_note}`
+                        : "Đã lưu ảnh chuyển khoản"}
+                    </p>
                   </div>
-                  <p className="shrink-0 text-sm font-black tabular-nums text-moss-800 sm:text-base">
-                    {formatCurrency(order.total)}
-                  </p>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-black tabular-nums text-moss-800 sm:text-base">{formatCurrency(order.total)}</p>
+                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${order.status === "paid" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                      {order.status === "paid" ? "Thành công" : "Đã hủy"}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>

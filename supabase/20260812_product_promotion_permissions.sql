@@ -22,10 +22,30 @@ begin
     elsif tg_op = 'DELETE' and not public.has_permission('products.delete') then
       raise exception 'Permission denied for product delete';
     end if;
-  elsif tg_table_name in ('product_types', 'product_attributes', 'product_type_attributes', 'product_categories') then
-    if not public.has_permission('products.update') then
+  elsif tg_table_name in ('product_types', 'product_type_attributes', 'product_categories') then
+    if not (public.has_permission('products.update') or public.has_permission('products.types.manage')) then
       raise exception 'Permission denied for product configuration';
     end if;
+  elsif tg_table_name = 'product_attributes' then
+    if not (public.has_permission('products.update') or public.has_permission('products.attributes.manage')) then
+      raise exception 'Permission denied for product attributes';
+    end if;
+  elsif tg_table_name = 'product_variants'
+    and tg_op = 'UPDATE'
+    and (
+      public.has_permission('pos.checkout')
+      or public.has_permission('orders.cancel')
+      or public.has_permission('products.receive-stock')
+      or public.has_permission('warehouse.stock-out')
+      or public.has_permission('inventory.submit')
+    )
+    and (
+      to_jsonb(new) - array['stock_quantity', 'shelf_quantity', 'updated_at']
+      = to_jsonb(old) - array['stock_quantity', 'shelf_quantity', 'updated_at']
+    ) then
+    -- Inventory changes made by transactional POS/warehouse RPCs are not
+    -- product-content edits. Direct client updates remain protected by RLS.
+    return new;
   elsif tg_op = 'INSERT' then
     if not (public.has_permission('products.create') or public.has_permission('products.update')) then
       raise exception 'Permission denied for product data create';
@@ -59,19 +79,28 @@ begin
     execute format('drop policy if exists %I on public.%I', table_name || '_update', table_name);
     execute format('drop policy if exists %I on public.%I', table_name || '_delete', table_name);
     execute format(
-      'create policy %I on public.%I for insert to authenticated with check (public.has_permission(''products.create'') or public.has_permission(''products.update''))',
+      'create policy %I on public.%I for insert to authenticated with check (public.has_permission(''products.create'') or public.has_permission(''products.update'') or public.has_permission(''products.types.manage'') or public.has_permission(''products.attributes.manage''))',
       table_name || '_insert', table_name
     );
     execute format(
-      'create policy %I on public.%I for update to authenticated using (public.has_permission(''products.update'') or public.has_permission(''products.delete'')) with check (public.has_permission(''products.update'') or public.has_permission(''products.delete''))',
+      'create policy %I on public.%I for update to authenticated using (public.has_permission(''products.update'') or public.has_permission(''products.delete'') or public.has_permission(''products.types.manage'') or public.has_permission(''products.attributes.manage'')) with check (public.has_permission(''products.update'') or public.has_permission(''products.delete'') or public.has_permission(''products.types.manage'') or public.has_permission(''products.attributes.manage''))',
       table_name || '_update', table_name
     );
     execute format(
-      'create policy %I on public.%I for delete to authenticated using (public.has_permission(''products.update'') or public.has_permission(''products.delete''))',
+      'create policy %I on public.%I for delete to authenticated using (public.has_permission(''products.update'') or public.has_permission(''products.delete'') or public.has_permission(''products.types.manage'') or public.has_permission(''products.attributes.manage''))',
       table_name || '_delete', table_name
     );
   end loop;
 end $$;
+
+drop policy if exists product_settings_write on public.product_settings;
+drop policy if exists product_settings_update on public.product_settings;
+drop policy if exists product_settings_insert on public.product_settings;
+create policy product_settings_insert on public.product_settings for insert to authenticated
+with check (public.has_permission('products.card.update') or public.has_permission('products.update'));
+create policy product_settings_update on public.product_settings for update to authenticated
+using (public.has_permission('products.card.update') or public.has_permission('products.update'))
+with check (public.has_permission('products.card.update') or public.has_permission('products.update'));
 
 -- Product readers include POS, warehouse and Marketing scope configuration.
 do $$

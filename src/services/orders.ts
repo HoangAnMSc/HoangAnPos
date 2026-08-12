@@ -47,6 +47,7 @@ function toOrderError(error: unknown) {
     [/manager must initialize the first drawer balance/i, "Cần tài khoản quản lý xác nhận số tiền két đầu tiên."],
     [/opening cash does not match the previous handover balance/i, "Tiền két đã xác nhận không khớp số bàn giao của ca trước."],
     [/permission denied for order discount/i, "Tài khoản không có quyền áp dụng giảm giá."],
+    [/permission denied for product data update/i, "Phân quyền database đang chặn thao tác trừ tồn kho SKU. Hãy cập nhật migration POS mới."],
     [/order discounts are disabled/i, "Chức năng giảm giá đã được tắt."],
     [/customer is required to redeem rewards/i, "Cần chọn khách hàng để đổi quà."],
     [/insufficient customer points/i, "Khách hàng không đủ điểm để đổi quà."],

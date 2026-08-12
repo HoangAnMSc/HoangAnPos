@@ -260,6 +260,12 @@ export function ProductPage() {
   const canCreateProduct = canAccess("products.create");
   const canUpdateProduct = canAccess("products.update");
   const canDeleteProduct = canAccess("products.delete");
+  const canManageProductTypes =
+    canAccess("products.types.manage") || canUpdateProduct;
+  const canManageProductAttributes =
+    canAccess("products.attributes.manage") || canUpdateProduct;
+  const canUpdateProductCard =
+    canAccess("products.card.update") || canUpdateProduct;
   const [pageTab, setPageTab] = useState<PageTab>("products");
   const [editorTab, setEditorTab] = useState<EditorTab>("general");
   const [products, setProducts] = useState<Product[]>([]);
@@ -938,8 +944,8 @@ export function ProductPage() {
           onSectionChange={setPageTab}
           records={types}
           onSaved={load}
-          canDelete={canDeleteProduct}
-          canManage={canUpdateProduct}
+          canDelete={canManageProductTypes}
+          canManage={canManageProductTypes}
         />
       ) : null}
       {pageTab === "attributes" ? (
@@ -949,12 +955,12 @@ export function ProductPage() {
           onSectionChange={setPageTab}
           records={attributes}
           onSaved={load}
-          canDelete={canDeleteProduct}
-          canManage={canUpdateProduct}
+          canDelete={canManageProductAttributes}
+          canManage={canManageProductAttributes}
         />
       ) : null}
       {pageTab === "card" ? (
-        canUpdateProduct ? <CardAppearanceEditor
+        canUpdateProductCard ? <CardAppearanceEditor
             currentSection={pageTab}
             onChange={setProductSettings}
             onSectionChange={setPageTab}

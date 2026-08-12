@@ -50,11 +50,18 @@ values
       'products',
       'products.create',
       'products.update',
+      'products.types.manage',
+      'products.attributes.manage',
+      'products.card.update',
       'products.delete',
       'products.toggle-active',
       'products.receive-stock',
       'products.categories.create',
       'products.ean13.print',
+      'promotions',
+      'promotions.create',
+      'promotions.update',
+      'promotions.delete',
       'cloudinary-images',
       'cloudinary-images.upload',
       'cloudinary-images.delete',
@@ -1878,12 +1885,20 @@ begin
   expected_opening_cash_value := public.current_cash_drawer_balance();
 
   if is_first_session_value then
-    if not public.has_permission('cash-management.handover.override') then
-      raise exception 'A manager must initialize the first drawer balance';
-    end if;
+    -- The first cashier may initialize the drawer when the counted amount
+    -- matches the balance already calculated from paid cash orders. Manager
+    -- permission is only required to accept an opening variance.
+    opening_variance_value := opening_cash_input - expected_opening_cash_value;
 
-    expected_opening_cash_value := opening_cash_input;
-    opening_variance_value := 0;
+    if opening_variance_value <> 0 then
+      if not public.has_permission('cash-management.handover.override') then
+        raise exception 'Opening cash does not match the system balance and requires manager approval';
+      end if;
+
+      if cardinality(coalesce(evidence_urls_input, '{}')) not between 1 and 5 then
+        raise exception 'Between 1 and 5 evidence images are required when opening cash has a variance';
+      end if;
+    end if;
   else
     opening_variance_value := opening_cash_input - expected_opening_cash_value;
 
@@ -2836,12 +2851,21 @@ using (public.has_permission('products'));
 
 create policy "Product managers can save settings"
 on public.product_settings for insert
-with check (public.has_permission('products.update'));
+with check (
+  public.has_permission('products.update')
+  or public.has_permission('products.card.update')
+);
 
 create policy "Product managers can update settings"
 on public.product_settings for update
-using (public.has_permission('products.update'))
-with check (public.has_permission('products.update'));
+using (
+  public.has_permission('products.update')
+  or public.has_permission('products.card.update')
+)
+with check (
+  public.has_permission('products.update')
+  or public.has_permission('products.card.update')
+);
 
 create policy "Users can read own profile"
 on public.profiles for select

@@ -178,6 +178,21 @@ export const permissionGroups = [
         description: "Cập nhật thông tin, giá, tồn kho và ảnh sản phẩm.",
       },
       {
+        key: "products.types.manage",
+        label: "Quản lý danh mục sản phẩm",
+        description: "Thêm, sửa, xóa Product Type và cấu hình thuộc tính theo danh mục.",
+      },
+      {
+        key: "products.attributes.manage",
+        label: "Quản lý thuộc tính sản phẩm",
+        description: "Thêm, sửa hoặc xóa định nghĩa thuộc tính dùng chung.",
+      },
+      {
+        key: "products.card.update",
+        label: "Sửa giao diện card",
+        description: "Thay đổi thông tin và cách hiển thị card ở Sản phẩm/POS.",
+      },
+      {
         key: "products.delete",
         label: "Xóa sản phẩm",
         description: "Xóa hoặc ẩn sản phẩm khỏi danh sách.",
