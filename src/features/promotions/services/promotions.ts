@@ -1,4 +1,5 @@
 import type { Json } from "../../../types/database";
+import { requireSupabaseConfig } from "../../../lib/supabase";
 import { productEngineClient } from "../../products/services/client";
 import type { Promotion, PromotionEvaluation } from "../types";
 
@@ -7,6 +8,7 @@ function fail(error: { message: string } | null) {
 }
 
 export async function fetchPromotions(): Promise<Promotion[]> {
+  requireSupabaseConfig();
   const [promotions, conditions, scopes, redemptions] = await Promise.all([
     productEngineClient
       .from("promotions")
@@ -16,13 +18,21 @@ export async function fetchPromotions(): Promise<Promotion[]> {
     productEngineClient.from("promotion_scopes").select("*"),
     productEngineClient.from("promotion_redemptions").select("promotion_id"),
   ]);
-  [promotions, conditions, scopes, redemptions].forEach((result) =>
-    fail(result.error),
-  );
+  const resultNames = ["chương trình", "điều kiện", "phạm vi", "lượt sử dụng"];
+  [promotions, conditions, scopes, redemptions].forEach((result, index) => {
+    if (result.error) {
+      throw new Error(`Không tải được ${resultNames[index]} từ Supabase: ${result.error.message}`);
+    }
+  });
   return (
     (promotions.data ?? []) as Array<Omit<Promotion, "conditions" | "scopes">>
   ).map((promotion) => ({
     ...promotion,
+    discount_value: Number(promotion.discount_value) || 0,
+    max_discount_amount:
+      promotion.max_discount_amount == null
+        ? null
+        : Number(promotion.max_discount_amount),
     conditions: (conditions.data ?? []).filter(
       (item) => item.promotion_id === promotion.id,
     ) as Promotion["conditions"],
@@ -40,6 +50,7 @@ export async function savePromotion(
     id?: string;
   },
 ) {
+  requireSupabaseConfig();
   const { conditions, scopes, id: inputId, ...values } = input;
   const promotion = inputId ? { ...values, id: inputId } : values;
   const { data, error } = await productEngineClient
@@ -89,6 +100,28 @@ export async function savePromotion(
       ).error,
     );
   return id;
+}
+
+export async function deletePromotion(id: string) {
+  requireSupabaseConfig();
+  const redemptions = await productEngineClient
+    .from("promotion_redemptions")
+    .select("id", { count: "exact", head: true })
+    .eq("promotion_id", id);
+  fail(redemptions.error);
+  if ((redemptions.count ?? 0) > 0) {
+    throw new Error(
+      "Chương trình đã có lượt sử dụng nên không thể xóa. Hãy tạm dừng để giữ đúng lịch sử đơn hàng.",
+    );
+  }
+  const { data, error } = await productEngineClient
+    .from("promotions")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .single();
+  fail(error);
+  if (!data) throw new Error("Không tìm thấy chương trình hoặc bạn không có quyền xóa.");
 }
 
 export async function evaluatePromotions(

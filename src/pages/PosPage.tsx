@@ -14,7 +14,6 @@ import {
   DollarSign,
   FileText,
   ImagePlus,
-  Layers3,
   Loader2,
   Minus,
   PackageSearch,
@@ -31,7 +30,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
-import { ProductCardCodeRenderer } from "../components/products/ProductCard";
+import { ConfigurableProductCard } from "../components/products/ConfigurableProductCard";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { ErrorNoticeModal } from "../components/ui/ErrorNoticeModal";
@@ -57,7 +56,6 @@ import {
 } from "../lib/receipt";
 import {
   findProductByEan13,
-  formatProductDate,
   getProductEan13Value,
   isValidEan13,
   normalizeEan13Input,
@@ -86,7 +84,6 @@ import {
 import { fetchPaymentSettings } from "../services/paymentSettings";
 import { evaluatePromotions } from "../features/promotions/services/promotions";
 import {
-  fetchProductBatches,
   fetchProducts,
   getActiveProducts,
 } from "../services/products";
@@ -102,7 +99,6 @@ import type {
   Order,
   PaymentSettings,
   Product,
-  ProductBatch,
 } from "../types";
 
 type PosCartItem = CartItem & {
@@ -163,7 +159,7 @@ function createCartVariant(
 ): CartProductVariant | null {
   const resolved = resolveProductVariantSelection(product, settings, selection);
   if (!resolved) return null;
-  const variantInventoryLinked = settings.linkedAttributeIds.includes("stock");
+  const skuStock = resolved.stock ?? product.stock;
   return {
     id: resolved.linked_values._variant_id,
     image_url: resolved.image_url,
@@ -171,15 +167,9 @@ function createCartVariant(
     label: resolved.label,
     linked_values: resolved.linked_values,
     source_values: resolved.matches.map((variant) => variant.values),
-    // Compatibility field for legacy cart types; inventory has one source: SKU stock.
-    shelf_stock:
-      variantInventoryLinked && resolved.stock !== null
-        ? resolved.stock
-        : product.stock,
-    stock:
-      variantInventoryLinked && resolved.stock !== null
-        ? resolved.stock
-        : product.stock,
+    // Product Engine always manages sellable inventory on the resolved SKU.
+    shelf_stock: skuStock,
+    stock: skuStock,
     values: resolved.values,
   };
 }
@@ -243,6 +233,7 @@ function normalizeCartItem(
 ): PosCartItem {
   return {
     ...item,
+    batch: null,
     lineId: item.lineId || `${item.product.id}-${index}`,
   };
 }
@@ -357,42 +348,26 @@ function getPosProductCardData(product: Product) {
     lowestVariant.comparePrice > lowestVariant.price
       ? lowestVariant.comparePrice
       : null;
-  const images = [...new Set(variants.map((variant) => variant.image_url).filter((value): value is string => Boolean(value)))];
   return {
+    price: minPrice,
+    compareAtPrice: defaultComparePrice,
+    imageUrl: lowestVariant?.image_url ?? product.image_url,
     priceLabel:
       minPrice === maxPrice
         ? formatCurrency(minPrice)
         : `${formatCurrency(minPrice)} – ${formatCurrency(maxPrice)}`,
     compareLabel:
       defaultComparePrice == null ? null : formatCurrency(defaultComparePrice),
-    images,
   };
 }
 
-function getLowestPriceVariantSelection(product: Product) {
-  const attributes =
-    product.attributes &&
-    typeof product.attributes === "object" &&
-    !Array.isArray(product.attributes)
-      ? (product.attributes as Record<string, unknown>)
-      : {};
-  const variants = Array.isArray(attributes._variants)
-    ? (attributes._variants as Array<{
-        linked_values?: { price?: string };
-        values?: Record<string, string | string[]>;
-      }>)
-    : [];
-  const lowest = [...variants].sort(
-    (first, second) =>
-      (Number(first.linked_values?.price) || 0) -
-      (Number(second.linked_values?.price) || 0),
-  )[0];
-  return Object.fromEntries(
-    Object.entries(lowest?.values ?? {}).map(([key, value]) => [
-      key,
-      Array.isArray(value) ? value : [value],
-    ]),
-  ) as ProductVariantSelection;
+function getCartItemImageUrl(item: CartItem) {
+  return (
+    item.variant?.image_url ??
+    item.variant?.linked_values?.image_url ??
+    item.product.image_url ??
+    null
+  );
 }
 
 type QuickCustomerFormProps = {
@@ -480,11 +455,9 @@ export function PosPage() {
   const mobileProductSearchRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLInputElement>(null);
   const cartSectionRef = useRef<HTMLElement>(null);
-  const focusSearchAfterBatchRef = useRef(true);
   const focusSearchAfterVariantRef = useRef(true);
   const paidAmountRef = useRef<HTMLInputElement>(null);
 
-  const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [variantModalOpen, setVariantModalOpen] = useState(false);
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(
     null,
@@ -517,19 +490,14 @@ export function PosPage() {
   const [productSettings, setProductSettings] = useState<ProductSettings>(
     defaultProductSettings,
   );
-  const [productBatches, setProductBatches] = useState<ProductBatch[]>([]);
   const [productSearchModalOpen, setProductSearchModalOpen] = useState(false);
   const [quickProductsExpanded, setQuickProductsExpanded] = useState(true);
   const [selectedProductCategory, setSelectedProductCategory] = useState("all");
   const [productQuery, setProductQuery] = useState("");
-  const [productToBatchSelect, setProductToBatchSelect] =
-    useState<Product | null>(null);
   const [productToVariantSelect, setProductToVariantSelect] =
     useState<Product | null>(null);
   const [variantOptionSelection, setVariantOptionSelection] =
     useState<ProductVariantSelection>({});
-  const [variantToBatchSelect, setVariantToBatchSelect] =
-    useState<CartProductVariant | null>(null);
   const [printingCompletedSale, setPrintingCompletedSale] = useState(false);
   const [receiptPaperSize, setReceiptPaperSize] = useState<ReceiptPaperSize>(
     () => getReceiptPaperSize(),
@@ -579,13 +547,26 @@ export function PosPage() {
     productToVariantSelect && activeCartVariant
       ? getQuantityInCart(
           productToVariantSelect.id,
-          null,
           activeCartVariant.key,
         )
       : 0;
   const activeVariantRemaining = activeCartVariant
     ? Math.max(activeCartVariant.stock - activeVariantQuantity, 0)
     : 0;
+  const activeVariantLinked = activeCartVariant?.linked_values ?? {};
+  const activeVariantPriceValue = Number(activeVariantLinked.price);
+  const activeVariantPrice = Number.isFinite(activeVariantPriceValue)
+    ? activeVariantPriceValue
+    : (productToVariantSelect?.price ?? 0);
+  const activeVariantCompareValue = Number(activeVariantLinked.compare_at_price);
+  const activeVariantComparePrice =
+    Number.isFinite(activeVariantCompareValue) &&
+    activeVariantCompareValue > activeVariantPrice
+      ? activeVariantCompareValue
+      : null;
+  const activeVariantImage = activeCartVariant
+    ? activeCartVariant.image_url ?? productToVariantSelect?.image_url ?? null
+    : productToVariantSelect?.image_url ?? null;
 
   const loadCheckoutShiftStatus = useCallback(async () => {
     if (!canCheckout) {
@@ -615,21 +596,13 @@ export function PosPage() {
     setError("");
 
     try {
-      const [
-        productData,
-        batchData,
-        customerData,
-        settingsData,
-        productSettingsData,
-      ] = await Promise.all([
+      const [productData, customerData, settingsData, productSettingsData] = await Promise.all([
         fetchProducts(),
-        fetchProductBatches(),
         fetchCustomers(),
         fetchPaymentSettings(),
         fetchProductSettings(),
       ]);
       setProducts(productData);
-      setProductBatches(batchData);
       setCustomers(customerData);
       setPaymentSettings(settingsData);
       setProductSettings(productSettingsData);
@@ -681,9 +654,6 @@ export function PosPage() {
     const productsById = new Map(
       products.map((product) => [product.id, product]),
     );
-    const batchesById = new Map(
-      productBatches.map((batch) => [batch.id, batch]),
-    );
 
     setWorkspace((current) => {
       let changed = false;
@@ -703,9 +673,6 @@ export function PosPage() {
               return null;
             }
 
-            const freshBatch = item.batch?.id
-              ? (batchesById.get(item.batch.id) ?? null)
-              : null;
             const freshVariant = item.variant?.key
               ? createCartVariant(
                   freshProduct,
@@ -718,14 +685,9 @@ export function PosPage() {
                 .length > 0;
             const availableStock =
               Math.min(
-                freshBatch?.quantity ?? Number.POSITIVE_INFINITY,
                 freshVariant?.stock ?? Number.POSITIVE_INFINITY,
                 getSellableStock(freshProduct),
               );
-            if (item.batch?.id && (!freshBatch || freshBatch.quantity <= 0)) {
-              changed = true;
-              return null;
-            }
             if (item.variant?.key && !freshVariant) {
               changed = true;
               return null;
@@ -739,7 +701,6 @@ export function PosPage() {
             if (
               quantity !== item.quantity ||
               freshProduct !== item.product ||
-              freshBatch !== item.batch ||
               freshVariant?.stock !== item.variant?.stock ||
               freshVariant?.stock !== item.variant?.stock
             ) {
@@ -748,7 +709,7 @@ export function PosPage() {
 
             return {
               ...item,
-              batch: freshBatch,
+              batch: null,
               product: applyVariantProductData(freshProduct, freshVariant),
               quantity,
               variant: freshVariant,
@@ -761,7 +722,7 @@ export function PosPage() {
 
       return changed ? { ...current, bills } : current;
     });
-  }, [productBatches, productSettings, products]);
+  }, [productSettings, products]);
 
   useEffect(() => {
     function handleShortcut(event: globalThis.KeyboardEvent) {
@@ -845,11 +806,6 @@ export function PosPage() {
       (key) => productSettings.enabledFields[key] !== false,
     ),
   };
-  const posFieldVisible = (key: string) =>
-    effectivePosCardSettings.visibleFields.includes(key);
-  const posFieldOrder = (key: string) =>
-    Math.max(effectivePosCardSettings.order.indexOf(key), 0);
-
   const selectedCustomer =
     customers.find((customer) => customer.id === selectedCustomerId) ?? null;
   const normalizedCustomerQuery = customerQuery.trim().toLowerCase();
@@ -919,6 +875,9 @@ export function PosPage() {
     return () => { active = false; };
   }, [cart, couponCode, selectedCustomerId, subtotal]);
   const total = Math.max(subtotal - promotionDiscount, 0);
+  const estimatedEarnedPoints = selectedCustomer
+    ? Math.floor(total / 100000)
+    : 0;
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const availableProductCount = activeProducts.filter(
     (product) => getSellableStock(product) > 0,
@@ -964,23 +923,12 @@ export function PosPage() {
 
   function getQuantityInCart(
     productId: string,
-    batchId?: string | null,
     variantKey?: string | null,
   ) {
     return cart
       .filter((item) => item.product.id === productId)
-      .filter((item) => (batchId ? item.batch?.id === batchId : true))
       .filter((item) => (variantKey ? item.variant?.key === variantKey : true))
       .reduce((sum, item) => sum + item.quantity, 0);
-  }
-
-  function getProductBatches(productId: string, variantId?: string | null) {
-    return productBatches.filter(
-      (batch) =>
-        batch.product_id === productId &&
-        batch.quantity > 0 &&
-        (!variantId || (batch as ProductBatch & { variant_id?: string }).variant_id === variantId),
-    );
   }
 
   function switchBill(billId: number) {
@@ -1046,7 +994,6 @@ export function PosPage() {
 
   function addToCart(
     product: Product,
-    batch?: ProductBatch | null,
     focusSearchAfterAdd = true,
     variant?: CartProductVariant | null,
   ) {
@@ -1067,18 +1014,13 @@ export function PosPage() {
       productSettings,
     );
     if (variant === undefined && variantDefinitions.length) {
-      const lowestPriceSelection = getLowestPriceVariantSelection(product);
       focusSearchAfterVariantRef.current = focusSearchAfterAdd;
       setProductToVariantSelect(product);
       setVariantOptionSelection(
         Object.fromEntries(
           variantDefinitions.map((definition) => [
             definition.id,
-            lowestPriceSelection[definition.id]
-              ? lowestPriceSelection[definition.id]
-              : definition.type === "single" && definition.options[0]
-                ? [definition.options[0]]
-                : [],
+            [],
           ]),
         ),
       );
@@ -1093,29 +1035,10 @@ export function PosPage() {
       return;
     }
 
-    const batches = getProductBatches(product.id, selectedVariant?.id);
-    const selectedBatch =
-      batch === undefined && batches.length === 1 ? batches[0] : batch;
-
-    if (batch === undefined && batches.length > 1) {
-      focusSearchAfterBatchRef.current = focusSearchAfterAdd;
-      setProductToBatchSelect(product);
-      setVariantToBatchSelect(selectedVariant);
-      setBatchModalOpen(true);
-      setVariantModalOpen(false);
-      setProductToVariantSelect(null);
-      return;
-    }
-
     updateActiveCart((current) => {
       const quantityInCart = current
         .filter((item) => item.product.id === product.id)
         .reduce((sum, item) => sum + item.quantity, 0);
-      const quantityInBatch = selectedBatch
-        ? current
-            .filter((item) => item.batch?.id === selectedBatch?.id)
-            .reduce((sum, item) => sum + item.quantity, 0)
-          : 0;
       const quantityInVariant = selectedVariant
         ? current
             .filter(
@@ -1125,16 +1048,12 @@ export function PosPage() {
             )
             .reduce((sum, item) => sum + item.quantity, 0)
         : 0;
-      const maxByBatch = selectedBatch
-        ? selectedBatch.quantity - quantityInBatch
-        : getSellableStock(product) - quantityInCart;
       const maxByVariant = selectedVariant
         ? selectedVariant.stock - quantityInVariant
         : getSellableStock(product) - quantityInCart;
 
       if (
         quantityInCart >= getSellableStock(product) ||
-        maxByBatch <= 0 ||
         maxByVariant <= 0
       ) {
         return current;
@@ -1144,7 +1063,7 @@ export function PosPage() {
         return [
           ...current,
           {
-            batch: selectedBatch ?? null,
+            batch: null,
             lineId: createLineId(product.id),
             product: effectiveProduct,
             quantity: 1,
@@ -1156,7 +1075,6 @@ export function PosPage() {
       const existingItem = current.find(
         (item) =>
           item.product.id === product.id &&
-          (item.batch?.id ?? null) === (selectedBatch?.id ?? null) &&
           (item.variant?.key ?? null) === (selectedVariant?.key ?? null),
       );
 
@@ -1171,7 +1089,7 @@ export function PosPage() {
       return [
         ...current,
         {
-          batch: selectedBatch ?? null,
+          batch: null,
           lineId: createLineId(product.id),
           product: effectiveProduct,
           quantity: 1,
@@ -1179,9 +1097,6 @@ export function PosPage() {
         },
       ];
     });
-    setBatchModalOpen(false);
-    setProductToBatchSelect(null);
-    setVariantToBatchSelect(null);
     setVariantModalOpen(false);
     setProductToVariantSelect(null);
     setVariantOptionSelection({});
@@ -1210,15 +1125,6 @@ export function PosPage() {
                 cartItem.product.id === item.product.id,
             )
             .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-          const otherBatchQuantity = item.batch
-            ? current
-                .filter(
-                  (cartItem) =>
-                    cartItem.lineId !== lineId &&
-                    cartItem.batch?.id === item.batch?.id,
-                )
-                .reduce((sum, cartItem) => sum + cartItem.quantity, 0)
-            : 0;
           const otherVariantQuantity = item.variant
             ? current
                 .filter(
@@ -1232,9 +1138,6 @@ export function PosPage() {
           const maxQuantity = Math.max(
             Math.min(
               getSellableStock(item.product) - otherProductQuantity,
-              item.batch
-                ? item.batch.quantity - otherBatchQuantity
-                : Number.POSITIVE_INFINITY,
               item.variant
                 ? item.variant.stock - otherVariantQuantity
                 : Number.POSITIVE_INFINITY,
@@ -1248,41 +1151,6 @@ export function PosPage() {
           };
         })
         .filter((item) => item.quantity > 0),
-    );
-  }
-
-  function changeCartItemBatch(lineId: string, batchId: string) {
-    if (!canCheckout) return;
-
-    const item = cart.find((cartItem) => cartItem.lineId === lineId);
-    const nextBatch = productBatches.find((batch) => batch.id === batchId);
-    if (!item || !nextBatch || nextBatch.product_id !== item.product.id) return;
-
-    const quantityAlreadySelected = cart
-      .filter(
-        (cartItem) =>
-          cartItem.lineId !== lineId && cartItem.batch?.id === nextBatch.id,
-      )
-      .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-    const availableQuantity = Math.max(
-      nextBatch.quantity - quantityAlreadySelected,
-      0,
-    );
-
-    if (item.quantity > availableQuantity) {
-      showErrorNotice(
-        `Lô này chỉ còn ${availableQuantity} sản phẩm có thể chọn. Hãy giảm số lượng trước khi đổi lô.`,
-        "Không thể đổi lô",
-      );
-      return;
-    }
-
-    updateActiveCart((current) =>
-      current.map((cartItem) =>
-        cartItem.lineId === lineId
-          ? { ...cartItem, batch: nextBatch }
-          : cartItem,
-      ),
     );
   }
 
@@ -1586,9 +1454,7 @@ export function PosPage() {
       setPaymentProofFile(null);
       setPaymentProofNote("");
       setPaymentProofPreview("");
-      const earnedPoints = completedCustomer
-        ? Math.floor(Number(order.total) / 100000)
-        : 0;
+      const earnedPoints = completedCustomer ? Number(order.points_earned) || 0 : 0;
       setSuccess(
         `Đã tạo hóa đơn ${order.code} với tổng tiền ${formatCurrency(order.total)}.${
           completedCustomer
@@ -2037,7 +1903,7 @@ export function PosPage() {
                     ) : null}
                     {quickProductsExpanded ? (
                       <div
-                        className="grid grid-cols-2 gap-1.5 p-1.5 sm:grid-cols-3 sm:gap-3 sm:p-3 md:grid-cols-4 lg:grid-cols-5 xl:max-h-[min(56dvh,620px)] xl:grid-cols-3 xl:overflow-y-auto xl:overscroll-contain 2xl:grid-cols-4"
+                        className="grid justify-start gap-1.5 p-1.5 [grid-template-columns:repeat(auto-fit,minmax(148px,172px))] sm:gap-3 sm:p-3 xl:max-h-[min(56dvh,620px)] xl:overflow-y-auto xl:overscroll-contain"
                         id="pos-quick-products"
                       >
                         {quickProducts.map((product) => {
@@ -2045,19 +1911,13 @@ export function PosPage() {
                           const disabled =
                             !canCheckout ||
                             quantityInCart >= getSellableStock(product);
-                          const productAttributes =
-                            product.attributes &&
-                            typeof product.attributes === "object" &&
-                            !Array.isArray(product.attributes)
-                              ? (product.attributes as Record<string, unknown>)
-                              : {};
                           const variantCount = getProductVariantCount(product);
                           const cardData = getPosProductCardData(product);
 
                           return (
                             <article
                               aria-label={`Thêm ${product.name} vào đơn`}
-                              className={`group relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white p-0 transition sm:rounded-2xl ${
+                              className={`group relative min-w-0 rounded-2xl transition ${
                                 quantityInCart > 0
                                   ? "cursor-pointer border-moss-500 shadow-[0_8px_20px_rgba(72,84,54,0.14)] ring-1 ring-moss-200"
                                   : disabled
@@ -2067,7 +1927,7 @@ export function PosPage() {
                               key={product.id}
                               onClick={() => {
                                 if (!disabled)
-                                  addToCart(product, undefined, false);
+                                  addToCart(product, false);
                               }}
                               onKeyDown={(event) => {
                                 if (event.target !== event.currentTarget)
@@ -2077,359 +1937,30 @@ export function PosPage() {
                                   (event.key === "Enter" || event.key === " ")
                                 ) {
                                   event.preventDefault();
-                                  addToCart(product, undefined, false);
+                                  addToCart(product, false);
                                 }
                               }}
                               role="button"
                               tabIndex={disabled ? -1 : 0}
                             >
-                              {effectivePosCardSettings.templateHtml ? (
-                                <ProductCardCodeRenderer
-                                  customAttributes={
-                                    productSettings.customAttributes
-                                  }
-                                  embedded
-                                  mode="pos"
-                                  product={product}
-                                  quantity={quantityInCart}
-                                  settings={effectivePosCardSettings}
-                                />
-                              ) : (
-                                <>
-                                  {posFieldVisible("image") ? (
-                                    <div
-                                      className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100"
-                                      style={{ order: posFieldOrder("image") }}
-                                    >
-                                      {product.image_url ? (
-                                        <img
-                                          alt={product.name}
-                                          className={`h-full w-full transition duration-300 group-hover:scale-[1.03] ${effectivePosCardSettings.imageFit === "contain" ? "object-contain p-2" : "object-cover"}`}
-                                          src={product.image_url}
-                                        />
-                                      ) : (
-                                        <div className="flex h-full w-full items-center justify-center text-slate-400">
-                                          <ShoppingBag className="h-5 w-5" />
-                                        </div>
-                                      )}
-                                      {quantityInCart > 0 ? (
-                                        <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-moss-700 text-white shadow-md">
-                                          <Check className="h-4 w-4 stroke-[3]" />
-                                        </span>
-                                      ) : null}
-                                      {product.is_reward ? (
-                                        <span className="absolute bottom-1.5 left-1.5 rounded-md bg-amber-100/95 px-1.5 py-1 text-[9px] font-black text-amber-800 shadow-sm sm:text-[10px]">
-                                          {product.reward_points_cost.toLocaleString(
-                                            "vi-VN",
-                                          )}{" "}
-                                          điểm
-                                        </span>
-                                      ) : null}
-                                      {variantCount && posFieldVisible("variant_count") ? (
-                                        <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-md bg-slate-950/85 px-1.5 py-1 text-[9px] font-black text-white shadow-sm backdrop-blur-sm sm:text-[10px]">
-                                          <Layers3 className="h-3 w-3" /> {variantCount} biến thể
-                                        </span>
-                                      ) : null}
-                                      {cardData.images.length > 1 ? (
-                                        <div className="absolute left-1.5 top-1.5 flex -space-x-1">
-                                          {cardData.images.slice(0, 3).map((imageUrl) => (
-                                            <img alt="" className="h-7 w-7 rounded-md border-2 border-white bg-white object-contain shadow-sm" key={imageUrl} src={imageUrl} />
-                                          ))}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  ) : null}
-                                  <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-3.5">
-                                    {posFieldVisible("category") ? (
-                                      <p className="mb-1 truncate text-[10px] font-bold uppercase tracking-wide text-slate-400" style={{ order: posFieldOrder("category") }}>
-                                        {product.category || "Chưa có danh mục"}
-                                      </p>
-                                    ) : null}
-                                    {posFieldVisible("name") ? (
-                                      <h3
-                                        style={{ order: posFieldOrder("name") }}
-                                        className="line-clamp-2 min-h-10 text-sm font-extrabold leading-5 text-slate-900"
-                                        title={product.name}
-                                      >
-                                        {product.name}
-                                      </h3>
-                                    ) : null}
-                                    {posFieldVisible("stock") ? (
-                                      <p
-                                        className="mt-1 w-fit rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"
-                                        style={{
-                                          order: posFieldOrder("stock"),
-                                        }}
-                                      >
-                                        Còn{" "}
-                                        {Math.max(
-                                          getSellableStock(product) -
-                                            quantityInCart,
-                                          0,
-                                        )}{" "}
-                                        trong kho
-                                      </p>
-                                    ) : null}
-                                    {effectivePosCardSettings.order
-                                      .filter(
-                                        (key) =>
-                                          posFieldVisible(key) &&
-                                          ![
-                                            "image",
-                                            "name",
-                                            "stock",
-                                            "price",
-                                            "category",
-                                            "compare_price",
-                                            "variant_count",
-                                          ].includes(key),
-                                      )
-                                      .map((key) => {
-                                        const definition =
-                                          productSettings.customAttributes.find(
-                                            (item) => item.id === key,
-                                          );
-                                        const raw =
-                                          (
-                                            product as unknown as Record<
-                                              string,
-                                              unknown
-                                            >
-                                          )[key] ?? productAttributes[key];
-                                        const variants = Array.isArray(
-                                          productAttributes._variants,
-                                        )
-                                          ? (productAttributes._variants as Array<{
-                                              values?: Record<string, string>;
-                                              stock?: number;
-                                            }>)
-                                          : [];
-                                        if (
-                                          definition?.type === "single" &&
-                                          variants.length
-                                        )
-                                          return (
-                                            <div
-                                              className="mt-1"
-                                              key={key}
-                                              style={{
-                                                order: posFieldOrder(key),
-                                              }}
-                                            >
-                                              <p className="text-[10px] font-bold text-slate-500">
-                                                {definition.name}
-                                              </p>
-                                              <div className="mt-1 flex flex-wrap gap-1">
-                                                {definition.options.map(
-                                                  (option) => (
-                                                    <span
-                                                      className="rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-bold"
-                                                      key={option}
-                                                    >
-                                                      {option} ·{" "}
-                                                      {variants
-                                                        .filter(
-                                                          (variant) =>
-                                                            variant.values?.[
-                                                              key
-                                                            ] === option,
-                                                        )
-                                                        .reduce(
-                                                          (sum, variant) =>
-                                                            sum +
-                                                            Math.max(
-                                                              Number(
-                                                                variant.stock,
-                                                              ) || 0,
-                                                              0,
-                                                            ),
-                                                          0,
-                                                        )}
-                                                    </span>
-                                                  ),
-                                                )}
-                                              </div>
-                                            </div>
-                                          );
-                                        if (
-                                          raw === undefined ||
-                                          raw === null ||
-                                          (typeof raw === "object" &&
-                                            !Array.isArray(raw))
-                                        )
-                                          return null;
-                                        if (
-                                          definition &&
-                                          (definition.type === "single" ||
-                                            definition.type === "multiple")
-                                        ) {
-                                          const selectedValues = Array.isArray(
-                                            raw,
-                                          )
-                                            ? raw.map(String)
-                                            : [String(raw)];
-                                          return (
-                                            <div
-                                              className="mt-1"
-                                              key={key}
-                                              style={{
-                                                order: posFieldOrder(key),
-                                              }}
-                                            >
-                                              <p className="text-[10px] font-bold text-slate-500">
-                                                {definition.name}
-                                              </p>
-                                              <div
-                                                className={
-                                                  definition.optionDisplay ===
-                                                  "color"
-                                                    ? "mt-1 flex flex-wrap gap-1.5"
-                                                    : "mt-1 space-y-1"
-                                                }
-                                              >
-                                                {definition.options.map(
-                                                  (option) => {
-                                                    const selected =
-                                                      selectedValues.includes(
-                                                        option,
-                                                      );
-                                                    return (
-                                                      <span
-                                                        className={`flex items-center gap-1.5 text-[9px] font-bold ${definition.optionDisplay === "color" ? "inline-flex" : "w-full"} ${selected ? "text-slate-900" : "text-slate-400"}`}
-                                                        key={option}
-                                                      >
-                                                        {definition.optionDisplay !==
-                                                        "text" ? (
-                                                          <i
-                                                            className={`h-4 w-4 rounded-full border-2 ${selected ? "border-moss-700 ring-1 ring-moss-500" : "border-slate-300"}`}
-                                                            style={{
-                                                              backgroundColor:
-                                                                definition
-                                                                  .optionColors?.[
-                                                                  option
-                                                                ] ?? option,
-                                                            }}
-                                                          />
-                                                        ) : null}
-                                                        {definition.optionDisplay !==
-                                                        "color"
-                                                          ? option
-                                                          : null}
-                                                      </span>
-                                                    );
-                                                  },
-                                                )}
-                                              </div>
-                                            </div>
-                                          );
-                                        }
-                                        const optionStock =
-                                          definition?.type === "single"
-                                            ? quickProducts.reduce(
-                                                (total, item) => {
-                                                  const attributes =
-                                                    item.attributes &&
-                                                    typeof item.attributes ===
-                                                      "object" &&
-                                                    !Array.isArray(
-                                                      item.attributes,
-                                                    )
-                                                      ? (item.attributes as Record<
-                                                          string,
-                                                          unknown
-                                                        >)
-                                                      : {};
-                                                  return attributes[key] === raw
-                                                    ? total +
-                                                        Math.max(
-                                                          getSellableStock(
-                                                            item,
-                                                          ),
-                                                          0,
-                                                        )
-                                                    : total;
-                                                },
-                                                0,
-                                              )
-                                            : null;
-                                        return (
-                                          <div
-                                            className="mt-1 text-[10px] font-semibold text-slate-500"
-                                            key={key}
-                                            style={{
-                                              order: posFieldOrder(key),
-                                            }}
-                                          >
-                                            <span>
-                                              {definition?.name ?? key}:{" "}
-                                            </span>
-                                            <strong className="text-slate-800">
-                                              {Array.isArray(raw)
-                                                ? raw.join(", ")
-                                                : String(raw)}
-                                            </strong>
-                                            {optionStock !== null ? (
-                                              <span className="ml-1 rounded-full bg-moss-50 px-1.5 text-moss-800">
-                                                Còn {optionStock}
-                                              </span>
-                                            ) : null}
-                                          </div>
-                                        );
-                                      })}
-                                    <div
-                                      className="mt-2 flex flex-wrap items-center justify-between gap-1.5"
-                                      style={{ order: posFieldOrder("price") }}
-                                    >
-                                      {posFieldVisible("price") ? (
-                                        <div className="min-w-0 flex-1" title={cardData.priceLabel}>
-                                          {posFieldVisible("compare_price") && cardData.compareLabel ? <p className="truncate text-[10px] font-semibold text-slate-400 line-through">{cardData.compareLabel}</p> : null}
-                                          <p className="truncate text-xs font-black tabular-nums text-moss-800 sm:text-sm">{cardData.priceLabel}</p>
-                                        </div>
-                                      ) : null}
-                                      <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-moss-50 p-0.5 sm:gap-1 sm:p-1">
-                                        <button
-                                          aria-label={`Giảm ${product.name}`}
-                                          className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-moss-700 shadow-sm ring-1 ring-moss-100 disabled:text-slate-300 disabled:shadow-none sm:h-7 sm:w-7"
-                                          disabled={
-                                            !canCheckout || quantityInCart === 0
-                                          }
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            decreaseProductQuantity(product.id);
-                                          }}
-                                          type="button"
-                                        >
-                                          <Minus className="h-3.5 w-3.5" />
-                                        </button>
-                                        <span className="min-w-4 text-center text-xs font-black tabular-nums text-slate-900 sm:min-w-5 sm:text-sm">
-                                          {quantityInCart}
-                                        </span>
-                                        <button
-                                          aria-label={`Thêm ${product.name}`}
-                                          className="flex h-7 w-7 items-center justify-center rounded-full bg-moss-700 text-white shadow-sm transition hover:bg-moss-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:h-8 sm:w-8"
-                                          disabled={disabled}
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            addToCart(
-                                              product,
-                                              undefined,
-                                              false,
-                                            );
-                                          }}
-                                          type="button"
-                                        >
-                                          <Plus className="h-4 w-4" />
-                                        </button>
-                                      </div>
-                                    </div>
+                              <ConfigurableProductCard
+                                action={
+                                  <div className="flex items-center gap-1 rounded-full bg-moss-50 p-1">
+                                    <button aria-label={`Giảm ${product.name}`} className="grid h-7 w-7 place-items-center rounded-full bg-white text-moss-700 shadow-sm ring-1 ring-moss-100 disabled:text-slate-300" disabled={!canCheckout || quantityInCart === 0} onClick={(event) => { event.stopPropagation(); decreaseProductQuantity(product.id); }} type="button"><Minus className="h-4 w-4" /></button>
+                                    <span className="min-w-5 text-center text-sm font-black tabular-nums">{quantityInCart}</span>
+                                    <button aria-label={`Thêm ${product.name}`} className="grid h-8 w-8 place-items-center rounded-full bg-moss-700 text-white shadow-sm disabled:bg-slate-300" disabled={disabled} onClick={(event) => { event.stopPropagation(); addToCart(product, false); }} type="button"><Plus className="h-4 w-4" /></button>
                                   </div>
-                                </>
-                              )}
-                              {effectivePosCardSettings.templateHtml && variantCount ? (
-                                <span className="pointer-events-none absolute bottom-2 right-2 z-20 flex items-center gap-1 rounded-full bg-slate-950/85 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur-sm">
-                                  <Layers3 className="h-3 w-3" /> {variantCount} biến thể
-                                </span>
-                              ) : null}
+                                }
+                                category={product.category}
+                                compareAtPrice={cardData.compareAtPrice}
+                                imageUrl={cardData.imageUrl}
+                                name={product.name}
+                                price={cardData.price}
+                                selected={quantityInCart > 0}
+                                settings={effectivePosCardSettings}
+                                stock={Math.max(getSellableStock(product) - quantityInCart, 0)}
+                                variantCount={variantCount}
+                              />
                             </article>
                           );
                         })}
@@ -2537,11 +2068,11 @@ export function PosPage() {
                                 key={item.lineId}
                               >
                                   <div className="h-14 w-14 overflow-hidden rounded-xl bg-slate-100 sm:h-16 sm:w-16">
-                                   {item.variant?.image_url || item.product.image_url ? (
+                                   {getCartItemImageUrl(item) ? (
                                      <img
                                        alt={item.product.name}
                                        className="h-full w-full object-cover"
-                                       src={item.variant?.image_url || item.product.image_url || ""}
+                                       src={getCartItemImageUrl(item) || ""}
                                     />
                                   ) : (
                                     <div className="flex h-full w-full items-center justify-center text-slate-400">
@@ -2592,15 +2123,8 @@ export function PosPage() {
                                            (item.variant
                                              ? getQuantityInCart(
                                                  item.product.id,
-                                                 null,
                                                  item.variant.key,
                                                ) >= item.variant.stock
-                                             : false) ||
-                                           (item.batch
-                                             ? getQuantityInCart(
-                                                 item.product.id,
-                                                 item.batch.id,
-                                               ) >= item.batch.quantity
                                              : false)
                                          }
                                         onClick={() =>
@@ -3023,14 +2547,22 @@ export function PosPage() {
         ) : (
           <div className="space-y-2">
             {cart.map((item) => {
-              const batches = getProductBatches(item.product.id, item.variant?.id);
               const quantityInProduct = getQuantityInCart(item.product.id);
-              const quantityInCurrentBatch = item.batch
-                ? getQuantityInCart(item.product.id, item.batch.id)
-                : quantityInProduct;
               const quantityInCurrentVariant = item.variant
-                ? getQuantityInCart(item.product.id, null, item.variant.key)
+                ? getQuantityInCart(item.product.id, item.variant.key)
                 : quantityInProduct;
+              const selectedSku =
+                item.variant?.linked_values?.sku ||
+                item.product.sku ||
+                "Chưa có SKU";
+              const compareAtPriceValue = Number(
+                item.variant?.linked_values?.compare_at_price,
+              );
+              const compareAtPrice =
+                Number.isFinite(compareAtPriceValue) &&
+                compareAtPriceValue > item.product.price
+                  ? compareAtPriceValue
+                  : null;
 
               return (
                 <article
@@ -3038,12 +2570,12 @@ export function PosPage() {
                   key={item.lineId}
                 >
                   <div className="flex min-w-0 gap-3">
-                    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
-                      {item.variant?.image_url || item.product.image_url ? (
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-slate-100 ring-1 ring-slate-200">
+                      {getCartItemImageUrl(item) ? (
                         <img
                           alt={item.product.name}
                           className="h-full w-full object-cover"
-                          src={item.variant?.image_url || item.product.image_url || ""}
+                          src={getCartItemImageUrl(item) || ""}
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-slate-400">
@@ -3056,12 +2588,12 @@ export function PosPage() {
                         {item.product.name}
                       </h3>
                       {item.variant ? (
-                        <p className="mt-1 truncate text-xs font-extrabold text-moss-700">
+                        <p className="mt-1 line-clamp-2 text-xs font-extrabold leading-4 text-moss-700">
                           {item.variant.label}
                         </p>
                       ) : null}
-                      <p className="mt-1 text-xs font-bold tabular-nums text-moss-700">
-                        {formatCurrency(item.product.price * item.quantity)}
+                      <p className="mt-1 truncate text-[11px] font-bold text-slate-400">
+                        SKU: {selectedSku}
                       </p>
                     </div>
                     {canCheckout ? (
@@ -3076,8 +2608,26 @@ export function PosPage() {
                     ) : null}
                   </div>
 
-                  <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-                    <div className="col-start-2 row-start-1 justify-self-end">
+                  <div className="mt-3 flex items-end justify-between gap-3 border-t border-slate-100 pt-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
+                        Đơn giá
+                      </p>
+                      {compareAtPrice ? (
+                        <p className="mt-0.5 text-[11px] font-bold tabular-nums text-slate-400 line-through">
+                          {formatCurrency(compareAtPrice)}
+                        </p>
+                      ) : null}
+                      <p className="text-sm font-black tabular-nums text-moss-800">
+                        {formatCurrency(item.product.price)}
+                      </p>
+                      {item.quantity > 1 ? (
+                        <p className="mt-0.5 text-[11px] font-bold tabular-nums text-slate-500">
+                          Thành tiền: {formatCurrency(item.product.price * item.quantity)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="shrink-0">
                       <span className="mb-1 block text-right text-[11px] font-extrabold uppercase tracking-wide text-slate-400">
                         Số lượng
                       </span>
@@ -3101,9 +2651,6 @@ export function PosPage() {
                           className="flex h-9 w-9 items-center justify-center rounded-lg bg-moss-700 text-white shadow-sm disabled:bg-slate-300"
                           disabled={
                             !canCheckout ||
-                            (item.batch
-                              ? quantityInCurrentBatch >= item.batch.quantity
-                              : false) ||
                             quantityInProduct >= getSellableStock(item.product) ||
                             (item.variant
                               ? quantityInCurrentVariant >= item.variant.stock
@@ -3119,61 +2666,6 @@ export function PosPage() {
                       </div>
                     </div>
 
-                    <label className="col-start-1 row-start-1 min-w-0">
-                      <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-wide text-slate-400">
-                        Lô xuất bán
-                      </span>
-                      {batches.length > 0 ? (
-                        <select
-                          aria-label={`Lô xuất bán của ${item.product.name}`}
-                          className="h-11 w-full truncate rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100 disabled:bg-slate-100"
-                          disabled={!canCheckout || batches.length === 1}
-                          onChange={(event) =>
-                            changeCartItemBatch(item.lineId, event.target.value)
-                          }
-                          value={item.batch?.id ?? ""}
-                        >
-                          {!item.batch ? (
-                            <option value="">Chọn lô</option>
-                          ) : null}
-                          {batches.map((batch) => {
-                            const selectedByOtherLines = cart
-                              .filter(
-                                (cartItem) =>
-                                  cartItem.lineId !== item.lineId &&
-                                  cartItem.batch?.id === batch.id,
-                              )
-                              .reduce(
-                                (sum, cartItem) => sum + cartItem.quantity,
-                                0,
-                              );
-                            const availableForLine = Math.max(
-                              batch.quantity - selectedByOtherLines,
-                              0,
-                            );
-
-                            return (
-                              <option
-                                disabled={
-                                  batch.id !== item.batch?.id &&
-                                  availableForLine < item.quantity
-                                }
-                                key={batch.id}
-                                value={batch.id}
-                              >
-                                {formatProductDate(batch.import_date)} · HSD{" "}
-                                {formatProductDate(batch.expiry_date)} · còn{" "}
-                                {availableForLine}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      ) : (
-                        <span className="flex h-11 items-center rounded-xl bg-slate-100 px-3 text-sm font-bold text-slate-500">
-                          Không quản lý theo lô
-                        </span>
-                      )}
-                    </label>
                   </div>
                 </article>
               );
@@ -3266,7 +2758,7 @@ export function PosPage() {
                     onClick={() => {
                       setProductSearchModalOpen(false);
                       setProductQuery("");
-                      addToCart(product, undefined, false);
+                      addToCart(product, false);
                     }}
                     type="button"
                   >
@@ -3547,6 +3039,20 @@ export function PosPage() {
                     : `Quà tính theo giá bán${selectedCustomer ? " (không đủ điểm)" : ""}`}
                 </p>
               ) : null}
+              {selectedCustomer ? (
+                <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-200 pt-3 text-sm">
+                  <span className="min-w-0 truncate font-bold text-slate-600">
+                    {selectedCustomer.name} · {selectedCustomer.points.toLocaleString("vi-VN")} điểm
+                  </span>
+                  <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 font-extrabold text-amber-700">
+                    +{estimatedEarnedPoints.toLocaleString("vi-VN")} điểm
+                  </span>
+                </div>
+              ) : (
+                <p className="mt-3 border-t border-slate-200 pt-3 text-xs font-semibold text-slate-500">
+                  Chọn khách hàng để tích điểm cho đơn này.
+                </p>
+              )}
             </div>
 
             <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
@@ -3953,7 +3459,6 @@ export function PosPage() {
                   if (!productToVariantSelect || !activeCartVariant) return;
                   addToCart(
                     productToVariantSelect,
-                    undefined,
                     focusSearchAfterVariantRef.current,
                     activeCartVariant,
                   );
@@ -3976,18 +3481,23 @@ export function PosPage() {
           {productToVariantSelect ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 sm:gap-4 sm:p-4">
-                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 sm:h-24 sm:w-24">
-                  {productToVariantSelect.image_url ? (
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 sm:h-24 sm:w-24">
+                  {activeVariantImage ? (
                     <img
                       alt={productToVariantSelect.name}
                       className="h-full w-full object-cover"
-                      src={productToVariantSelect.image_url}
+                      src={activeVariantImage}
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-slate-400">
                       <ShoppingBag className="h-8 w-8" />
                     </div>
                   )}
+                  {activeCartVariant ? (
+                    <span className={`absolute left-2 top-2 rounded-lg px-2 py-1 text-[10px] font-extrabold shadow-sm ${activeVariantRemaining > 0 ? "bg-emerald-50/95 text-emerald-700" : "bg-red-50/95 text-red-600"}`}>
+                      {activeVariantRemaining > 0 ? `Còn ${activeVariantRemaining}` : "Hết hàng"}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
@@ -3996,8 +3506,13 @@ export function PosPage() {
                   <p className="mt-1 line-clamp-2 text-lg font-extrabold leading-6 text-slate-900 sm:text-xl">
                     {productToVariantSelect.name}
                   </p>
-                  <p className="mt-1 text-sm font-black tabular-nums text-moss-700">
-                    {formatCurrency(productToVariantSelect.price)}
+                  {activeVariantComparePrice ? (
+                    <p className="mt-1 text-xs font-bold tabular-nums text-slate-400 line-through">
+                      {formatCurrency(activeVariantComparePrice)}
+                    </p>
+                  ) : null}
+                  <p className="text-base font-black tabular-nums text-moss-800">
+                    {formatCurrency(activeVariantPrice)}
                   </p>
                 </div>
               </div>
@@ -4069,143 +3584,11 @@ export function PosPage() {
                   );
                 })}
               </div>
-              {activeCartVariant ? (
-                <div className="rounded-2xl border border-moss-200 bg-moss-50 p-3">
-                  <p className="text-xs font-extrabold uppercase tracking-wide text-moss-700">
-                    Thông tin áp dụng
-                  </p>
-                  <p className="mt-1 font-extrabold text-slate-900">
-                    {activeCartVariant.label}
-                  </p>
-                  <p className="mt-1 text-xs font-bold text-slate-600">
-                    Tồn SKU {activeCartVariant.stock} · Còn có thể chọn {activeVariantRemaining}
-                  </p>
-                  {Object.entries(activeCartVariant.linked_values ?? {}).length ? (
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      {Object.entries(activeCartVariant.linked_values ?? {}).map(
-                        ([key, value]) => (
-                          <div className="rounded-lg bg-white px-2.5 py-2" key={key}>
-                            <p className="text-[10px] font-extrabold uppercase text-slate-400">
-                              {productSettings.customAttributes.find(
-                                (attribute) => attribute.id === key,
-                              )?.name ?? key}
-                            </p>
-                            <p className="mt-0.5 text-xs font-bold text-slate-800">
-                              {value}
-                            </p>
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
+              {!activeCartVariant ? (
                 <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">
                   Hãy chọn đủ giá trị cho từng thuộc tính biến thể.
                 </p>
-              )}
-            </div>
-          ) : null}
-        </Modal>
-      ) : null}
-      {canCheckout ? (
-        <Modal
-          footer={
-            <Button
-              onClick={() => {
-                setBatchModalOpen(false);
-                setProductToBatchSelect(null);
-                setVariantToBatchSelect(null);
-              }}
-              type="button"
-              variant="secondary"
-            >
-              Đóng
-            </Button>
-          }
-          onClose={() => {
-            setBatchModalOpen(false);
-            setProductToBatchSelect(null);
-            setVariantToBatchSelect(null);
-          }}
-          open={batchModalOpen}
-          size="lg"
-          title="Chọn lô xuất bán"
-        >
-          {productToBatchSelect ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 sm:gap-4 sm:p-4">
-                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 sm:h-24 sm:w-24">
-                  {productToBatchSelect.image_url ? (
-                    <img
-                      alt={productToBatchSelect.name}
-                      className="h-full w-full object-cover"
-                      src={productToBatchSelect.image_url}
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-slate-400">
-                      <ShoppingBag className="h-8 w-8" />
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
-                    Sản phẩm
-                  </p>
-                  <p className="mt-1 line-clamp-2 text-lg font-extrabold leading-6 text-slate-900 sm:text-xl">
-                    {productToBatchSelect.name}
-                  </p>
-                  <p className="mt-1 text-sm font-black tabular-nums text-moss-700">
-                    {formatCurrency(productToBatchSelect.price)}
-                  </p>
-                </div>
-              </div>
-              <div className="grid gap-3">
-                {getProductBatches(productToBatchSelect.id, variantToBatchSelect?.id).map((batch) => {
-                  const selectedQuantity = getQuantityInCart(
-                    productToBatchSelect.id,
-                    batch.id,
-                  );
-                  const disabled = selectedQuantity >= batch.quantity;
-
-                  return (
-                    <button
-                      className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-55 sm:grid-cols-[minmax(0,1fr)_150px_auto] sm:items-center"
-                      disabled={disabled}
-                      key={batch.id}
-                      onClick={() =>
-                        addToCart(
-                          productToBatchSelect,
-                          batch,
-                          focusSearchAfterBatchRef.current,
-                          variantToBatchSelect,
-                        )
-                      }
-                      type="button"
-                    >
-                      <div>
-                        <p className="text-lg font-extrabold text-slate-900">
-                          Ngày nhập {formatProductDate(batch.import_date)}
-                        </p>
-                        <p className="mt-1 text-sm font-bold text-slate-500">
-                          Hạn sử dụng {formatProductDate(batch.expiry_date)}
-                        </p>
-                      </div>
-                      <div className="text-left sm:text-right">
-                        <p className="text-xs font-extrabold uppercase text-slate-400">
-                          Còn lại
-                        </p>
-                        <p className="mt-1 text-2xl font-extrabold tabular-nums text-slate-900">
-                          {batch.quantity - selectedQuantity}
-                        </p>
-                      </div>
-                      <span className="rounded-xl bg-coal px-4 py-3 text-center text-sm font-extrabold text-white">
-                        Chọn lô
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              ) : null}
             </div>
           ) : null}
         </Modal>

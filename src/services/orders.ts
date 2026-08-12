@@ -85,7 +85,7 @@ export async function createSale({
     customer_id_input: customerId,
     discount_input: 0,
     items_input: cart.map((item) => ({
-      batch_id: item.batch?.id ?? null,
+      batch_id: null,
       product_id: item.product.id,
       variant_id:
         item.variant?.id ??

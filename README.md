@@ -92,6 +92,9 @@ Sau đó chạy lần lượt các migration bổ sung:
 2. `supabase/20260811_fix_variant_value_link_cascades.sql` để xóa giá trị biến thể an toàn cùng các liên kết liên quan.
 3. `supabase/20260811_unified_sku_inventory.sql` để POS, Kho và kiểm kê dùng một nguồn tồn duy nhất theo SKU; luồng chuyển kệ bị vô hiệu hóa.
 4. `supabase/20260811_product_card_settings.sql` để lưu cấu hình card dùng chung cho trang Sản phẩm và POS.
+5. `supabase/20260812_product_card_compare_price.sql` để bổ sung giá so sánh vào cấu hình card cũ mà không ghi đè tùy chọn khác.
+6. `supabase/20260812_promotions_permissions.sql` để trang Khuyến mãi đọc/ghi dữ liệu theo quyền Marketing thay vì chỉ tài khoản admin.
+7. `supabase/20260812_restore_loyalty_points.sql` để POS cộng/trừ/hoàn điểm trong transaction và hỗ trợ điều kiện khuyến mãi theo điểm tích lũy của khách.
 
 Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Staff.
 

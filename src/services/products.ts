@@ -179,7 +179,9 @@ export async function fetchProducts() {
         import_date: null, expiry_date: null,
         stock: variants.reduce((sum, variant) => sum + variant.stock_quantity, 0),
         shelf_stock: variants.reduce((sum, variant) => sum + variant.stock_quantity, 0),
-        image_url: defaultVariant?.image_url ?? primary?.image_url ?? null,
+        // The product image is the neutral card/picker image. A SKU image only
+        // takes over after the customer explicitly selects that SKU.
+        image_url: primary?.image_url ?? defaultVariant?.image_url ?? null,
         is_active: product.status === "active", is_reward: product.is_reward,
         reward_points_cost: product.reward_points_cost, attributes: attributes as Json,
         deleted_at: product.deleted_at, created_at: product.created_at, updated_at: product.updated_at,

@@ -1,5 +1,6 @@
-import { CalendarDays, Plus, Search, TicketPercent, Trash2 } from "lucide-react";
+import { CalendarDays, ChevronRight, Plus, Search, TicketPercent, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
@@ -7,7 +8,7 @@ import { Modal } from "../components/ui/Modal";
 import { Select } from "../components/ui/Select";
 import { fetchCategories, fetchProducts } from "../features/products/services/productEngine";
 import type { Product } from "../features/products/types";
-import { fetchPromotions, savePromotion } from "../features/promotions/services/promotions";
+import { deletePromotion, fetchPromotions, savePromotion } from "../features/promotions/services/promotions";
 import type { DiscountType, Promotion, PromotionCondition, PromotionScope, PromotionTrigger } from "../features/promotions/types";
 import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 
@@ -16,7 +17,7 @@ type CategoryOption = { id: string; name: string };
 const emptyDraft = (): Draft => ({
   id: "", name: "", code: null, trigger_type: "coupon", discount_type: "percentage",
   discount_value: 0, max_discount_amount: null, start_at: null, end_at: null,
-  total_usage_limit: null, usage_per_customer: 1, priority: 0, is_stackable: false,
+  total_usage_limit: null, usage_per_customer: null, priority: 0, is_stackable: false,
   is_active: true, conditions: [], scopes: [{ scope_type: "all", scope_id: null }],
 });
 const localDate = (value: string | null) => value ? value.slice(0, 16) : "";
@@ -26,26 +27,35 @@ const discountLabel = (item: Pick<Promotion, "discount_type" | "discount_value">
     item.discount_type === "fixed_amount" ? formatCurrency(item.discount_value) : "Miễn phí vận chuyển";
 
 export function PromotionsPage() {
+  const { canAccess } = useAuth();
   const [items, setItems] = useState<Promotion[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
 
   const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
     try {
-      const [promotions, nextProducts, nextCategories] = await Promise.all([
-        fetchPromotions(), fetchProducts(), fetchCategories(),
-      ]);
+      const promotions = await fetchPromotions();
       setItems(promotions);
-      setProducts(nextProducts);
-      setCategories(nextCategories);
+      const [productsResult, categoriesResult] = await Promise.allSettled([
+        fetchProducts(), fetchCategories(),
+      ]);
+      if (productsResult.status === "fulfilled") setProducts(productsResult.value);
+      if (categoriesResult.status === "fulfilled") setCategories(categoriesResult.value);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Không tải được dữ liệu khuyến mãi.");
+    } finally {
+      setLoading(false);
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -79,58 +89,87 @@ export function PromotionsPage() {
     } finally { setSaving(false); }
   }
 
+  async function removeCurrentPromotion() {
+    if (!draft.id) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await deletePromotion(draft.id);
+      setDeleteConfirmOpen(false);
+      setOpen(false);
+      await load();
+    } catch (reason) {
+      setDeleteConfirmOpen(false);
+      setError(reason instanceof Error ? reason.message : "Không xóa được chương trình.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
-    <div className="mx-auto max-w-7xl space-y-4 px-3 pb-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl space-y-3 px-3 pb-32 sm:px-6 sm:pb-28 lg:px-8">
       {error && !open ? <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
-      <Card className="overflow-hidden bg-gradient-to-br from-coal to-ink p-4 text-white sm:p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/60">Tiếp thị</p>
-            <h1 className="mt-1 text-xl font-black sm:text-2xl">Khuyến mãi & voucher</h1>
-            <p className="mt-1 max-w-2xl text-sm text-white/70">Tạo ưu đãi tự động hoặc mã giảm giá mà không thay đổi giá gốc của SKU.</p>
+      <Card className="p-3.5 sm:p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-black text-slate-950">Chương trình ưu đãi</h1>
+            <p className="mt-0.5 truncate text-xs font-medium text-slate-500">Voucher và khuyến mãi tự động</p>
           </div>
-          <div className="flex gap-2">
-            <Metric label="Tổng chương trình" value={items.length} />
-            <Metric label="Đang hoạt động" value={items.filter((item) => item.is_active).length} />
+          <div className="flex shrink-0 items-center gap-1.5 text-[11px] font-extrabold">
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{items.length} chương trình</span>
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">{items.filter((item) => item.is_active).length} hoạt động</span>
           </div>
         </div>
       </Card>
 
-      <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-soft sm:flex-row">
-        <label className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-moss-500 focus:bg-white focus:ring-2 focus:ring-moss-100" onChange={(event) => setQuery(event.target.value)} placeholder="Tìm tên hoặc mã voucher..." value={query} />
-        </label>
-        <Select className="sm:!w-48" onChange={(event) => setStatus(event.target.value as typeof status)} value={status}>
-          <option value="all">Tất cả trạng thái</option><option value="active">Đang hoạt động</option><option value="inactive">Tạm dừng</option>
-        </Select>
-        <Button onClick={() => edit()}><Plus className="h-4 w-4" />Thêm chương trình</Button>
-      </div>
-
-      <Card className="hidden overflow-x-auto p-0 md:block">
+      {loading ? (
+        <Card className="grid min-h-40 place-items-center p-4 text-sm font-semibold text-slate-500">Đang tải dữ liệu từ Supabase...</Card>
+      ) : <Card className="hidden overflow-x-auto p-0 md:block">
         <table className="w-full min-w-[880px] text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr>
-            <th className="p-4">Chương trình</th><th>Hình thức</th><th>Ưu đãi</th><th>Thời gian</th><th>Lượt dùng</th><th>Trạng thái</th><th className="pr-4 text-right">Thao tác</th>
+            <th className="p-4">Chương trình</th><th>Hình thức</th><th>Ưu đãi</th><th>Thời gian</th><th>Lượt dùng</th><th className="pr-4">Trạng thái</th>
           </tr></thead>
-          <tbody>{filtered.map((item) => <tr className="border-t border-slate-100" key={item.id}>
+          <tbody>{filtered.map((item) => <tr className="cursor-pointer border-t border-slate-100 transition hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-moss-400" key={item.id} onClick={() => edit(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); edit(item); } }} tabIndex={0}>
             <td className="p-4"><p className="font-extrabold">{item.name}</p><p className="mt-0.5 font-mono text-xs text-slate-500">{item.code ?? "Không cần mã"}</p></td>
             <td>{triggerLabel(item.trigger_type)}</td><td className="font-bold text-moss-700">{discountLabel(item)}</td>
             <td className="text-xs text-slate-600">{item.start_at ? new Date(item.start_at).toLocaleDateString("vi-VN") : "Áp dụng ngay"} → {item.end_at ? new Date(item.end_at).toLocaleDateString("vi-VN") : "Không giới hạn"}</td>
-            <td>{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</td><td><Status active={item.is_active} /></td>
-            <td className="pr-4 text-right"><Button onClick={() => edit(item)} variant="secondary">Chỉnh sửa</Button></td>
+            <td>{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</td><td className="pr-4"><div className="flex items-center justify-between gap-2"><Status active={item.is_active} /><ChevronRight className="h-4 w-4 text-slate-300" /></div></td>
           </tr>)}</tbody>
         </table>
-      </Card>
+      </Card>}
 
-      <div className="grid gap-3 md:hidden">{filtered.map((item) => <Card className="p-4" key={item.id}>
-        <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-moss-50 text-moss-700"><TicketPercent className="h-5 w-5" /></span>
-          <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><h3 className="font-black">{item.name}</h3><Status active={item.is_active} /></div><p className="font-mono text-xs text-slate-500">{item.code ?? "TỰ ĐỘNG"}</p></div></div>
-        <div className="my-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-sm"><div><p className="text-xs text-slate-500">Ưu đãi</p><strong>{discountLabel(item)}</strong></div><div><p className="text-xs text-slate-500">Lượt dùng</p><strong>{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</strong></div></div>
-        <div className="flex items-center gap-2 text-xs text-slate-500"><CalendarDays className="h-4 w-4" /><span>{item.start_at ? new Date(item.start_at).toLocaleDateString("vi-VN") : "Ngay"} → {item.end_at ? new Date(item.end_at).toLocaleDateString("vi-VN") : "Không giới hạn"}</span><Button className="ml-auto min-h-9 px-3 py-1.5" onClick={() => edit(item)} variant="secondary">Sửa</Button></div>
-      </Card>)}</div>
-      {!filtered.length ? <Card className="p-8 text-center text-sm text-slate-500">Không tìm thấy chương trình phù hợp.</Card> : null}
+      {!loading ? <div className="grid gap-2.5 md:hidden">{filtered.map((item) => <button className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-soft transition active:scale-[0.99] active:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400" key={item.id} onClick={() => edit(item)} type="button">
+        <div className="flex items-start gap-3 p-3.5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-moss-50 text-moss-700"><TicketPercent className="h-5 w-5" /></span>
+          <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><h3 className="truncate font-black text-slate-950">{item.name}</h3><Status active={item.is_active} /></div><p className="mt-0.5 font-mono text-[11px] font-semibold uppercase text-slate-500">{item.code ?? "Tự động"}</p></div></div>
+        <div className="mx-3.5 grid grid-cols-2 divide-x divide-slate-200 rounded-xl bg-slate-50 px-3 py-2.5 text-sm"><div className="pr-3"><p className="text-[11px] font-semibold text-slate-500">Ưu đãi</p><strong className="mt-0.5 block text-moss-800">{discountLabel(item)}</strong></div><div className="pl-3"><p className="text-[11px] font-semibold text-slate-500">Lượt dùng</p><strong className="mt-0.5 block">{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</strong></div></div>
+        <div className="mt-3 flex items-center gap-2 border-t border-slate-100 px-3.5 py-3 text-xs font-medium text-slate-500"><CalendarDays className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1 truncate">{item.start_at ? new Date(item.start_at).toLocaleDateString("vi-VN") : "Áp dụng ngay"} → {item.end_at ? new Date(item.end_at).toLocaleDateString("vi-VN") : "Không giới hạn"}</span><ChevronRight className="h-4 w-4 shrink-0 text-slate-300" /></div>
+      </button>)}</div> : null}
+      {!loading && !filtered.length ? <Card className="p-8 text-center text-sm text-slate-500">Không tìm thấy chương trình phù hợp trong database.</Card> : null}
 
-      <Modal footer={<><Button onClick={() => setOpen(false)} variant="secondary">Hủy</Button><Button isLoading={saving} onClick={() => void submit()}>Lưu chương trình</Button></>} onClose={() => setOpen(false)} open={open} size="xl" title={draft.id ? "Chỉnh sửa chương trình" : "Thêm chương trình"}>
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_32px_rgba(15,23,42,0.12)] backdrop-blur-xl lg:left-72">
+        <div className="mx-auto flex max-w-6xl items-center gap-2">
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              aria-label="Tìm chương trình khuyến mãi"
+              className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-moss-500 focus:bg-white focus:ring-2 focus:ring-moss-100"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tìm tên hoặc mã..."
+              value={query}
+            />
+          </label>
+          <div className="w-28 shrink-0 sm:w-44">
+            <Select className="!min-h-12 !py-2 !pl-3 !pr-7" onChange={(event) => setStatus(event.target.value as typeof status)} value={status}>
+              <option value="all">Tất cả</option><option value="active">Hoạt động</option><option value="inactive">Tạm dừng</option>
+            </Select>
+          </div>
+          <Button aria-label="Thêm chương trình" className="h-12 min-h-12 w-12 shrink-0 px-0 sm:w-auto sm:px-4" onClick={() => edit()}>
+            <Plus className="h-4 w-4" /><span className="hidden sm:inline">Thêm chương trình</span>
+          </Button>
+        </div>
+      </div>
+
+      <Modal footer={<div className="flex w-full items-center gap-2">{draft.id && canAccess("promotions.delete") ? <Button aria-label="Xóa chương trình" className="mr-auto px-3" disabled={saving} onClick={() => setDeleteConfirmOpen(true)} variant="danger"><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Xóa</span></Button> : <span className="mr-auto" />}<Button onClick={() => setOpen(false)} variant="secondary">Hủy</Button><Button isLoading={saving} onClick={() => void submit()}>Lưu</Button></div>} onClose={() => setOpen(false)} open={open} size="xl" title={draft.id ? "Chỉnh sửa chương trình" : "Thêm chương trình"}>
         <div className="space-y-4">
           {error ? <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
           <FormSection description="Tên, cách kích hoạt và mức ưu đãi." title="Thông tin chung">
@@ -151,30 +190,75 @@ export function PromotionsPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <Input label="Bắt đầu" onChange={(event) => setDraft((current) => ({ ...current, start_at: event.target.value ? new Date(event.target.value).toISOString() : null }))} type="datetime-local" value={localDate(draft.start_at)} />
               <Input label="Kết thúc" onChange={(event) => setDraft((current) => ({ ...current, end_at: event.target.value ? new Date(event.target.value).toISOString() : null }))} type="datetime-local" value={localDate(draft.end_at)} />
-              <Input label="Tổng lượt sử dụng" inputMode="numeric" onChange={(event) => { const value = normalizeIntegerInput(event.target.value); setDraft((current) => ({ ...current, total_usage_limit: value ? Number(value) : null })); }} value={formatIntegerInput(draft.total_usage_limit ?? "")} />
-              <Input label="Số lượt mỗi khách" inputMode="numeric" onChange={(event) => { const value = normalizeIntegerInput(event.target.value); setDraft((current) => ({ ...current, usage_per_customer: value ? Number(value) : null })); }} value={formatIntegerInput(draft.usage_per_customer ?? "")} />
+              <UsageLimitField label="Tổng lượt sử dụng" onChange={(total_usage_limit) => setDraft((current) => ({ ...current, total_usage_limit }))} value={draft.total_usage_limit} />
+              <UsageLimitField label="Số lượt mỗi khách" onChange={(usage_per_customer) => setDraft((current) => ({ ...current, usage_per_customer }))} value={draft.usage_per_customer} />
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2"><Toggle checked={draft.is_stackable} label="Cho phép cộng dồn ưu đãi" onChange={(checked) => setDraft((current) => ({ ...current, is_stackable: checked }))} /><Toggle checked={draft.is_active} label="Đang hoạt động" onChange={(checked) => setDraft((current) => ({ ...current, is_active: checked }))} /></div>
           </FormSection>
+        </div>
+      </Modal>
+      <Modal
+        footer={<div className="grid w-full grid-cols-2 gap-2"><Button disabled={deleting} onClick={() => setDeleteConfirmOpen(false)} variant="secondary">Hủy</Button><Button isLoading={deleting} onClick={() => void removeCurrentPromotion()} variant="danger"><Trash2 className="h-4 w-4" />Xóa chương trình</Button></div>}
+        onClose={() => { if (!deleting) setDeleteConfirmOpen(false); }}
+        open={deleteConfirmOpen}
+        size="sm"
+        title="Xóa chương trình?"
+        zIndex={120}
+      >
+        <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">
+          <p>Bạn sắp xóa <strong>{draft.name}</strong>. Điều kiện và phạm vi áp dụng của chương trình cũng sẽ bị xóa.</p>
+          <p className="mt-2 text-xs font-semibold text-red-700">Chương trình đã có lượt sử dụng sẽ được giữ lại để bảo toàn lịch sử đơn hàng.</p>
         </div>
       </Modal>
     </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) { return <div className="min-w-24 rounded-xl bg-white/10 px-3 py-2 text-center"><strong className="block text-lg font-black">{value}</strong><span className="text-[11px] text-white/65">{label}</span></div>; }
 function Status({ active }: { active: boolean }) { return <span className={`inline-flex shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{active ? "Hoạt động" : "Tạm dừng"}</span>; }
 function FormSection({ children, description, title }: { children: React.ReactNode; description: string; title: string }) { return <section className="rounded-2xl border border-slate-200 p-3 sm:p-4"><div className="mb-3"><h3 className="font-extrabold">{title}</h3><p className="text-xs text-slate-500">{description}</p></div>{children}</section>; }
 function Toggle({ checked, label, onChange }: { checked: boolean; label: string; onChange: (value: boolean) => void }) { return <label className="flex min-h-11 cursor-pointer items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-bold"><span>{label}</span><input checked={checked} className="h-4 w-4 accent-moss-700" onChange={(event) => onChange(event.target.checked)} type="checkbox" /></label>; }
 
-const conditionLabels: Record<string, string> = { order_total: "Tổng tiền đơn hàng", quantity: "Tổng số lượng sản phẩm", customer_order_count: "Số đơn đã mua của khách" };
-const operatorLabels: Record<PromotionCondition["operator"], string> = { eq: "Bằng", neq: "Khác", gt: "Lớn hơn", gte: "Từ", lt: "Nhỏ hơn", lte: "Tối đa", in: "Thuộc danh sách", not_in: "Không thuộc danh sách" };
+function SmallSwitch({ checked, label, onChange }: { checked: boolean; label: string; onChange: (value: boolean) => void }) {
+  return <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-600">
+    <span>{label}</span>
+    <input aria-label={label} checked={checked} className="peer sr-only" onChange={(event) => onChange(event.target.checked)} type="checkbox" />
+    <span className="relative h-5 w-9 rounded-full bg-slate-200 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform after:content-[''] peer-checked:bg-moss-700 peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-moss-300" />
+  </label>;
+}
+
+function UsageLimitField({ label, onChange, value }: { label: string; onChange: (value: number | null) => void; value: number | null }) {
+  const unlimited = value == null;
+  return <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm font-extrabold text-slate-800">{label}</span>
+      <SmallSwitch checked={unlimited} label="Không giới hạn" onChange={(checked) => onChange(checked ? null : 1)} />
+    </div>
+    {!unlimited ? <div className="mt-3">
+      <Input aria-label={label} inputMode="numeric" onChange={(event) => { const next = Number(normalizeIntegerInput(event.target.value)); onChange(Number.isFinite(next) && next > 0 ? next : 1); }} value={formatIntegerInput(value)} />
+    </div> : <p className="mt-2 text-xs font-medium text-slate-500">Có thể sử dụng không giới hạn số lượt.</p>}
+  </div>;
+}
+
+const conditionLabels: Record<string, string> = {
+  order_total: "Tổng tiền đơn hàng",
+  quantity: "Tổng số lượng sản phẩm",
+  customer_order_count: "Số đơn đã mua của khách",
+  customer_points: "Điểm tích lũy của khách",
+};
+const numericOperatorLabels: Partial<Record<PromotionCondition["operator"], string>> = {
+  eq: "Bằng",
+  neq: "Khác",
+  gt: "Lớn hơn",
+  gte: "Từ",
+  lt: "Nhỏ hơn",
+  lte: "Tối đa",
+};
 function Conditions({ onChange, value }: { onChange: (value: PromotionCondition[]) => void; value: PromotionCondition[] }) {
-  return <FormSection description="Khách phải thỏa tất cả điều kiện bên dưới. Để trống nếu không có điều kiện." title="Điều kiện áp dụng">
+  return <FormSection description="Khách phải thỏa tất cả điều kiện. Điều kiện về khách hàng chỉ áp dụng khi POS đã chọn khách." title="Điều kiện áp dụng">
     <div className="space-y-2">{value.map((condition, index) => <div className="grid gap-2 rounded-xl bg-slate-50 p-2.5 sm:grid-cols-[1.3fr_1fr_1.5fr_auto]" key={`${condition.condition_type}-${index}`}>
       <Select aria-label="Loại điều kiện" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, condition_type: event.target.value, value: 0 } : item))} value={condition.condition_type}>{Object.entries(conditionLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select>
-      <Select aria-label="Phép so sánh" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, operator: event.target.value as PromotionCondition["operator"] } : item))} value={condition.operator}>{Object.entries(operatorLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select>
-      <Input aria-label="Giá trị điều kiện" inputMode="numeric" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, value: Number(normalizeIntegerInput(event.target.value)) || 0 } : item))} value={formatIntegerInput(String(condition.value ?? ""))} />
+      <Select aria-label="Phép so sánh" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, operator: event.target.value as PromotionCondition["operator"] } : item))} value={condition.operator}>{Object.entries(numericOperatorLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select>
+      <Input aria-label="Giá trị điều kiện" inputMode="numeric" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, value: Number(normalizeIntegerInput(event.target.value)) || 0 } : item))} placeholder={condition.condition_type === "customer_points" ? "Nhập số điểm" : "Nhập giá trị"} value={formatIntegerInput(String(condition.value ?? ""))} />
       <Button aria-label="Xóa điều kiện" className="px-3" onClick={() => onChange(value.filter((_, position) => position !== index))} variant="danger"><Trash2 className="h-4 w-4" /></Button>
     </div>)}</div>
     <Button className="mt-3 w-full sm:w-auto" onClick={() => onChange([...value, { condition_type: "order_total", operator: "gte", value: 0 }])} variant="secondary"><Plus className="h-4 w-4" />Thêm điều kiện</Button>

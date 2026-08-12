@@ -4,18 +4,21 @@ import {
   ChevronRight,
   CircleCheck,
   LayoutGrid,
+  Minus,
   PackageCheck,
   Pencil,
   Plus,
   Search,
+  Save,
   Settings2,
   Sparkles,
   Tags,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloudinaryImageField } from "../components/media/CloudinaryImageField";
 import { Ean13PickerModal } from "../components/products/Ean13PickerModal";
+import { ConfigurableProductCard } from "../components/products/ConfigurableProductCard";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
@@ -67,6 +70,130 @@ import {
 } from "../services/productSettings";
 
 type PageTab = "products" | "types" | "attributes" | "card";
+
+const productSections = [
+  ["products", "Sản phẩm", Boxes],
+  ["types", "Danh mục sản phẩm", Tags],
+  ["attributes", "Thuộc tính sản phẩm", Settings2],
+  ["card", "Giao diện card", LayoutGrid],
+] as const;
+
+function ProductSectionSelect({
+  onChange,
+  value,
+}: {
+  onChange: (value: PageTab) => void;
+  value: PageTab;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const current = productSections.find(([key]) => key === value) ?? productSections[0];
+  const CurrentIcon = current[2];
+
+  useEffect(() => {
+    if (!open) return;
+    const closeWhenOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeWhenOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeWhenOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative min-w-0 flex-1" ref={rootRef}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className={`flex min-h-12 w-full items-center gap-2 rounded-xl border px-3 text-left text-sm font-extrabold transition ${open ? "border-coal bg-coal text-white shadow-sm" : "border-slate-200 bg-white text-coal hover:border-moss-300"}`}
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
+        type="button"
+      >
+        <CurrentIcon className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{current[1]}</span>
+        <ChevronRight className={`h-4 w-4 shrink-0 transition ${open ? "-rotate-90" : "rotate-90"}`} />
+      </button>
+      {open ? (
+        <div
+          className="absolute bottom-[calc(100%+0.5rem)] left-0 z-[70] w-full min-w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_-18px_48px_rgba(15,23,42,0.18)]"
+          role="listbox"
+        >
+          {productSections.map(([key, label, Icon]) => (
+            <button
+              aria-selected={value === key}
+              className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-extrabold transition ${value === key ? "bg-coal text-white" : "text-coal hover:bg-slate-50"}`}
+              key={key}
+              onClick={() => {
+                onChange(key);
+                setOpen(false);
+              }}
+              role="option"
+              type="button"
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="truncate">{label}</span>
+              {value === key ? <CircleCheck className="ml-auto h-4 w-4" /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ProductSearchPopup({
+  onChange,
+  onClose,
+  open,
+  placeholder,
+  title,
+  value,
+}: {
+  onChange: (value: string) => void;
+  onClose: () => void;
+  open: boolean;
+  placeholder: string;
+  title: string;
+  value: string;
+}) {
+  return (
+    <Modal
+      footer={<Button className="w-full sm:w-auto" onClick={onClose}>Xong</Button>}
+      onClose={onClose}
+      open={open}
+      size="sm"
+      title={title}
+      zIndex={105}
+    >
+      <label className="relative block">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          autoFocus
+          className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-10 text-sm outline-none transition focus:border-moss-500 focus:bg-white focus:ring-2 focus:ring-moss-100"
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          value={value}
+        />
+        {value ? (
+          <button
+            aria-label="Xóa nội dung tìm kiếm"
+            className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"
+            onClick={() => onChange("")}
+            type="button"
+          >
+            ×
+          </button>
+        ) : null}
+      </label>
+    </Modal>
+  );
+}
 type EditorTab = "general" | "specifications" | "variants" | "images" | "seo";
 const editorSteps: Array<[EditorTab, string]> = [
   ["general", "Thông tin chung"],
@@ -138,6 +265,7 @@ export function ProductPage() {
     defaultProductSettings,
   );
   const [query, setQuery] = useState("");
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [form, setForm] = useState<ProductEditorInput>(emptyInput());
   const [open, setOpen] = useState(false);
   const [ean13GateOpen, setEan13GateOpen] = useState(false);
@@ -201,7 +329,9 @@ export function ProductPage() {
       specifications: product.specifications,
       variant_attributes: product.variant_attributes,
       variants: product.variants,
-      images: product.images,
+      images: [...product.images].sort(
+        (first, second) => Number(second.is_primary) - Number(first.is_primary),
+      ),
     });
     setEditorTab("general");
     setHasVariants(
@@ -327,6 +457,22 @@ export function ProductPage() {
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Không lưu được sản phẩm.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function removeCurrentProduct() {
+    if (!form.id || !window.confirm(`Xóa sản phẩm “${form.name}”?`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      await archiveProduct(form.id);
+      setOpen(false);
+      await load();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Không xóa được sản phẩm.",
       );
     } finally {
       setSaving(false);
@@ -555,43 +701,17 @@ export function ProductPage() {
           </button>
         </div>
       ) : null}
-      <div className="scrollbar-none flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-soft">
-        {(
-          [
-            ["products", "Sản phẩm", Boxes],
-            ["types", "Danh mục sản phẩm", Tags],
-            ["attributes", "Thuộc tính sản phẩm", Settings2],
-            ["card", "Giao diện card", LayoutGrid],
-          ] as const
-        ).map(([key, label, Icon]) => (
-          <Button
-            className="shrink-0 rounded-xl shadow-none ring-0"
-            key={key}
-            onClick={() => setPageTab(key)}
-            variant={pageTab === key ? "primary" : "ghost"}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </Button>
-        ))}
-      </div>
       {pageTab === "products" ? (
         <>
           <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_32px_rgba(15,23,42,0.12)] backdrop-blur-xl lg:left-72">
-            <div className="mx-auto flex max-w-4xl gap-2">
-            <label className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-moss-500 focus:bg-white focus:ring-2 focus:ring-moss-100"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Tìm tên, slug hoặc SKU..."
-                value={query}
-              />
-            </label>
-            <Button className="min-h-12 shrink-0 px-3 sm:px-4" onClick={() => setEan13GateOpen(true)}>
+            <div className="mx-auto flex max-w-4xl items-center gap-2">
+            <ProductSectionSelect onChange={setPageTab} value={pageTab} />
+            <Button aria-label="Tìm sản phẩm" className="relative h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setProductSearchOpen(true)} variant="secondary">
+              <Search className="h-4 w-4" />
+              {query ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-moss-600" /> : null}
+            </Button>
+            <Button aria-label="Thêm sản phẩm" className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setEan13GateOpen(true)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Thêm sản phẩm</span>
-              <span className="sm:hidden">Thêm</span>
             </Button>
             </div>
           </div>
@@ -701,16 +821,10 @@ export function ProductPage() {
                   </table>
                 </div>
               </Card>
-              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+              <div className="grid justify-start gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(148px,172px))] sm:gap-3">
                 {filtered.map((product) => (
                   <ProductAdminCard
                     key={product.id}
-                    onArchive={async () => {
-                      if (window.confirm(`Ẩn ${product.name}?`)) {
-                        await archiveProduct(product.id);
-                        await load();
-                      }
-                    }}
                     onEdit={() => edit(product)}
                     product={product}
                     settings={productSettings.card}
@@ -797,29 +911,55 @@ export function ProductPage() {
       {pageTab === "types" ? (
         <DefinitionManager
           attributes={attributes}
+          currentSection={pageTab}
           kind="type"
           mappings={typeAttributes}
+          onSectionChange={setPageTab}
           records={types}
           onSaved={load}
         />
       ) : null}
       {pageTab === "attributes" ? (
         <DefinitionManager
+          currentSection={pageTab}
           kind="attribute"
+          onSectionChange={setPageTab}
           records={attributes}
           onSaved={load}
         />
       ) : null}
       {pageTab === "card" ? (
         <CardAppearanceEditor
+          currentSection={pageTab}
           onChange={setProductSettings}
+          onSectionChange={setPageTab}
           products={products}
           settings={productSettings}
         />
       ) : null}
+      <ProductSearchPopup
+        onChange={setQuery}
+        onClose={() => setProductSearchOpen(false)}
+        open={productSearchOpen}
+        placeholder="Tìm theo tên, slug hoặc SKU..."
+        title="Tìm sản phẩm"
+        value={query}
+      />
       <Modal
         footer={
-          <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:items-center">
+          <div className={`grid w-full gap-2 sm:flex sm:w-auto sm:items-center ${form.id ? "grid-cols-4" : "grid-cols-3"}`}>
+            {form.id ? (
+              <Button
+                aria-label="Xóa sản phẩm"
+                className="px-2 sm:px-4"
+                disabled={saving}
+                onClick={() => void removeCurrentProduct()}
+                variant="danger"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Xóa</span>
+              </Button>
+            ) : null}
             <Button
               className="px-2 sm:hidden"
               onClick={() =>
@@ -1097,46 +1237,6 @@ export function ProductPage() {
               </div>
             )}
 
-            <section className="rounded-2xl border border-slate-200 p-3 sm:p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <span className="grid h-7 w-7 place-items-center rounded-full bg-coal text-xs font-black text-white">
-                  3
-                </span>
-                <div>
-                  <h3 className="font-black">Ảnh đại diện</h3>
-                  <p className="text-xs text-slate-500">
-                    Có thể bỏ qua và bổ sung sau.
-                  </p>
-                </div>
-              </div>
-              <CloudinaryImageField
-                imageUrl={form.images[0]?.image_url}
-                label="Ảnh chính từ Cloudinary"
-                onChange={(selected) =>
-                  setForm((current) => ({
-                    ...current,
-                    images: selected.imageUrl
-                      ? [
-                          {
-                            ...(current.images[0] ?? {
-                              alt_text: current.name,
-                              sort_order: 0,
-                              is_primary: true,
-                              variant_id: null,
-                              variant_value_id: null,
-                            }),
-                            image_url: selected.imageUrl,
-                            cloudinary_public_id: selected.publicId,
-                          },
-                          ...current.images.slice(1),
-                        ]
-                      : current.images.slice(1),
-                  }))
-                }
-                publicId={form.images[0]?.cloudinary_public_id}
-              />
-            </section>
-
             <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <summary className="cursor-pointer text-sm font-extrabold">
                 Thông tin nâng cao: slug và mô tả
@@ -1217,6 +1317,7 @@ export function ProductPage() {
                 />
                 <SkuMatrix
                   attributes={form.variant_attributes}
+                  fallbackImageUrl={form.images[0]?.image_url}
                   onAddManual={addManualCombination}
                   onChange={updateVariants}
                   onGenerate={generate}
@@ -1228,12 +1329,47 @@ export function ProductPage() {
           </div>
         ) : null}
         {editorTab === "images" ? (
-          <div className="space-y-3">
-            <p className="text-sm text-slate-600">
-              Ảnh chung của Product. Ảnh riêng SKU được nhập tại SKU Matrix;
-              metadata Cloudinary được lưu cùng owner.
-            </p>
+          <div className="space-y-4">
+            <section className="rounded-2xl border border-slate-200 p-3 sm:p-4">
+              <div className="mb-3">
+                <h3 className="font-black">Hình ảnh</h3>
+                <p className="text-xs text-slate-500">Hiển thị mặc định trước khi khách chọn một SKU cụ thể.</p>
+              </div>
+              <CloudinaryImageField
+                appearance="row"
+                imageUrl={form.images[0]?.image_url}
+                label=""
+                onChange={(selected) => setForm((current) => ({
+                  ...current,
+                  images: selected.imageUrl
+                    ? [{
+                        ...(current.images[0] ?? {
+                          alt_text: current.name,
+                          sort_order: 0,
+                          variant_id: null,
+                          variant_value_id: null,
+                        }),
+                        image_url: selected.imageUrl,
+                        cloudinary_public_id: selected.publicId,
+                        is_primary: true,
+                      }, ...current.images.slice(1)]
+                    : current.images.slice(1).map((image, index) => ({
+                        ...image,
+                        is_primary: index === 0,
+                        sort_order: index,
+                      })),
+                }))}
+                publicId={form.images[0]?.cloudinary_public_id}
+              />
+            </section>
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
+              <strong>Ảnh bổ sung của sản phẩm</strong>
+              <p className="mt-1 text-xs leading-5 text-blue-700">
+                Ảnh đại diện được chọn ở phía trên. Ảnh riêng của SKU được chọn trong Ma trận SKU.
+              </p>
+            </div>
             <Button
+              disabled={!form.images[0]?.image_url}
               onClick={() =>
                 setForm((current) => ({
                   ...current,
@@ -1244,7 +1380,7 @@ export function ProductPage() {
                       cloudinary_public_id: null,
                       alt_text: current.name,
                       sort_order: current.images.length,
-                      is_primary: current.images.length === 0,
+                      is_primary: false,
                       variant_id: null,
                       variant_value_id: null,
                     },
@@ -1252,13 +1388,16 @@ export function ProductPage() {
                 }))
               }
             >
-              + Thêm ảnh từ Cloudinary
+              + Thêm ảnh bổ sung
             </Button>
-            {form.images.map((image, index) => (
+            {form.images.slice(1).map((image, additionalIndex) => {
+              const index = additionalIndex + 1;
+              return (
               <CloudinaryImageField
+                appearance="row"
                 imageUrl={image.image_url}
                 key={image.id ?? index}
-                label={`Ảnh ${index + 1}`}
+                label={`Ảnh bổ sung ${additionalIndex + 1}`}
                 onChange={(selected) =>
                   setForm((current) => ({
                     ...current,
@@ -1279,7 +1418,13 @@ export function ProductPage() {
                 }
                 publicId={image.cloudinary_public_id}
               />
-            ))}
+              );
+            })}
+            {form.images.length <= 1 ? (
+              <p className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-center text-sm text-slate-500">
+                Chưa có ảnh bổ sung.
+              </p>
+            ) : null}
           </div>
         ) : null}
         {editorTab === "seo" ? (
@@ -1386,11 +1531,15 @@ const cardFieldOptions = [
 ] as const;
 
 function CardAppearanceEditor({
+  currentSection,
   onChange,
+  onSectionChange,
   products,
   settings,
 }: {
+  currentSection: PageTab;
   onChange: React.Dispatch<React.SetStateAction<ProductSettings>>;
+  onSectionChange: (value: PageTab) => void;
   products: Product[];
   settings: ProductSettings;
 }) {
@@ -1435,7 +1584,7 @@ function CardAppearanceEditor({
         <div className="mb-4">
           <h2 className="font-black">Cấu hình card sản phẩm</h2>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            Giá và hình ảnh được lấy từ SKU. Nếu các SKU có giá khác nhau, card sẽ hiển thị khoảng giá.
+            Giá bán, giá so sánh và hình ảnh lấy từ SKU có giá thấp nhất. Đây cũng là tổ hợp mặc định khi mở sản phẩm.
           </p>
         </div>
         <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
@@ -1469,7 +1618,7 @@ function CardAppearanceEditor({
         </div>
         <div className="mx-auto max-w-sm">
           {sample ? (
-            <ProductAdminCard onArchive={async () => undefined} onEdit={() => undefined} preview product={sample} settings={current} />
+            <ProductAdminCard onEdit={() => undefined} posPreview={target === "posCard"} preview product={sample} settings={current} />
           ) : (
             <div className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-slate-300 bg-white text-sm text-slate-500">Thêm sản phẩm để xem trước.</div>
           )}
@@ -1477,9 +1626,9 @@ function CardAppearanceEditor({
       </Card>
 
       <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_32px_rgba(15,23,42,0.12)] backdrop-blur-xl lg:left-72">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
-          <p className="truncate text-xs font-semibold text-slate-500">{message || "Thay đổi chỉ áp dụng sau khi lưu."}</p>
-          <Button className="min-h-12 shrink-0" isLoading={savingCard} onClick={() => void save()}>Lưu giao diện</Button>
+        <div className="mx-auto flex max-w-4xl items-center gap-2">
+          <ProductSectionSelect onChange={onSectionChange} value={currentSection} />
+          <Button aria-label="Lưu giao diện card" className="h-12 min-h-12 w-12 shrink-0 px-0" isLoading={savingCard} onClick={() => void save()} title={message || "Lưu giao diện"}><Save className="h-4 w-4" /></Button>
         </div>
       </div>
     </div>
@@ -1487,14 +1636,14 @@ function CardAppearanceEditor({
 }
 
 function ProductAdminCard({
-  onArchive,
   onEdit,
+  posPreview = false,
   preview = false,
   product,
   settings,
 }: {
-  onArchive: () => Promise<void>;
   onEdit: () => void;
+  posPreview?: boolean;
   preview?: boolean;
   product: Product;
   settings: ProductCardSettings;
@@ -1502,7 +1651,6 @@ function ProductAdminCard({
   const active = product.variants.filter((variant) => variant.is_active);
   const prices = active.map((variant) => variant.base_price);
   const minPrice = prices.length ? Math.min(...prices) : 0;
-  const maxPrice = prices.length ? Math.max(...prices) : 0;
   const lowestVariant = active.find((variant) => variant.base_price === minPrice);
   const comparePrice =
     lowestVariant?.compare_at_price != null &&
@@ -1511,79 +1659,25 @@ function ProductAdminCard({
       : null;
   const stock = active.reduce((sum, variant) => sum + variant.stock_quantity, 0);
   const image =
-    lowestVariant?.image_url ??
     product.images.find((item) => item.is_primary)?.image_url ??
     product.images[0]?.image_url ??
+    lowestVariant?.image_url ??
     active.find((variant) => variant.image_url)?.image_url ??
     null;
-  const visible = (field: string) => settings.visibleFields.includes(field);
-
   return (
-    <Card className="group overflow-hidden p-0 transition hover:-translate-y-0.5 hover:shadow-lg">
-      {visible("image") ? (
-        <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
-          {image ? (
-            <img
-              alt={product.name}
-              className={`h-full w-full transition duration-300 group-hover:scale-[1.02] ${settings.imageFit === "contain" ? "object-contain p-2" : "object-cover"}`}
-              src={image}
-            />
-          ) : (
-            <div className="grid h-full place-items-center text-slate-300">
-              <Boxes className="h-9 w-9" />
-            </div>
-          )}
-          <span className="absolute left-2 top-2">
-            <StatusPill
-              active={product.status === "active"}
-              label={product.status === "active" ? "Đang bán" : "Tạm ẩn"}
-            />
-          </span>
-        </div>
-      ) : null}
-      <div className="p-3.5">
-        {visible("category") ? (
-          <p className="mb-1 truncate text-[11px] font-bold uppercase tracking-wide text-slate-400">
-            {product.category?.name ?? product.product_type?.name ?? "Chưa có danh mục"}
-          </p>
-        ) : null}
-        {visible("name") ? (
-          <h3 className="line-clamp-2 min-h-10 font-extrabold leading-5">{product.name}</h3>
-        ) : null}
-        <div className="mt-2 min-h-11">
-          {visible("compare_price") && comparePrice ? (
-            <p className="text-xs font-semibold text-slate-400 line-through">
-              {formatCurrency(comparePrice)}
-            </p>
-          ) : null}
-          {visible("price") ? (
-            <p className="font-black text-moss-700">
-              {minPrice === maxPrice
-                ? formatCurrency(minPrice)
-                : `${formatCurrency(minPrice)} – ${formatCurrency(maxPrice)}`}
-            </p>
-          ) : null}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
-          {visible("variant_count") ? (
-            <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-600">{active.length} SKU</span>
-          ) : null}
-          {visible("stock") ? (
-            <span className={`rounded-lg px-2 py-1 ${stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-              Tồn {stock}
-            </span>
-          ) : null}
-        </div>
-      </div>
-      {!preview ? <div className="flex gap-2 border-t border-slate-100 p-3">
-        <Button className="flex-1" onClick={onEdit} variant="secondary">
-          <Pencil className="h-4 w-4" /> Sửa
-        </Button>
-        <Button aria-label={`Ẩn ${product.name}`} onClick={() => void onArchive()} variant="danger">
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div> : null}
-    </Card>
+    <ConfigurableProductCard
+      action={preview && posPreview ? <div className="flex items-center gap-1 rounded-full bg-moss-50 p-1"><span className="grid h-7 w-7 place-items-center rounded-full bg-white text-moss-700 shadow-sm ring-1 ring-moss-100"><Minus className="h-4 w-4" /></span><span className="min-w-5 text-center text-sm font-black">2</span><span className="grid h-8 w-8 place-items-center rounded-full bg-moss-700 text-white shadow-sm"><Plus className="h-4 w-4" /></span></div> : undefined}
+      category={product.category?.name ?? product.product_type?.name}
+      compareAtPrice={comparePrice}
+      imageUrl={image}
+      name={product.name}
+      onActivate={!preview ? onEdit : undefined}
+      price={minPrice}
+      selected={preview && posPreview}
+      settings={settings}
+      stock={stock}
+      variantCount={active.length}
+    />
   );
 }
 
@@ -1906,20 +2000,25 @@ function AttributePickerPopup({
 
 function DefinitionManager({
   attributes = [],
+  currentSection,
   kind,
   mappings = [],
+  onSectionChange,
   onSaved,
   records,
 }: {
   attributes?: ProductAttribute[];
+  currentSection: PageTab;
   kind: "type" | "attribute";
   mappings?: ProductTypeAttribute[];
+  onSectionChange: (value: PageTab) => void;
   onSaved: () => Promise<void>;
   records: ProductType[] | ProductAttribute[];
 }) {
   const [openEditor, setOpenEditor] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [localError, setLocalError] = useState("");
   const [savingDefinition, setSavingDefinition] = useState(false);
   const [name, setName] = useState("");
@@ -2064,20 +2163,14 @@ function DefinitionManager({
         </div>
       </Card>
       <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_32px_rgba(15,23,42,0.12)] backdrop-blur-xl lg:left-72">
-        <div className="mx-auto flex max-w-4xl gap-2">
-          <label className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-moss-500 focus:bg-white focus:ring-2 focus:ring-moss-100"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm theo tên hoặc mã..."
-              value={query}
-            />
-          </label>
-          <Button className="min-h-12 shrink-0 px-3 sm:px-4" onClick={() => editDefinition()}>
+        <div className="mx-auto flex max-w-4xl items-center gap-2">
+          <ProductSectionSelect onChange={onSectionChange} value={currentSection} />
+          <Button aria-label="Tìm kiếm" className="relative h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setSearchOpen(true)} variant="secondary">
+            <Search className="h-4 w-4" />
+            {query ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-moss-600" /> : null}
+          </Button>
+          <Button aria-label={kind === "type" ? "Thêm danh mục" : "Thêm thuộc tính"} className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => editDefinition()}>
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{kind === "type" ? "Thêm danh mục" : "Thêm thuộc tính"}</span>
-            <span className="sm:hidden">Thêm</span>
           </Button>
         </div>
       </div>
@@ -2163,6 +2256,14 @@ function DefinitionManager({
           Không tìm thấy dữ liệu phù hợp.
         </Card>
       ) : null}
+      <ProductSearchPopup
+        onChange={setQuery}
+        onClose={() => setSearchOpen(false)}
+        open={searchOpen}
+        placeholder="Tìm theo tên hoặc mã..."
+        title={kind === "type" ? "Tìm danh mục sản phẩm" : "Tìm thuộc tính sản phẩm"}
+        value={query}
+      />
       <Modal
         footer={
           <div className="flex w-full flex-wrap gap-2">

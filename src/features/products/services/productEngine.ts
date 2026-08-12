@@ -234,12 +234,18 @@ export async function fetchProducts(): Promise<Product[]> {
           cloudinary_public_id: image?.cloudinary_public_id ?? null,
         };
       }),
-    images: images.filter(
-      (item) =>
-        item.product_id === product.id &&
-        !item.variant_id &&
-        !item.variant_value_id,
-    ),
+    images: images
+      .filter(
+        (item) =>
+          item.product_id === product.id &&
+          !item.variant_id &&
+          !item.variant_value_id,
+      )
+      .sort(
+        (first, second) =>
+          Number(second.is_primary) - Number(first.is_primary) ||
+          first.sort_order - second.sort_order,
+      ),
   }));
 }
 
@@ -300,7 +306,12 @@ export async function saveProduct(input: ProductEditorInput) {
     })),
     images: input.images
       .filter((item) => item.image_url.trim())
-      .map((item) => ({ ...item, id: item.id ?? crypto.randomUUID() })),
+      .map((item, index) => ({
+        ...item,
+        id: item.id ?? crypto.randomUUID(),
+        is_primary: index === 0,
+        sort_order: index,
+      })),
   };
   const { data, error } = await productEngineClient.rpc("save_product_engine", {
     payload: payload as unknown as Json,

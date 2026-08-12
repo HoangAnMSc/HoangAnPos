@@ -18,7 +18,7 @@ values (
     'imageFit', 'cover',
     'posCard', jsonb_build_object(
       'visibleFields', jsonb_build_array('image','name','price','compare_price','stock','variant_count'),
-      'imageFit', 'contain'
+      'imageFit', 'cover'
     )
   )
 )

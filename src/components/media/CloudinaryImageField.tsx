@@ -115,37 +115,46 @@ export function CloudinaryImageField({
     <>
       {appearance === "row" ? (
         <div className="space-y-2">
-          <span className="block text-sm font-bold text-slate-800">
-            {label}
-          </span>
-          <button
-            className="flex min-h-[62px] w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-moss-300 hover:bg-moss-50"
-            onClick={() => setOpen(true)}
-            type="button"
-          >
-            <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-50 text-slate-800">
-              {imageUrl ? (
-                <img
-                  alt={label}
-                  className="h-full w-full object-cover"
-                  src={imageUrl}
-                />
-              ) : (
-                <ImageIcon className="h-5 w-5" />
-              )}
-            </span>
-            <span className="min-w-0 flex-1">
-              <strong className="block text-sm font-extrabold text-slate-950">
-                Thêm ảnh
-              </strong>
-              {imageUrl ? (
-                <small className="block truncate text-xs font-semibold text-slate-500">
-                  Đã chọn hình ảnh
-                </small>
-              ) : null}
-            </span>
-            <ChevronRight className="h-5 w-5 shrink-0 text-slate-800" />
-          </button>
+          {label ? (
+            <span className="block text-sm font-bold text-slate-800">{label}</span>
+          ) : null}
+          <div className="flex min-h-[62px] w-full items-center gap-2 rounded-xl border border-slate-200 bg-white p-2 transition focus-within:border-moss-300 hover:border-moss-300">
+            <button
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 text-left"
+              onClick={() => setOpen(true)}
+              type="button"
+            >
+              <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-50 text-slate-800">
+                {imageUrl ? (
+                  <img alt={label || "Ảnh sản phẩm"} className="h-full w-full object-cover" src={imageUrl} />
+                ) : (
+                  <ImageIcon className="h-5 w-5" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <strong className="block text-sm font-extrabold text-slate-950">
+                  {imageUrl ? "Đổi ảnh" : "Thêm ảnh"}
+                </strong>
+                {imageUrl ? (
+                  <small className="block truncate text-xs font-semibold text-slate-500">Đã chọn hình ảnh</small>
+                ) : null}
+              </span>
+              <ChevronRight className="h-5 w-5 shrink-0 text-slate-800" />
+            </button>
+            {imageUrl ? (
+              <button
+                aria-label={`Bỏ ${label || "ảnh"}`}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-red-50 text-red-600 transition hover:bg-red-100"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onChange({ imageUrl: "", publicId: null });
+                }}
+                type="button"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
           {error ? (
             <p className="text-xs font-semibold text-red-600">{error}</p>
           ) : null}
