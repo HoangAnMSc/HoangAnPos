@@ -70,34 +70,13 @@ grant usage on schema public to anon, authenticated;
 
 Các lệnh trên xóa toàn bộ bảng, hàm, policy và dữ liệu trong schema `public`.
 
-Nếu database đã có dữ liệu và chỉ cần nâng cấp tính năng biến thể tại POS,
-chạy `supabase/variant-pos-upgrade.sql` trong SQL Editor. File nâng cấp này giữ
-nguyên dữ liệu hiện có; không chạy lại `schema.sql` cho trường hợp này.
+`supabase/schema.sql` đã bao gồm toàn bộ Product Engine, tồn kho SKU, POS,
+Promotion/Voucher, tích điểm, phân quyền, cấu hình card và dữ liệu khởi tạo.
+Không cần và không được chạy thêm migration SQL nào sau file này.
 
-### Product Engine normalized (2026-08-11)
-
-Với môi trường development/test, sau khi chạy `supabase/schema.sql`, chạy tiếp
-`supabase/20260811_ecommerce_engine.sql`. Migration này chủ động xóa dữ liệu test
-thuộc domain Product/Inventory/Order Item và thay thế bằng một schema normalized:
-Product Type → Attribute → Product → Variant Attribute/Value → SKU. Không chạy
-migration clean-cut này trên database production chưa backup.
-
-Sau migration, `product_variants` là nguồn duy nhất cho giá và tồn kho. JSON
-variant cũ trong `products.attributes` không còn được ghi vào database; adapter
-frontend chỉ dựng shape tương thích trong bộ nhớ cho màn hình POS hiện hữu.
-
-Sau đó chạy lần lượt các migration bổ sung:
-
-1. `supabase/20260811_ecommerce_starter_catalog.sql` để tạo sẵn các loại sản phẩm và thuộc tính thông dụng.
-2. `supabase/20260811_fix_variant_value_link_cascades.sql` để xóa giá trị biến thể an toàn cùng các liên kết liên quan.
-3. `supabase/20260811_unified_sku_inventory.sql` để POS, Kho và kiểm kê dùng một nguồn tồn duy nhất theo SKU; luồng chuyển kệ bị vô hiệu hóa.
-4. `supabase/20260811_product_card_settings.sql` để lưu cấu hình card dùng chung cho trang Sản phẩm và POS.
-5. `supabase/20260812_product_card_compare_price.sql` để bổ sung giá so sánh vào cấu hình card cũ mà không ghi đè tùy chọn khác.
-6. `supabase/20260812_promotions_permissions.sql` để trang Khuyến mãi đọc/ghi dữ liệu theo quyền Marketing thay vì chỉ tài khoản admin.
-7. `supabase/20260812_restore_loyalty_points.sql` để POS cộng/trừ/hoàn điểm trong transaction và hỗ trợ điều kiện khuyến mãi theo điểm tích lũy của khách.
-8. `supabase/20260812_promotion_product_type_scope.sql` để phạm vi Danh mục của khuyến mãi dùng đúng danh mục trong tab Sản phẩm (`product_types`).
-9. `supabase/20260812_receipt_promotion_details.sql` để POS và lịch sử đơn đọc tên, số tiền ưu đãi khi hiển thị hoặc in hóa đơn.
-10. `supabase/20260812_product_promotion_permissions.sql` để áp dụng phân quyền tạo/sửa/xóa riêng cho Sản phẩm và Khuyến mãi ở database.
+`product_variants` là nguồn duy nhất cho giá và tồn kho. File schema là bản cài
+mới có tính phá hủy dữ liệu trong `public`; nếu database đang có dữ liệu thật,
+hãy backup và xây dựng migration nâng cấp riêng thay vì chạy lại file này.
 
 Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Staff.
 
