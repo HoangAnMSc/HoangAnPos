@@ -64,6 +64,7 @@ export type Database = {
           id: string;
           name: string;
           code: string;
+          color: string;
           description: string | null;
           permissions: string[];
           is_active: boolean;
@@ -74,6 +75,7 @@ export type Database = {
           id?: string;
           name: string;
           code: string;
+          color?: string;
           description?: string | null;
           permissions?: string[];
           is_active?: boolean;
@@ -84,6 +86,7 @@ export type Database = {
           id?: string;
           name?: string;
           code?: string;
+          color?: string;
           description?: string | null;
           permissions?: string[];
           is_active?: boolean;
@@ -417,6 +420,10 @@ export type Database = {
           cancelled_at: string | null;
           cancelled_by: string | null;
           cancel_reason: string | null;
+          deleted_at: string | null;
+          deleted_by: string | null;
+          delete_reason: string | null;
+          status_before_delete: "paid" | "cancelled" | null;
           points_earned: number;
           points_redeemed: number;
           status: "paid" | "cancelled";
@@ -442,6 +449,10 @@ export type Database = {
           cancelled_at?: string | null;
           cancelled_by?: string | null;
           cancel_reason?: string | null;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
+          delete_reason?: string | null;
+          status_before_delete?: "paid" | "cancelled" | null;
           points_earned?: number;
           points_redeemed?: number;
           status?: "paid" | "cancelled";
@@ -467,6 +478,10 @@ export type Database = {
           cancelled_at?: string | null;
           cancelled_by?: string | null;
           cancel_reason?: string | null;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
+          delete_reason?: string | null;
+          status_before_delete?: "paid" | "cancelled" | null;
           points_earned?: number;
           points_redeemed?: number;
           status?: "paid" | "cancelled";
@@ -1096,6 +1111,10 @@ export type Database = {
           cancelled_at: string | null;
           cancelled_by: string | null;
           cancel_reason: string | null;
+          deleted_at: string | null;
+          deleted_by: string | null;
+          delete_reason: string | null;
+          status_before_delete: "paid" | "cancelled" | null;
           points_earned: number;
           points_redeemed: number;
           status: "paid" | "cancelled";
@@ -1127,6 +1146,10 @@ export type Database = {
           cancelled_at: string | null;
           cancelled_by: string | null;
           cancel_reason: string | null;
+          deleted_at: string | null;
+          deleted_by: string | null;
+          delete_reason: string | null;
+          status_before_delete: "paid" | "cancelled" | null;
           points_earned: number;
           points_redeemed: number;
           status: "paid" | "cancelled";
@@ -1137,6 +1160,12 @@ export type Database = {
         Args: {
           order_ids_input: string[];
           reason_input: string;
+        };
+        Returns: number;
+      };
+      restore_cancelled_orders: {
+        Args: {
+          order_ids_input: string[];
         };
         Returns: number;
       };
@@ -1164,6 +1193,10 @@ export type Database = {
           cancelled_at: string | null;
           cancelled_by: string | null;
           cancel_reason: string | null;
+          deleted_at: string | null;
+          deleted_by: string | null;
+          delete_reason: string | null;
+          status_before_delete: "paid" | "cancelled" | null;
           points_earned: number;
           points_redeemed: number;
           status: "paid" | "cancelled";

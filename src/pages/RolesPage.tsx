@@ -1,6 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { Edit3, Plus, Power, Search, ShieldCheck, Trash2 } from "lucide-react";
-import { Badge } from "../components/ui/Badge";
+import { ChevronRight, Edit3, Plus, Power, Search, ShieldCheck, Trash2 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
@@ -32,6 +31,7 @@ type RoleFormState = RoleInput;
 
 const emptyRoleForm: RoleFormState = {
   code: "",
+  color: "#8b5cf6",
   description: "",
   is_active: true,
   name: "",
@@ -45,6 +45,7 @@ function roleToForm(role?: AppRole | null): RoleFormState {
 
   return {
     code: role.code,
+    color: role.code === "admin" ? "#d4a72c" : role.code === "staff" ? "#94a3b8" : role.color || "#8b5cf6",
     description: role.description ?? "",
     is_active: role.is_active,
     name: role.name,
@@ -63,6 +64,12 @@ const permissionLabels = permissionGroups.flatMap((group) => [
 function getPermissionLabel(permission: string) {
   return permissionLabels.find((item) => item.key === permission)?.label ?? permission;
 }
+
+const roleColorOptions = [
+  ["#d4a72c", "Gold"],
+  ["#8b5cf6", "Tím"], ["#0ea5e9", "Xanh dương"], ["#14b8a6", "Xanh ngọc"],
+  ["#f97316", "Cam"], ["#e11d48", "Đỏ hồng"], ["#64748b", "Xám"],
+] as const;
 
 type RoleEditorModalProps = {
   open: boolean;
@@ -171,7 +178,7 @@ function RoleEditorModal({
             {role && canToggleActive && role.code !== "admin" ? (
               <Button onClick={() => void onToggle(role)} type="button" variant="secondary">
                 <Power className="h-4 w-4" />
-                {role.is_active ? "Vô hiệu hóa" : "Kích hoạt"}
+                {role.is_active ? "Ẩn vai trò" : "Công khai vai trò"}
               </Button>
             ) : null}
             {role && canDeleteRole ? (
@@ -204,7 +211,7 @@ function RoleEditorModal({
             value={form.name}
           />
           <Input
-            disabled={role?.code === "admin"}
+            disabled={role?.code === "admin" || role?.code === "staff"}
             label="Mã vai trò"
             onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}
             value={form.code}
@@ -221,6 +228,20 @@ function RoleEditorModal({
             value={form.description ?? ""}
           />
         </label>
+
+        <fieldset>
+          <legend className="mb-2 text-sm font-extrabold text-slate-950">Màu nhận diện</legend>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {roleColorOptions.map(([color, label]) => (
+              <label className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border px-2 py-3 text-center text-xs font-bold transition ${form.color === color ? "border-slate-900 bg-slate-50" : "border-slate-200"}`} key={color}>
+                <input checked={form.color === color} className="sr-only" disabled={role?.code === "admin" || role?.code === "staff"} name="role-color" onChange={() => setForm((current) => ({ ...current, color }))} type="radio" value={color} />
+                <span className="h-5 w-5 rounded-full" style={{ backgroundColor: color }} />
+                <span className="truncate">{label}</span>
+              </label>
+            ))}
+          </div>
+          {role?.code === "admin" || role?.code === "staff" ? <p className="mt-2 text-xs font-semibold text-slate-500">Màu của vai trò hệ thống được cố định.</p> : null}
+        </fieldset>
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -327,7 +348,7 @@ function RoleEditorModal({
             }
             type="checkbox"
           />
-          Role đang hoạt động
+          Vai trò công khai
         </label>
 
         {error ? (
@@ -341,13 +362,14 @@ function RoleEditorModal({
 }
 
 export function RolesPage() {
-  const { showSuccess } = useActionNotice();
+  const { confirmAction, showSuccess } = useActionNotice();
   const { canAccess } = useAuth();
   const [editingRole, setEditingRole] = useState<AppRole | null>(null);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [viewingRole, setViewingRole] = useState<AppRole | null>(null);
@@ -428,7 +450,7 @@ export function RolesPage() {
     try {
       await setRoleActive(role.id, !role.is_active);
       await loadRoles();
-      showSuccess(`Đã ${role.is_active ? "tắt" : "bật"} vai trò.`);
+      showSuccess(`Đã ${role.is_active ? "ẩn" : "công khai"} vai trò.`);
     } catch (requestError) {
       setErrorNotice({
         message: getErrorMessage(requestError, "Đổi trạng thái vai trò thất bại."),
@@ -442,7 +464,12 @@ export function RolesPage() {
       return;
     }
 
-    if (!window.confirm(`Xóa vai trò "${role.name}"?`)) {
+    if (!await confirmAction({
+      confirmLabel: "Xóa vai trò",
+      message: `Bạn có chắc muốn xóa vai trò “${role.name}”?`,
+      title: "Xác nhận xóa vai trò",
+      tone: "danger",
+    })) {
       return;
     }
 
@@ -469,36 +496,29 @@ export function RolesPage() {
   );
 
   return (
-    <PageContainer>
-        <section className="rounded-xl bg-white p-4 shadow-soft ring-1 ring-coal/5">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
-                Phân quyền
-              </p>
-              <h2 className="mt-1 font-display text-xl font-bold text-coal">Quản lý vai trò</h2>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge tone="neutral">{roles.length} vai trò</Badge>
-                <Badge tone="neutral">{filteredRoles.length} đang hiển thị</Badge>
-                <Badge tone="green">{roles.filter((role) => role.is_active).length} hoạt động</Badge>
-              </div>
+    <PageContainer className="pb-28 sm:pb-10">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+          <div className="hidden items-center gap-3 p-4 sm:flex">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                className="h-11 rounded-xl border-slate-200 bg-slate-50 py-2 pl-11 focus:bg-white"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Tìm tên, mã vai trò hoặc mô tả"
+                value={query}
+              />
             </div>
             {canCreateRole ? (
-              <Button className="h-10 rounded-xl px-3" onClick={openCreateModal}>
+              <Button className="h-11 shrink-0 px-3" onClick={openCreateModal}>
                 <Plus className="h-4 w-4" />
-                Tạo vai trò
+                <span className="hidden sm:inline">Tạo vai trò</span>
               </Button>
             ) : null}
           </div>
-
-          <div className="relative mt-3 w-full xl:max-w-xl">
-            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
-            <Input
-              className="h-10 rounded-xl py-2 pl-11"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm tên, mã vai trò hoặc mô tả..."
-              value={query}
-            />
+          <div className="grid grid-cols-3 border-t border-slate-100 bg-slate-50/70">
+            <div className="px-3 py-3 sm:px-4"><p className="text-lg font-black tabular-nums text-slate-950">{roles.length}</p><p className="text-[11px] font-bold text-slate-500 sm:text-xs">Tổng vai trò</p></div>
+            <div className="border-x border-slate-200 px-3 py-3 sm:px-4"><p className="text-lg font-black tabular-nums text-moss-800">{roles.filter((role) => role.is_active).length}</p><p className="text-[11px] font-bold text-slate-500 sm:text-xs">Công khai</p></div>
+            <div className="px-3 py-3 sm:px-4"><p className="text-lg font-black tabular-nums text-slate-950">{filteredRoles.length}</p><p className="text-[11px] font-bold text-slate-500 sm:text-xs">Đang hiển thị</p></div>
           </div>
         </section>
 
@@ -509,36 +529,31 @@ export function RolesPage() {
         ) : filteredRoles.length === 0 ? (
           <EmptyState description="Tạo vai trò đầu tiên để phân quyền truy cập." icon={ShieldCheck} title="Chưa có vai trò" />
         ) : (
-          <div className="overflow-hidden rounded-xl bg-white shadow-soft ring-1 ring-coal/5">
-            <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_auto] gap-3 border-b border-coal/5 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none">
+            <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_32px] gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500 lg:grid">
               <span>Vai trò</span>
               <span>Mô tả</span>
               <span>Quyền</span>
-              <span className="text-right">Thao tác</span>
+              <span />
             </div>
-            <div className="divide-y divide-coal/5">
+            <div className="divide-y divide-coal/5 max-lg:grid max-lg:gap-3 max-lg:divide-y-0">
               {filteredRoles.map((role) => {
-                const visiblePermissions = role.permissions.slice(0, 4);
-                const hiddenPermissionCount = Math.max(role.permissions.length - visiblePermissions.length, 0);
+                const visiblePermissions = role.permissions.slice(0, 3);
 
                 return (
                   <button
-                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3 text-left transition hover:bg-cream/30 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_auto] lg:gap-3"
+                    className={`relative grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-l-4 px-4 py-4 text-left transition max-lg:overflow-hidden max-lg:rounded-2xl max-lg:border max-lg:border-l-4 max-lg:border-slate-200 max-lg:shadow-[0_4px_16px_rgba(15,23,42,0.05)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_32px] lg:px-5 ${role.is_active ? "bg-white hover:bg-slate-50" : "bg-white after:pointer-events-none after:absolute after:inset-0 after:bg-slate-300/50"}`}
                     key={role.id}
                     onClick={() => setViewingRole(role)}
+                    style={{ borderLeftColor: role.code === "admin" ? "#d4a72c" : role.code === "staff" ? "#94a3b8" : role.color || "#8b5cf6" }}
                     type="button"
                   >
                     <div className="min-w-0">
                       <h3 className="truncate text-base font-extrabold text-coal">{role.name}</h3>
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5 lg:mt-2 lg:gap-2">
-                        <Badge tone="neutral">{role.code}</Badge>
-                        <Badge tone={role.is_active ? "green" : "red"}>
-                          {role.is_active ? "Hoạt động" : "Vô hiệu hóa"}
-                        </Badge>
-                      </div>
                       <p className="mt-1 text-xs font-semibold text-coal/45 lg:hidden">
                         {role.permissions.length} quyền được gán
                       </p>
+                      <p className="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-slate-500 lg:hidden">{role.description || "Chưa có mô tả."}</p>
                     </div>
 
                     <p className="hidden line-clamp-2 text-sm font-semibold leading-5 text-coal/55 lg:block">
@@ -546,30 +561,32 @@ export function RolesPage() {
                     </p>
 
                     <div className="hidden min-w-0 lg:block">
-                      <div className="flex flex-wrap gap-1.5">
-                        {visiblePermissions.map((permission) => (
-                          <Badge key={permission} tone="neutral">
-                            {getPermissionLabel(permission)}
-                          </Badge>
-                        ))}
-                        {hiddenPermissionCount > 0 ? (
-                          <Badge tone="amber">+{hiddenPermissionCount} quyền</Badge>
-                        ) : null}
-                      </div>
-                      <p className="mt-1 text-xs font-semibold text-coal/40">
-                        {role.permissions.length} quyền được gán
-                      </p>
+                      <p className="line-clamp-2 text-sm font-semibold leading-5 text-slate-700">{visiblePermissions.map(getPermissionLabel).join(", ")}{role.permissions.length > visiblePermissions.length ? ` và ${role.permissions.length - visiblePermissions.length} quyền khác` : ""}</p>
+                      <p className="mt-1 text-xs font-semibold text-coal/40">{role.permissions.length} quyền được gán</p>
                     </div>
 
-                    <div className="flex justify-end">
-                      <Badge tone="neutral">Xem</Badge>
-                      </div>
+                    <ChevronRight className="h-5 w-5 text-slate-400" />
                   </button>
                 );
               })}
             </div>
           </div>
         )}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 pb-[calc(.65rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_28px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:hidden">
+        <div className={`mx-auto grid max-w-lg gap-2 ${canCreateRole ? "grid-cols-2" : "grid-cols-1"}`}>
+          <button className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-extrabold text-slate-700" onClick={() => setSearchModalOpen(true)} type="button"><Search className="h-4 w-4" />Tìm kiếm</button>
+          {canCreateRole ? <button className="flex h-11 items-center justify-center gap-2 rounded-xl bg-coal text-sm font-extrabold text-white shadow-sm" onClick={openCreateModal} type="button"><Plus className="h-4 w-4" />Tạo vai trò</button> : null}
+        </div>
+
+      </div>
+
+      <Modal footer={<Button className="w-full sm:w-auto" onClick={() => setSearchModalOpen(false)}>Xem {filteredRoles.length} kết quả</Button>} onClose={() => setSearchModalOpen(false)} open={searchModalOpen} size="sm" title="Tìm vai trò">
+        <div className="space-y-3">
+          <div className="relative"><Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" /><Input autoFocus className="h-12 rounded-xl pl-11" onChange={(event) => setQuery(event.target.value)} placeholder="Tên, mã vai trò hoặc mô tả" value={query} /></div>
+          <p className="text-sm font-semibold text-slate-500">Tìm thấy {filteredRoles.length} vai trò</p>
+        </div>
+      </Modal>
+
       <Modal
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
@@ -591,30 +608,20 @@ export function RolesPage() {
       >
         {viewingRole ? (
           <div className="space-y-4">
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge tone="neutral">{viewingRole.code}</Badge>
-                <Badge tone={viewingRole.is_active ? "green" : "red"}>
-                  {viewingRole.is_active ? "Hoạt động" : "Vô hiệu hóa"}
-                </Badge>
-              </div>
-              <h3 className="mt-3 text-xl font-extrabold text-slate-950">{viewingRole.name}</h3>
-              <p className="mt-2 text-sm font-semibold text-slate-600">
-                {viewingRole.description || "Chưa có mô tả."}
-              </p>
-            </div>
+            <h3 className="text-xl font-extrabold text-slate-950">{viewingRole.name}</h3>
+            <dl className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="grid gap-1 px-4 py-3 sm:grid-cols-[130px_1fr] sm:gap-4"><dt className="text-xs font-extrabold uppercase tracking-wide text-slate-400">Mã vai trò</dt><dd className="text-sm font-bold text-slate-800 sm:text-right">{viewingRole.code}</dd></div>
+              <div className="grid gap-1 px-4 py-3 sm:grid-cols-[130px_1fr] sm:gap-4"><dt className="text-xs font-extrabold uppercase tracking-wide text-slate-400">Hiển thị</dt><dd className="text-sm font-bold text-slate-800 sm:text-right">{viewingRole.is_active ? "Công khai" : "Ẩn"}</dd></div>
+              <div className="grid gap-1 px-4 py-3 sm:grid-cols-[130px_1fr] sm:gap-4"><dt className="text-xs font-extrabold uppercase tracking-wide text-slate-400">Mô tả</dt><dd className="text-sm font-bold text-slate-800 sm:text-right">{viewingRole.description || "Chưa có mô tả."}</dd></div>
+            </dl>
             <div>
               <p className="mb-2 text-sm font-extrabold text-slate-950">
                 {viewingRole.permissions.length} quyền
               </p>
               <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-100 p-3">
-                <div className="flex flex-wrap gap-2">
-                  {viewingRole.permissions.map((permission) => (
-                    <Badge key={permission} tone="neutral">
-                      {getPermissionLabel(permission)}
-                    </Badge>
-                  ))}
-                </div>
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {viewingRole.permissions.map((permission) => <li className="flex items-start gap-2 text-sm font-semibold text-slate-700" key={permission}><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />{getPermissionLabel(permission)}</li>)}
+                </ul>
               </div>
             </div>
           </div>

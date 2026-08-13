@@ -98,7 +98,7 @@ function createImageLibraryItems(
 
 export function CloudinaryImagesPage() {
   const { canAccess } = useAuth();
-  const { showSuccess } = useActionNotice();
+  const { confirmAction, showSuccess } = useActionNotice();
   const [deletingUrls, setDeletingUrls] = useState<string[]>([]);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [images, setImages] = useState<ImageLibraryItem[]>([]);
@@ -221,7 +221,12 @@ export function CloudinaryImagesPage() {
       return;
     }
 
-    const confirmed = window.confirm(confirmMessage);
+    const confirmed = await confirmAction({
+      confirmLabel: "Xóa ảnh",
+      message: confirmMessage,
+      title: "Xác nhận xóa ảnh",
+      tone: "danger",
+    });
 
     if (!confirmed) {
       return;

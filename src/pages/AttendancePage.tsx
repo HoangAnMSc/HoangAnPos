@@ -645,7 +645,7 @@ async function getCurrentAttendanceLocation(): Promise<AttendanceLocationInput> 
 
 export function AttendancePage() {
   const { canAccess, profile, requiresCashReconciliation, user } = useAuth();
-  const { showSuccess } = useActionNotice();
+  const { confirmAction, showSuccess } = useActionNotice();
   const [activeTab, setActiveTab] = useState<AttendanceTab>("clock");
   const [allHistoryEmployees, setAllHistoryEmployees] = useState<
     AttendanceEmployee[]
@@ -1201,9 +1201,12 @@ export function AttendancePage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Xóa ca chấm công ${formatShortDate(record.work_date)}?`,
-    );
+    const confirmed = await confirmAction({
+      confirmLabel: "Xóa ca chấm công",
+      message: `Bạn có chắc muốn xóa ca chấm công ${formatShortDate(record.work_date)}?`,
+      title: "Xác nhận xóa ca",
+      tone: "danger",
+    });
 
     if (!confirmed) {
       return;

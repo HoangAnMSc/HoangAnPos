@@ -61,11 +61,11 @@ export function WarehouseHubPage() {
       <PageContainer className="!pb-0" maxWidth="none">
         <nav
           aria-label="Chức năng kho"
-          className="flex gap-1.5 overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200 bg-white p-1.5 shadow-soft"
+          className="grid grid-flow-col auto-cols-fr gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-soft"
         >
           {tabs.map((tab) => (
             <button
-              className={`flex min-h-10 min-w-[108px] flex-1 items-center justify-center gap-2 rounded-lg px-3 text-xs font-extrabold whitespace-nowrap transition sm:text-sm ${
+              className={`flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-lg px-1.5 text-[11px] font-extrabold whitespace-nowrap transition sm:gap-2 sm:px-3 sm:text-sm ${
                 active === tab.key
                   ? "bg-coal text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-50"

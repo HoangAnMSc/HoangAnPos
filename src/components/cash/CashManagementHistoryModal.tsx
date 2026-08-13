@@ -113,7 +113,7 @@ function MoneyItem({ label, value }: { label: string; value: number | null }) {
 
 export function CashManagementHistoryModal({ onClose, open }: CashManagementHistoryModalProps) {
   const { canAccess } = useAuth();
-  const { showSuccess } = useActionNotice();
+  const { confirmAction, showSuccess } = useActionNotice();
   const [checks, setChecks] = useState<CashDrawerCheck[]>([]);
   const [sessions, setSessions] = useState<CashDrawerSession[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -173,7 +173,12 @@ export function CashManagementHistoryModal({ onClose, open }: CashManagementHist
   }
 
   async function removeCheck(check: CashDrawerCheck) {
-    if (!window.confirm(`Xóa bản ghi đối soát của ${check.employee_name}?`)) return;
+    if (!await confirmAction({
+      confirmLabel: "Xóa bản ghi",
+      message: `Bạn có chắc muốn xóa bản ghi đối soát của ${check.employee_name}?`,
+      title: "Xác nhận xóa đối soát",
+      tone: "danger",
+    })) return;
     setError("");
     try {
       await deleteCashReconciliation(check.id);

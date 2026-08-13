@@ -1933,7 +1933,7 @@ export function PosPage() {
                     ) : null}
                     {quickProductsExpanded ? (
                       <div
-                        className="grid justify-start gap-1.5 p-1.5 [grid-template-columns:repeat(auto-fit,minmax(148px,172px))] sm:gap-3 sm:p-3 xl:max-h-[min(56dvh,620px)] xl:overflow-y-auto xl:overscroll-contain"
+                        className="grid grid-cols-2 justify-start gap-2 p-1.5 sm:[grid-template-columns:repeat(auto-fill,minmax(168px,184px))] sm:gap-3 sm:p-3 xl:max-h-[min(56dvh,620px)] xl:overflow-y-auto xl:overscroll-contain"
                         id="pos-quick-products"
                       >
                         {quickProducts.map((product) => {
@@ -1975,11 +1975,15 @@ export function PosPage() {
                             >
                               <ConfigurableProductCard
                                 action={
-                                  <div className="flex items-center gap-1 rounded-full bg-moss-50 p-1">
-                                    <button aria-label={`Giảm ${product.name}`} className="grid h-7 w-7 place-items-center rounded-full bg-white text-moss-700 shadow-sm ring-1 ring-moss-100 disabled:text-slate-300" disabled={!canCheckout || quantityInCart === 0} onClick={(event) => { event.stopPropagation(); decreaseProductQuantity(product.id); }} type="button"><Minus className="h-4 w-4" /></button>
-                                    <span className="min-w-5 text-center text-sm font-black tabular-nums">{quantityInCart}</span>
-                                    <button aria-label={`Thêm ${product.name}`} className="grid h-8 w-8 place-items-center rounded-full bg-moss-700 text-white shadow-sm disabled:bg-slate-300" disabled={disabled} onClick={(event) => { event.stopPropagation(); addToCart(product, false); }} type="button"><Plus className="h-4 w-4" /></button>
-                                  </div>
+                                  quantityInCart > 0 ? (
+                                    <div className="flex items-center gap-0.5 rounded-full bg-coal p-0.5 text-white shadow-sm">
+                                      <button aria-label={`Giảm ${product.name}`} className="grid h-7 w-7 place-items-center rounded-full text-white/80 transition hover:bg-white/10 disabled:opacity-40" disabled={!canCheckout} onClick={(event) => { event.stopPropagation(); decreaseProductQuantity(product.id); }} type="button"><Minus className="h-3.5 w-3.5" /></button>
+                                      <span className="min-w-4 text-center text-xs font-black tabular-nums">{quantityInCart}</span>
+                                      <button aria-label={`Thêm ${product.name}`} className="grid h-7 w-7 place-items-center rounded-full bg-white text-coal shadow-sm disabled:bg-slate-300" disabled={disabled} onClick={(event) => { event.stopPropagation(); addToCart(product, false); }} type="button"><Plus className="h-3.5 w-3.5" /></button>
+                                    </div>
+                                  ) : (
+                                    <button aria-label={`Thêm ${product.name}`} className="flex h-8 items-center gap-1 rounded-full bg-coal px-2.5 text-[11px] font-extrabold text-white shadow-sm disabled:bg-slate-300" disabled={disabled} onClick={(event) => { event.stopPropagation(); addToCart(product, false); }} type="button"><Plus className="h-3.5 w-3.5" />Thêm</button>
+                                  )
                                 }
                                 category={product.category}
                                 compareAtPrice={cardData.compareAtPrice}

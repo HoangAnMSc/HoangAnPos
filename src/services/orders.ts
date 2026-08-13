@@ -253,6 +253,27 @@ export async function deleteOrders(orderIds: string[], reason: string) {
   return Number(data ?? 0);
 }
 
+export async function restoreCancelledOrders(orderIds: string[]) {
+  requireSupabaseConfig();
+
+  if (orderIds.length === 0) {
+    return 0;
+  }
+
+  const { data, error } = await supabase.rpc("restore_cancelled_orders", {
+    order_ids_input: orderIds,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  window.dispatchEvent(new Event("pos-financial-sync"));
+  try { window.localStorage.setItem("pos-financial-sync", String(Date.now())); } catch { /* Storage may be unavailable in private mode. */ }
+
+  return Number(data ?? 0);
+}
+
 export async function recordOrderPrint(orderId: string) {
   requireSupabaseConfig();
 

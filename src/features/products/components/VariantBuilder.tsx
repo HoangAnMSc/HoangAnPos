@@ -5,6 +5,7 @@ import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
 import { Modal } from "../../../components/ui/Modal";
 import { Select } from "../../../components/ui/Select";
+import { useActionNotice } from "../../../contexts/ActionNoticeContext";
 import type {
   VariantAttribute,
   VariantDisplayType,
@@ -40,6 +41,7 @@ export function VariantBuilder({
   onChange,
   onDimensionsChanged,
 }: Props) {
+  const { alertAction, promptAction } = useActionNotice();
   const [open, setOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState<{
     label: string;
@@ -283,17 +285,25 @@ export function VariantBuilder({
             })}
             <button
               className={`rounded-lg border border-dashed border-moss-400 px-3 py-1.5 text-sm font-bold text-moss-700 ${attribute.display_type === "image_text" || attribute.display_type === "image" ? "min-h-24" : attribute.display_type === "image_text_horizontal" ? "min-h-14" : ""}`}
-              onClick={() => {
-                const label = window
-                  .prompt(`Giá trị mới cho ${attribute.name}`)
-                  ?.trim();
+              onClick={async () => {
+                const label = await promptAction({
+                  confirmLabel: "Thêm giá trị",
+                  inputLabel: "Tên giá trị",
+                  message: `Nhập giá trị mới cho biến thể “${attribute.name}”.`,
+                  placeholder: "Ví dụ: Đỏ, XL, 500 ml",
+                  title: "Thêm giá trị biến thể",
+                });
                 if (!label) return;
                 if (
                   attribute.values.some(
                     (value) => value.value === (slug(label) || label),
                   )
                 ) {
-                  window.alert("Giá trị này đã tồn tại trong biến thể.");
+                  await alertAction({
+                    message: "Giá trị này đã tồn tại trong biến thể. Hãy nhập một giá trị khác.",
+                    title: "Giá trị đã tồn tại",
+                    tone: "danger",
+                  });
                   return;
                 }
                 updateAttribute(attribute.id, {

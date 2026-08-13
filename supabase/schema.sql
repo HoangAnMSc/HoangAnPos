@@ -146,6 +146,7 @@ $$;
 CREATE TABLE public.orders (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     code text NOT NULL,
+    color text DEFAULT '#8b5cf6'::text NOT NULL,
     customer_id uuid,
     cash_session_id uuid,
     cashier_id uuid,
@@ -164,6 +165,10 @@ CREATE TABLE public.orders (
     cancelled_at timestamp with time zone,
     cancelled_by uuid,
     cancel_reason text,
+    deleted_at timestamp with time zone,
+    deleted_by uuid,
+    delete_reason text,
+    status_before_delete text,
     points_earned integer DEFAULT 0 NOT NULL,
     points_redeemed integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -173,6 +178,7 @@ CREATE TABLE public.orders (
     CONSTRAINT orders_payment_method_check CHECK ((payment_method = ANY (ARRAY['cash'::text, 'transfer'::text]))),
     CONSTRAINT orders_print_count_check CHECK ((print_count >= 0)),
     CONSTRAINT orders_status_check CHECK ((status = ANY (ARRAY['paid'::text, 'cancelled'::text]))),
+    CONSTRAINT orders_status_before_delete_check CHECK ((status_before_delete IS NULL) OR (status_before_delete = ANY (ARRAY['paid'::text, 'cancelled'::text]))),
     CONSTRAINT orders_subtotal_check CHECK ((subtotal >= (0)::numeric)),
     CONSTRAINT orders_total_check CHECK ((total >= (0)::numeric))
 );
@@ -785,15 +791,21 @@ CREATE FUNCTION public.delete_pos_orders(order_ids_input uuid[], reason_input te
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-declare order_id_value uuid; order_record public.orders; deleted_count integer:=0;
+declare order_id_value uuid; order_record public.orders; deleted_count integer:=0; previous_status text;
 begin
   if auth.uid() is null or not public.has_permission('orders.delete') then raise exception 'Permission denied'; end if;
   if nullif(trim(coalesce(reason_input,'')), '') is null then raise exception 'Deletion reason is required'; end if;
   foreach order_id_value in array order_ids_input loop
-    select * into order_record from public.orders where id=order_id_value;
-    if order_record.id is null then continue; end if;
-    if order_record.status='paid' then perform public.cancel_pos_order(order_id_value,coalesce(nullif(trim(reason_input),''),'Delete order')); end if;
-    delete from public.orders where id=order_id_value; deleted_count:=deleted_count+1;
+    select * into order_record from public.orders where id=order_id_value for update;
+    if order_record.id is null or order_record.deleted_at is not null then continue; end if;
+    previous_status:=order_record.status;
+    if previous_status='paid' then perform public.cancel_pos_order(order_id_value,coalesce(nullif(trim(reason_input),''),'Delete order')); end if;
+    update public.orders
+    set deleted_at=now(), deleted_by=auth.uid(), delete_reason=left(trim(reason_input),1000), status_before_delete=previous_status
+    where id=order_id_value;
+    insert into public.order_audit_events(order_id,actor_id,event_type,reason,details)
+    values(order_id_value,auth.uid(),'deleted',reason_input,jsonb_build_object('previous_status',previous_status));
+    deleted_count:=deleted_count+1;
   end loop;
   return deleted_count;
 end;
@@ -1839,6 +1851,55 @@ $$;
 
 
 --
+-- Name: restore_cancelled_orders(uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.restore_cancelled_orders(order_ids_input uuid[]) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare order_id_value uuid; order_record public.orders; line public.order_items; restored_count integer:=0;
+begin
+  if auth.uid() is null or not public.has_permission('orders.cancel') then raise exception 'Permission denied'; end if;
+  foreach order_id_value in array order_ids_input loop
+    select * into order_record from public.orders where id=order_id_value for update;
+    if order_record.id is null or order_record.deleted_at is not null or order_record.status<>'cancelled' then continue; end if;
+
+    for line in select * from public.order_items where order_id=order_id_value loop
+      if line.variant_id is not null then
+        if not exists(select 1 from public.product_variants where id=line.variant_id and stock_quantity>=line.quantity and shelf_quantity>=line.quantity) then
+          raise exception 'Insufficient stock to restore order %', order_record.code;
+        end if;
+        if line.batch_id is not null and not exists(select 1 from public.product_batches where id=line.batch_id and quantity>=line.quantity and shelf_quantity>=line.quantity) then
+          raise exception 'Insufficient batch stock to restore order %', order_record.code;
+        end if;
+        update public.product_variants set stock_quantity=stock_quantity-line.quantity,shelf_quantity=shelf_quantity-line.quantity,updated_at=now() where id=line.variant_id;
+        if line.batch_id is not null then update public.product_batches set quantity=quantity-line.quantity,shelf_quantity=shelf_quantity-line.quantity where id=line.batch_id; end if;
+        insert into public.stock_movements(variant_id,movement_type,quantity,reason,reference_type,reference_id,actor_id,actor_name)
+        values(line.variant_id,'sale',-line.quantity,'Restore deleted order','order',order_id_value,auth.uid(),coalesce((select full_name from public.profiles where id=auth.uid()),'System'));
+      end if;
+    end loop;
+    if order_record.customer_id is not null then
+      update public.customers set points=greatest(points+order_record.points_earned-order_record.points_redeemed,0) where id=order_record.customer_id;
+    end if;
+
+    update public.orders
+    set status='paid',
+        cancelled_at=null,
+        cancelled_by=null,
+        cancel_reason=null,
+        status_before_delete=null
+    where id=order_id_value;
+    insert into public.order_audit_events(order_id,actor_id,event_type,details)
+    values(order_id_value,auth.uid(),'restored',jsonb_build_object('restored_status','paid'));
+    restored_count:=restored_count+1;
+  end loop;
+  return restored_count;
+end;
+$$;
+
+
+--
 -- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2285,7 +2346,7 @@ CREATE TABLE public.order_audit_events (
     reason text,
     details jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT order_audit_events_event_type_check CHECK ((event_type = ANY (ARRAY['created'::text, 'cancelled'::text, 'printed'::text, 'deleted'::text])))
+    CONSTRAINT order_audit_events_event_type_check CHECK ((event_type = ANY (ARRAY['created'::text, 'cancelled'::text, 'printed'::text, 'deleted'::text, 'restored'::text])))
 );
 
 
@@ -4827,6 +4888,10 @@ GRANT ALL ON FUNCTION public.delete_cash_reconciliation(check_id_input uuid) TO 
 
 GRANT ALL ON FUNCTION public.delete_pos_orders(order_ids_input uuid[], reason_input text) TO service_role;
 GRANT ALL ON FUNCTION public.delete_pos_orders(order_ids_input uuid[], reason_input text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.restore_cancelled_orders(order_ids_input uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.restore_cancelled_orders(order_ids_input uuid[]) TO service_role;
+GRANT ALL ON FUNCTION public.restore_cancelled_orders(order_ids_input uuid[]) TO authenticated;
 
 
 --

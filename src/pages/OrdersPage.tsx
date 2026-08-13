@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileCheck2, Image as ImageIcon, Printer, ReceiptText, Search, Trash2 } from "lucide-react";
+import {
+  Banknote,
+  CheckCircle2,
+  ChevronRight,
+  CreditCard,
+  FileCheck2,
+  Image as ImageIcon,
+  Printer,
+  ReceiptText,
+  RotateCcw,
+  Search,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
 import { Modal } from "../components/ui/Modal";
-import { PageContainer, PageToolbar, SearchInput } from "../components/ui/Page";
+import { PageContainer, SearchInput } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
-import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { formatCurrency, formatDateTime } from "../lib/format";
@@ -22,6 +34,7 @@ import {
   fetchOrderPromotionDetails,
   fetchOrders,
   recordOrderPrint,
+  restoreCancelledOrders,
   type OrderWithItems,
 } from "../services/orders";
 
@@ -63,18 +76,20 @@ function formatOrderTime(value: string) {
 
 export function OrdersPage() {
   const { canAccess } = useAuth();
-  const { showSuccess } = useActionNotice();
+  const { confirmAction, promptAction, showSuccess } = useActionNotice();
   const location = useLocation();
   const navigate = useNavigate();
-  const [activeList, setActiveList] = useState<"paid" | "cancelled">("paid");
+  const [activeList, setActiveList] = useState<"paid" | "cancelled" | "deleted">("paid");
   const [cancelling, setCancelling] = useState(false);
-  const [cancelReason, setCancelReason] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<Invoice[]>([]);
   const [printing, setPrinting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [datePreset, setDatePreset] = useState<"today" | "week" | "month" | null>(null);
   const [selectedDay, setSelectedDay] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<Invoice | null>(null);
@@ -83,6 +98,9 @@ export function OrdersPage() {
   const [transferHistoryQuery, setTransferHistoryQuery] = useState("");
   const canCancelOrder = canAccess("orders.cancel");
   const canDeleteOrders = canAccess("orders.delete");
+  const canSelectOrders =
+    (activeList === "paid" && (canCancelOrder || canDeleteOrders)) ||
+    (activeList === "cancelled" && (canCancelOrder || canDeleteOrders));
   const transferHistoryOpen =
     new URLSearchParams(location.search).get("transfer-history") === "1" ||
     new URLSearchParams(location.search).get("transfer-images") === "1";
@@ -109,7 +127,7 @@ export function OrdersPage() {
 
   useEffect(() => {
     setSelectedOrderIds(new Set());
-  }, [activeList, query, selectedDay, selectedMonth, selectedYear]);
+  }, [activeList, datePreset, query, selectedDay, selectedMonth, selectedYear]);
 
   const availableYears = useMemo(
     () =>
@@ -131,11 +149,39 @@ export function OrdersPage() {
     const normalizedQuery = query.trim().toLowerCase();
 
     return orders.filter((order) => {
-      if (order.status !== activeList) {
+      if (activeList === "deleted" ? !order.deleted_at : order.deleted_at || order.status !== activeList) {
         return false;
       }
 
       const createdAt = new Date(order.created_at);
+
+      if (datePreset) {
+        const today = new Date();
+        const orderDay = new Date(createdAt);
+        today.setHours(0, 0, 0, 0);
+        orderDay.setHours(0, 0, 0, 0);
+
+        if (datePreset === "today" && orderDay.getTime() !== today.getTime()) {
+          return false;
+        }
+
+        if (datePreset === "week") {
+          const startOfWeek = new Date(today);
+          const weekday = startOfWeek.getDay() || 7;
+          startOfWeek.setDate(startOfWeek.getDate() - weekday + 1);
+          const endOfWeek = new Date(startOfWeek);
+          endOfWeek.setDate(endOfWeek.getDate() + 7);
+          if (orderDay < startOfWeek || orderDay >= endOfWeek) return false;
+        }
+
+        if (
+          datePreset === "month" &&
+          (orderDay.getFullYear() !== today.getFullYear() ||
+            orderDay.getMonth() !== today.getMonth())
+        ) {
+          return false;
+        }
+      }
 
       if (selectedYear && createdAt.getFullYear() !== Number(selectedYear)) {
         return false;
@@ -156,14 +202,18 @@ export function OrdersPage() {
           .some((value) => value!.toLowerCase().includes(normalizedQuery))
       );
     });
-  }, [activeList, orders, query, selectedDay, selectedMonth, selectedYear]);
+  }, [activeList, datePreset, orders, query, selectedDay, selectedMonth, selectedYear]);
   const paidCount = orders.filter((order) => order.status === "paid").length;
-  const cancelledCount = orders.filter((order) => order.status === "cancelled").length;
+  const cancelledCount = orders.filter((order) => order.status === "cancelled" && !order.deleted_at).length;
+  const deletedCount = orders.filter((order) => Boolean(order.deleted_at)).length;
+  const filteredTotal = filteredOrders.reduce((sum, order) => sum + order.total, 0);
+  const hasDateFilter = Boolean(datePreset || selectedYear || selectedMonth || selectedDay);
   const transferHistoryOrders = useMemo(() => {
     const normalizedQuery = transferHistoryQuery.trim().toLowerCase();
 
     return orders.filter((order) => {
       if (
+        order.deleted_at ||
         order.payment_method !== "transfer" ||
         (!order.payment_proof_url && !order.payment_proof_note?.trim())
       ) {
@@ -209,13 +259,35 @@ export function OrdersPage() {
     });
   }
 
+  function clearFilters() {
+    setQuery("");
+    setSelectedYear("");
+    setSelectedMonth("");
+    setSelectedDay("");
+    setDatePreset(null);
+  }
+
+  function applyDatePreset(preset: "today" | "week" | "month") {
+    setDatePreset(preset);
+    setSelectedYear("");
+    setSelectedMonth("");
+    setSelectedDay("");
+  }
+
   async function handleDeleteOrders() {
     if (!canDeleteOrders || deleting || selectedOrderIds.size === 0) return;
     const selected = orders.filter((order) => selectedOrderIds.has(order.id));
     const paidSelected = selected.filter((order) => order.status === "paid").length;
     const stockNotice = paidSelected > 0 ? ` ${paidSelected} hóa đơn thành công sẽ được hoàn hàng vào kho.` : "";
-    if (!window.confirm(`Xóa vĩnh viễn ${selected.length} hóa đơn đã chọn?${stockNotice} Thao tác này không thể hoàn tác.`)) return;
-    const deleteReason = window.prompt("Nhập lý do xóa để lưu nhật ký kiểm toán:")?.trim();
+    const deleteReason = await promptAction({
+      confirmLabel: "Xóa hóa đơn",
+      inputLabel: "Lý do xóa",
+      message: `Chuyển ${selected.length} hóa đơn đã chọn vào mục Đã xóa?${stockNotice}`,
+      placeholder: "Nhập lý do để lưu nhật ký kiểm toán",
+      title: "Xóa hóa đơn",
+      tone: "danger",
+    });
+    if (deleteReason === null) return;
     if (!deleteReason) {
       setErrorNotice({ message: "Cần nhập lý do trước khi xóa hóa đơn.", title: "Thiếu lý do xóa" });
       return;
@@ -224,14 +296,45 @@ export function OrdersPage() {
     setDeleting(true);
     try {
       await deleteOrders(selected.map((order) => order.id), deleteReason);
-      setOrders((current) => current.filter((order) => !selectedOrderIds.has(order.id)));
       if (selectedOrder && selectedOrderIds.has(selectedOrder.id)) setSelectedOrder(null);
       setSelectedOrderIds(new Set());
-      showSuccess(`Đã xóa ${selected.length} hóa đơn.`);
+      setActiveList("deleted");
+      await loadOrders();
+      showSuccess(`Đã chuyển ${selected.length} hóa đơn vào mục Đã xóa.`);
     } catch (requestError) {
       setErrorNotice({ message: getErrorMessage(requestError, "Không xóa được hóa đơn."), title: "Xóa hóa đơn thất bại" });
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleRestoreOrders() {
+    if (!canCancelOrder || restoring || selectedOrderIds.size === 0) return;
+    const selected = orders.filter(
+      (order) => selectedOrderIds.has(order.id) && order.status === "cancelled" && !order.deleted_at
+    );
+    if (selected.length === 0) return;
+    if (!await confirmAction({
+      confirmLabel: "Chuyển thành công",
+      message: `Chuyển ${selected.length} hóa đơn đã hủy về trạng thái Thành công? Tồn kho và điểm khách hàng sẽ được cập nhật lại.`,
+      title: "Chuyển trạng thái hóa đơn",
+      tone: "success",
+    })) return;
+
+    setRestoring(true);
+    try {
+      await restoreCancelledOrders(selected.map((order) => order.id));
+      setSelectedOrderIds(new Set());
+      setActiveList("paid");
+      await loadOrders();
+      showSuccess(`Đã chuyển ${selected.length} hóa đơn về Thành công.`);
+    } catch (requestError) {
+      setErrorNotice({
+        message: getErrorMessage(requestError, "Không khôi phục được hóa đơn. Hãy kiểm tra lại tồn kho."),
+        title: "Khôi phục hóa đơn thất bại",
+      });
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -240,26 +343,19 @@ export function OrdersPage() {
       return;
     }
 
-    if (!cancelReason.trim()) {
-      setErrorNotice({
-        message: "Nhập lý do để lưu dấu vết kiểm toán trước khi hủy hóa đơn.",
-        title: "Thiếu lý do hủy",
-      });
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Hủy hóa đơn ${selectedOrder.code}? Số lượng sản phẩm sẽ được hoàn lại vào kho.`
-    );
-
-    if (!confirmed) {
-      return;
-    }
+    const reason = await promptAction({
+      confirmLabel: "Hủy hóa đơn",
+      inputLabel: "Lý do hủy",
+      message: `Hủy hóa đơn ${selectedOrder.code}? Số lượng sản phẩm sẽ được hoàn lại vào kho.`,
+      placeholder: "Nhập lý do để lưu nhật ký kiểm toán",
+      title: "Xác nhận hủy hóa đơn",
+      tone: "danger",
+    });
+    if (reason === null) return;
 
     setCancelling(true);
     try {
-      await cancelOrder(selectedOrder.id, cancelReason);
-      setCancelReason("");
+      await cancelOrder(selectedOrder.id, reason);
       setSelectedOrder(null);
       setActiveList("cancelled");
       await loadOrders();
@@ -267,6 +363,45 @@ export function OrdersPage() {
     } catch (requestError) {
       setErrorNotice({
         message: getErrorMessage(requestError, "Không hủy được hóa đơn."),
+        title: "Hủy hóa đơn thất bại",
+      });
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  async function handleCancelSelectedOrders() {
+    if (!canCancelOrder || cancelling || selectedOrderIds.size === 0) return;
+    const selected = orders.filter(
+      (order) => selectedOrderIds.has(order.id) && order.status === "paid" && !order.deleted_at
+    );
+    if (selected.length === 0) return;
+
+    const reason = await promptAction({
+      confirmLabel: "Hủy hóa đơn",
+      inputLabel: "Lý do hủy",
+      message: `Hủy ${selected.length} hóa đơn đã chọn. Sản phẩm sẽ được hoàn lại vào kho.`,
+      placeholder: "Nhập lý do để lưu nhật ký kiểm toán",
+      title: "Xác nhận hủy hóa đơn",
+      tone: "danger",
+    });
+    if (reason === null) return;
+    if (!reason) {
+      setErrorNotice({ message: "Cần nhập lý do trước khi hủy hóa đơn.", title: "Thiếu lý do hủy" });
+      return;
+    }
+    setCancelling(true);
+    try {
+      await Promise.all(selected.map((order) => cancelOrder(order.id, reason)));
+      setSelectedOrderIds(new Set());
+      setActiveList("cancelled");
+      await loadOrders();
+      showSuccess(`Đã hủy ${selected.length} hóa đơn và hoàn lại tồn kho.`);
+    } catch (requestError) {
+      await loadOrders();
+      setSelectedOrderIds(new Set());
+      setErrorNotice({
+        message: getErrorMessage(requestError, "Không hủy được các hóa đơn đã chọn."),
         title: "Hủy hóa đơn thất bại",
       });
     } finally {
@@ -308,121 +443,77 @@ export function OrdersPage() {
   }
 
   return (
-    <PageContainer className={selectedOrderIds.size > 0 ? "pb-28" : undefined}>
+    <PageContainer className="pb-28">
       <ConfigNotice />
 
-      <PageToolbar
-        description="Tra cứu hóa đơn, sản phẩm và chứng từ thanh toán đã lưu."
-        eyebrow="Lịch sử bán hàng"
-        title="Hóa đơn đã tạo"
-      >
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <SearchInput
-            className="sm:max-w-md sm:flex-1"
-            onChange={setQuery}
-            placeholder="Tìm mã hóa đơn hoặc khách hàng"
-            value={query}
-          />
-          <div className="grid grid-cols-3 gap-2">
-            <select
-              aria-label="Lọc theo năm"
-              className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
-              onChange={(event) => {
-                setSelectedYear(event.target.value);
-                setSelectedMonth("");
-                setSelectedDay("");
-              }}
-              value={selectedYear}
-            >
-              <option value="">Năm</option>
-              {availableYears.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Lọc theo tháng"
-              className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 outline-none transition disabled:bg-slate-100 disabled:text-slate-400 focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
-              disabled={!selectedYear}
-              onChange={(event) => {
-                setSelectedMonth(event.target.value);
-                setSelectedDay("");
-              }}
-              value={selectedMonth}
-            >
-              <option value="">Tháng</option>
-              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
-                <option key={month} value={month}>
-                  {month}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Lọc theo ngày"
-              className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 outline-none transition disabled:bg-slate-100 disabled:text-slate-400 focus:border-moss-500 focus:ring-4 focus:ring-moss-100"
-              disabled={!selectedMonth}
-              onChange={(event) => setSelectedDay(event.target.value)}
-              value={selectedDay}
-            >
-              <option value="">Ngày</option>
-              {availableDays.map((day) => (
-                <option key={day} value={day}>
-                  {day}
-                </option>
-              ))}
-            </select>
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5">
+          <div className="min-w-0">
+            <h3 className="text-sm font-extrabold text-slate-900 sm:text-base">
+              {activeList === "paid" ? "Hóa đơn thành công" : activeList === "cancelled" ? "Hóa đơn đã hủy" : "Hóa đơn đã xóa"}
+            </h3>
+            {query || hasDateFilter ? <p className="mt-0.5 truncate text-xs font-semibold text-moss-700">Đang áp dụng bộ lọc tìm kiếm</p> : null}
           </div>
+          {!loading ? (
+            <p className="shrink-0 text-right text-xs font-semibold text-slate-500">
+              {filteredOrders.length} hóa đơn
+              {activeList === "paid" && filteredOrders.length > 0 ? <span className="ml-2 font-extrabold text-slate-800">· {formatCurrency(filteredTotal)}</span> : null}
+            </p>
+          ) : null}
         </div>
-      </PageToolbar>
-
-      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-soft">
-        <button
-          className={`rounded-xl px-4 py-3 text-sm font-extrabold transition ${
-            activeList === "paid"
-              ? "bg-moss-700 text-white shadow-sm"
-              : "text-slate-600 hover:bg-slate-50"
-          }`}
-          onClick={() => setActiveList("paid")}
-          type="button"
-        >
-          Hóa đơn thành công ({paidCount})
-        </button>
-        <button
-          className={`rounded-xl px-4 py-3 text-sm font-extrabold transition ${
-            activeList === "cancelled"
-              ? "bg-red-600 text-white shadow-sm"
-              : "text-slate-600 hover:bg-slate-50"
-          }`}
-          onClick={() => setActiveList("cancelled")}
-          type="button"
-        >
-          Hóa đơn đã hủy ({cancelledCount})
-        </button>
-      </div>
 
       {loading ? (
-        <div className="rounded-2xl bg-white p-8 shadow-soft">
+        <div className="p-12">
           <Spinner label="Đang tải hóa đơn..." />
         </div>
       ) : filteredOrders.length === 0 ? (
-        <EmptyState
-          description={
-            activeList === "paid"
-              ? "Hóa đơn sẽ xuất hiện tại đây sau khi thanh toán thành công."
-              : "Các hóa đơn bị hủy sẽ xuất hiện tại đây."
-          }
-          icon={ReceiptText}
-          title={activeList === "paid" ? "Chưa có hóa đơn thành công" : "Chưa có hóa đơn đã hủy"}
-        />
+        <div className="p-4 sm:p-6">
+          <EmptyState
+            description={query || hasDateFilter ? "Thử thay đổi từ khóa hoặc xóa bộ lọc thời gian." : activeList === "paid" ? "Hóa đơn sẽ xuất hiện tại đây sau khi thanh toán thành công." : activeList === "cancelled" ? "Các hóa đơn bị hủy sẽ xuất hiện tại đây." : "Các hóa đơn đã xóa sẽ xuất hiện tại đây và có thể khôi phục."}
+            icon={ReceiptText}
+            title={query || hasDateFilter ? "Không tìm thấy hóa đơn phù hợp" : activeList === "paid" ? "Chưa có hóa đơn thành công" : activeList === "cancelled" ? "Chưa có hóa đơn đã hủy" : "Chưa có hóa đơn đã xóa"}
+          />
+        </div>
       ) : (
-          <div className="max-h-[58dvh] overflow-auto overscroll-contain rounded-2xl border border-slate-200 bg-white shadow-soft">
-            <table className="w-full table-fixed border-collapse">
+          <>
+          <div className="divide-y divide-slate-100 md:hidden">
+            {filteredOrders.map((order) => (
+              <div className="flex items-stretch" key={order.id}>
+                {canSelectOrders ? (
+                  <label className="flex w-11 shrink-0 items-center justify-center" onClick={(event) => event.stopPropagation()}>
+                    <input aria-label={`Chọn hóa đơn ${order.code}`} checked={selectedOrderIds.has(order.id)} className="h-5 w-5 rounded border-slate-300 text-moss-700 focus:ring-moss-500" onChange={() => toggleOrderSelection(order.id)} type="checkbox" />
+                  </label>
+                ) : null}
+                <button className="min-w-0 flex-1 px-3 py-3.5 text-left transition active:bg-moss-50" onClick={() => setSelectedOrder(order)} type="button">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-extrabold text-slate-950">{order.customers?.name ?? "Khách lẻ"}</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-slate-500">{order.code} · {formatOrderTime(order.created_at)}</p>
+                    </div>
+                    <p className={`shrink-0 text-sm font-black tabular-nums ${order.deleted_at ? "text-slate-400 line-through" : order.status === "paid" ? "text-moss-800" : "text-slate-500 line-through"}`}>{formatCurrency(order.total)}</p>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${order.payment_method === "transfer" ? "text-sky-700" : "text-slate-500"}`}>
+                      {order.payment_method === "transfer" ? <CreditCard className="h-3.5 w-3.5" /> : <Banknote className="h-3.5 w-3.5" />}
+                      {getPaymentLabel(order.payment_method)}
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  </div>
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="hidden max-h-[58dvh] overflow-auto overscroll-contain md:block">
+            <table className="w-full border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-extrabold uppercase tracking-wide text-slate-500">
-                  {canDeleteOrders ? <th className="w-12 px-3 py-3 text-center"><input aria-label="Chọn tất cả hóa đơn đang hiển thị" checked={allFilteredSelected} className="h-5 w-5 rounded border-slate-300 text-moss-700 focus:ring-moss-500" onChange={toggleAllFiltered} type="checkbox" /></th> : null}
-                  <th className="w-[38%] px-2 py-3 sm:w-[40%] sm:px-5">Tên khách hàng</th>
-                  <th className="px-2 py-3 sm:px-5">Thời gian</th>
+                  {canSelectOrders ? <th className="w-12 px-3 py-3 text-center"><input aria-label="Chọn tất cả hóa đơn đang hiển thị" checked={allFilteredSelected} className="h-5 w-5 rounded border-slate-300 text-moss-700 focus:ring-moss-500" onChange={toggleAllFiltered} type="checkbox" /></th> : null}
+                  <th className="px-4 py-3">Hóa đơn</th>
+                  <th className="px-4 py-3">Khách hàng</th>
+                  <th className="px-4 py-3">Thời gian</th>
+                  <th className="px-4 py-3">Thanh toán</th>
+                  <th className="px-4 py-3 text-right">Tổng tiền</th>
+                  <th className="w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -433,7 +524,7 @@ export function OrdersPage() {
                     onClick={() => setSelectedOrder(order)}
                     tabIndex={0}
                   >
-                    {canDeleteOrders ? (
+                    {canSelectOrders ? (
                       <td className="px-3 py-3 text-center" onClick={(event) => event.stopPropagation()}>
                         <input
                           aria-label={`Chọn hóa đơn ${order.code}`}
@@ -444,25 +535,28 @@ export function OrdersPage() {
                         />
                       </td>
                     ) : null}
-                    <td className="min-w-0 px-2 py-3 text-xs font-bold text-slate-800 sm:px-5 sm:text-sm">
-                      <span className="block truncate">{order.customers?.name ?? "Khách lẻ"}</span>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm font-extrabold text-slate-900">{order.code}</td>
+                    <td className="max-w-52 px-4 py-3">
+                      <span className="block truncate text-sm font-bold text-slate-800">{order.customers?.name ?? "Khách lẻ"}</span>
+                      {order.customers?.phone ? <span className="mt-0.5 block text-xs font-semibold text-slate-500">{order.customers.phone}</span> : null}
                     </td>
-                    <td className="min-w-0 px-2 py-3 text-[11px] font-semibold text-slate-600 sm:px-5 sm:text-sm">
-                      <div className="flex min-w-0 flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
-                        <span className="whitespace-nowrap">{formatOrderTime(order.created_at)}</span>
-                        {order.status === "paid" && order.payment_method === "transfer" ? (
-                          <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-sky-100 px-2 text-[9px] font-black uppercase tracking-wide text-sky-800 ring-1 ring-sky-200 sm:h-6 sm:px-2.5 sm:text-[10px]">
-                            CK
-                          </span>
-                        ) : null}
-                      </div>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-slate-600">{formatOrderTime(order.created_at)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${order.payment_method === "transfer" ? "bg-sky-50 text-sky-700" : "bg-slate-100 text-slate-600"}`}>
+                        {order.payment_method === "transfer" ? <CreditCard className="h-3.5 w-3.5" /> : <Banknote className="h-3.5 w-3.5" />}
+                        {getPaymentLabel(order.payment_method)}
+                      </span>
                     </td>
+                    <td className={`whitespace-nowrap px-4 py-3 text-right text-sm font-black tabular-nums ${order.deleted_at ? "text-slate-400 line-through" : order.status === "paid" ? "text-moss-800" : "text-slate-500 line-through"}`}>{formatCurrency(order.total)}</td>
+                    <td className="pr-3"><ChevronRight className="h-4 w-4 text-slate-400" /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </>
       )}
+      </section>
 
       <Modal
         bodyClassName="px-3 py-3 sm:px-6 sm:py-5"
@@ -551,7 +645,7 @@ export function OrdersPage() {
       <Modal
         footer={
           <div className="flex w-full items-center justify-end gap-3">
-            {selectedOrder ? (
+            {selectedOrder && !selectedOrder.deleted_at ? (
               <Button
                 isLoading={printing}
                 onClick={() => void handlePrintOrder()}
@@ -562,7 +656,7 @@ export function OrdersPage() {
                 In lại ({selectedOrder.print_count})
               </Button>
             ) : null}
-            {selectedOrder?.status === "paid" && canCancelOrder ? (
+            {selectedOrder?.status === "paid" && !selectedOrder.deleted_at && canCancelOrder ? (
               <Button
                 isLoading={cancelling}
                 onClick={() => void handleCancelOrder()}
@@ -572,12 +666,12 @@ export function OrdersPage() {
                 Hủy hóa đơn
               </Button>
             ) : null}
-            <Button onClick={() => { setSelectedOrder(null); setCancelReason(""); }} type="button" variant="secondary">
+            <Button onClick={() => setSelectedOrder(null)} type="button" variant="secondary">
               Đóng
             </Button>
           </div>
         }
-        onClose={() => { setSelectedOrder(null); setCancelReason(""); }}
+        onClose={() => setSelectedOrder(null)}
         open={Boolean(selectedOrder)}
         size="xl"
         title={selectedOrder ? `Hóa đơn ${selectedOrder.code}` : "Hóa đơn"}
@@ -719,15 +813,6 @@ export function OrdersPage() {
                 </p>
               </div>
             ) : null}
-            {selectedOrder.status === "paid" && canCancelOrder ? (
-              <Textarea
-                label="Lý do hủy hóa đơn"
-                onChange={(event) => setCancelReason(event.target.value)}
-                placeholder="Bắt buộc để phục vụ kiểm toán và đối soát"
-                rows={3}
-                value={cancelReason}
-              />
-            ) : null}
             {selectedOrder.status === "cancelled" && selectedOrder.cancel_reason ? (
               <div className="rounded-2xl bg-red-50 px-4 py-3">
                 <p className="text-sm font-extrabold uppercase text-red-700">Lý do hủy</p>
@@ -736,11 +821,165 @@ export function OrdersPage() {
                 </p>
               </div>
             ) : null}
+            {selectedOrder.deleted_at ? (
+              <div className="rounded-2xl bg-slate-100 px-4 py-3">
+                <p className="text-sm font-extrabold uppercase text-slate-600">Đã xóa</p>
+                <p className="mt-1 text-sm font-bold text-slate-900">{formatDateTime(selectedOrder.deleted_at)}</p>
+                {selectedOrder.delete_reason ? (
+                  <p className="mt-2 whitespace-pre-line text-sm font-semibold text-slate-700">{selectedOrder.delete_reason}</p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </Modal>
-      {canDeleteOrders && selectedOrderIds.size > 0 ? (
-        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-red-100 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-14px_36px_rgba(15,23,42,0.14)] backdrop-blur-xl lg:left-72">
+      <Modal
+        footer={
+          <div className="flex w-full items-center justify-between gap-3">
+            <Button disabled={!query && !hasDateFilter} onClick={clearFilters} type="button" variant="ghost">
+              <RotateCcw className="h-4 w-4" />
+              Xóa bộ lọc
+            </Button>
+            <Button onClick={() => setSearchOpen(false)} type="button" variant="primary">
+              Xem {filteredOrders.length} hóa đơn
+            </Button>
+          </div>
+        }
+        onClose={() => setSearchOpen(false)}
+        open={searchOpen}
+        size="md"
+        title="Tìm kiếm hóa đơn"
+      >
+        <div className="space-y-5">
+          <SearchInput
+            onChange={setQuery}
+            placeholder="Mã hóa đơn, tên hoặc số điện thoại"
+            value={query}
+          />
+
+          <div>
+            <p className="mb-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500">Thời gian nhanh</p>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                ["today", "Hôm nay"],
+                ["week", "Tuần này"],
+                ["month", "Tháng này"],
+              ] as const).map(([value, label]) => (
+                <button
+                  aria-pressed={datePreset === value}
+                  className={`h-11 rounded-xl border px-2 text-sm font-extrabold transition ${datePreset === value ? "border-moss-700 bg-moss-700 text-white shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300 hover:bg-moss-50"}`}
+                  key={value}
+                  onClick={() => applyDatePreset(value)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2.5 flex items-center gap-3">
+              <span className="h-px flex-1 bg-slate-200" />
+              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">Hoặc chọn ngày</p>
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <select
+                aria-label="Lọc theo năm"
+                className="h-11 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-moss-500 focus:bg-white focus:ring-4 focus:ring-moss-100"
+                onChange={(event) => {
+                  setDatePreset(null);
+                  setSelectedYear(event.target.value);
+                  setSelectedMonth("");
+                  setSelectedDay("");
+                }}
+                value={selectedYear}
+              >
+                <option value="">Năm</option>
+                {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+              <select
+                aria-label="Lọc theo tháng"
+                className="h-11 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none transition disabled:cursor-not-allowed disabled:text-slate-400 focus:border-moss-500 focus:bg-white focus:ring-4 focus:ring-moss-100"
+                disabled={!selectedYear}
+                onChange={(event) => {
+                  setDatePreset(null);
+                  setSelectedMonth(event.target.value);
+                  setSelectedDay("");
+                }}
+                value={selectedMonth}
+              >
+                <option value="">Tháng</option>
+                {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{month}</option>)}
+              </select>
+              <select
+                aria-label="Lọc theo ngày"
+                className="h-11 min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none transition disabled:cursor-not-allowed disabled:text-slate-400 focus:border-moss-500 focus:bg-white focus:ring-4 focus:ring-moss-100"
+                disabled={!selectedMonth}
+                onChange={(event) => {
+                  setDatePreset(null);
+                  setSelectedDay(event.target.value);
+                }}
+                value={selectedDay}
+              >
+                <option value="">Ngày</option>
+                {availableDays.map((day) => <option key={day} value={day}>{day}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {selectedOrderIds.size === 0 ? (
+        <nav aria-label="Bộ lọc hóa đơn" className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-3 pb-[calc(0.65rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_32px_rgba(15,23,42,0.10)] backdrop-blur-xl lg:left-72">
+          <div className="mx-auto grid max-w-xl grid-cols-4 gap-1 rounded-2xl bg-slate-100 p-1.5">
+            <button
+              aria-current={activeList === "paid" ? "page" : undefined}
+              className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-extrabold transition sm:text-sm ${activeList === "paid" ? "bg-white text-moss-800 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-800"}`}
+              onClick={() => setActiveList("paid")}
+              type="button"
+            >
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span className="truncate">Thành công</span>
+              <span className="hidden tabular-nums sm:inline">{paidCount}</span>
+            </button>
+            <button
+              aria-current={activeList === "cancelled" ? "page" : undefined}
+              className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-extrabold transition sm:text-sm ${activeList === "cancelled" ? "bg-white text-red-700 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-800"}`}
+              onClick={() => setActiveList("cancelled")}
+              type="button"
+            >
+              <XCircle className="h-4 w-4 shrink-0" />
+              <span className="truncate">Đã hủy</span>
+              <span className="hidden tabular-nums sm:inline">{cancelledCount}</span>
+            </button>
+            <button
+              aria-current={activeList === "deleted" ? "page" : undefined}
+              className={`flex min-w-0 items-center justify-center gap-1 rounded-xl px-1.5 py-2.5 text-[11px] font-extrabold transition sm:gap-1.5 sm:px-2 sm:text-sm ${activeList === "deleted" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-800"}`}
+              onClick={() => setActiveList("deleted")}
+              type="button"
+            >
+              <Trash2 className="h-4 w-4 shrink-0" />
+              <span className="truncate">Đã xóa</span>
+              <span className="hidden tabular-nums sm:inline">{deletedCount}</span>
+            </button>
+            <button
+              aria-expanded={searchOpen}
+              aria-haspopup="dialog"
+              className={`relative flex min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-extrabold transition sm:text-sm ${searchOpen ? "bg-coal text-white shadow-sm" : query || hasDateFilter ? "bg-moss-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+              onClick={() => setSearchOpen(true)}
+              type="button"
+            >
+              <Search className="h-4 w-4 shrink-0" />
+              <span>Tìm kiếm</span>
+              {query || hasDateFilter ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-amber-300 ring-2 ring-moss-700" /> : null}
+            </button>
+          </div>
+        </nav>
+      ) : null}
+      {canSelectOrders && selectedOrderIds.size > 0 ? (
+        <div className={`fixed bottom-0 left-0 right-0 z-40 border-t bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-14px_36px_rgba(15,23,42,0.14)] backdrop-blur-xl lg:left-72 ${activeList === "cancelled" ? "border-moss-100" : "border-red-100"}`}>
           <div className="mx-auto flex max-w-4xl items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Đã chọn</p>
@@ -748,16 +987,30 @@ export function OrdersPage() {
             </div>
             <button
               className="hidden h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-700 sm:flex"
-              disabled={deleting}
+              disabled={deleting || restoring}
               onClick={() => setSelectedOrderIds(new Set())}
               type="button"
             >
               Bỏ chọn
             </button>
-            <Button className="h-12 min-w-32" isLoading={deleting} onClick={() => void handleDeleteOrders()} type="button" variant="danger">
-              <Trash2 className="h-4 w-4" />
-              Xóa hóa đơn
-            </Button>
+            {canDeleteOrders ? (
+              <Button aria-label="Xóa hóa đơn" className="h-12 min-w-12 px-3 text-red-600 ring-red-200 hover:bg-red-50 sm:min-w-32" isLoading={deleting} onClick={() => void handleDeleteOrders()} type="button" variant="secondary">
+                <Trash2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Xóa hóa đơn</span>
+              </Button>
+            ) : null}
+            {activeList === "paid" && canCancelOrder ? (
+              <Button className="h-12 min-w-32" isLoading={cancelling} onClick={() => void handleCancelSelectedOrders()} type="button" variant="danger">
+                <XCircle className="h-4 w-4" />
+                Hủy hóa đơn
+              </Button>
+            ) : null}
+            {activeList === "cancelled" && canCancelOrder ? (
+              <Button className="h-12 min-w-36 bg-moss-700 text-white hover:bg-moss-800" isLoading={restoring} onClick={() => void handleRestoreOrders()} type="button">
+                <CheckCircle2 className="h-4 w-4" />
+                Chuyển thành công
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}

@@ -259,7 +259,7 @@ const emptyInput = (ean13: string | null = null): ProductEditorInput => ({
 });
 
 export function ProductPage() {
-  const { showSuccess } = useActionNotice();
+  const { confirmAction, showSuccess } = useActionNotice();
   const { canAccess } = useAuth();
   const canCreateProduct = canAccess("products.create");
   const canUpdateProduct = canAccess("products.update");
@@ -496,7 +496,12 @@ export function ProductPage() {
       setError("Tài khoản không có quyền xóa sản phẩm.");
       return;
     }
-    if (!form.id || !window.confirm(`Xóa sản phẩm “${form.name}”?`)) return;
+    if (!form.id || !await confirmAction({
+      confirmLabel: "Xóa sản phẩm",
+      message: `Bạn có chắc muốn xóa sản phẩm “${form.name}”?`,
+      title: "Xác nhận xóa sản phẩm",
+      tone: "danger",
+    })) return;
     setSaving(true);
     setError("");
     try {
@@ -523,14 +528,16 @@ export function ProductPage() {
       ),
     }));
   }
-  function generate() {
+  async function generate() {
     const count = countVariantCombinations(form.variant_attributes);
     if (
       dirtyDimensions &&
       form.variants.some((variant) => variant.id) &&
-      !window.confirm(
-        `Việc tạo lại ${count} tổ hợp có thể thay thế SKU hiện tại. Snapshot đơn hàng vẫn được giữ. Tiếp tục?`,
-      )
+      !await confirmAction({
+        confirmLabel: "Tạo lại tổ hợp",
+        message: `Việc tạo lại ${count} tổ hợp có thể thay thế SKU hiện tại. Snapshot đơn hàng vẫn được giữ.`,
+        title: "Tạo lại ma trận SKU",
+      })
     )
       return;
     setForm((current) => {
@@ -604,14 +611,16 @@ export function ProductPage() {
     setManualCombinationOpen(false);
     setError("");
   }
-  function applyProductType(productTypeId: string) {
+  async function applyProductType(productTypeId: string) {
     if (
       form.product_type_id &&
       form.product_type_id !== productTypeId &&
       form.variant_attributes.length > 0 &&
-      !window.confirm(
-        "Đổi Product Type sẽ nạp lại cấu hình specification/variant mặc định. SKU chỉ thay đổi khi bạn xác nhận tạo lại matrix. Tiếp tục?",
-      )
+      !await confirmAction({
+        confirmLabel: "Đổi loại sản phẩm",
+        message: "Cấu hình thông số và biến thể mặc định sẽ được nạp lại. SKU chỉ thay đổi khi bạn xác nhận tạo lại ma trận.",
+        title: "Đổi loại sản phẩm",
+      })
     )
       return;
     const configured = typeAttributes
@@ -665,13 +674,16 @@ export function ProductPage() {
           configured.some((item) => item.role === "variant")),
     );
   }
-  function setVariantMode(next: boolean) {
+  async function setVariantMode(next: boolean) {
     if (
       !next &&
       (form.variant_attributes.length > 0 || form.variants.length > 1) &&
-      !window.confirm(
-        "Tắt biến thể sẽ giữ lại một SKU mặc định và bỏ ma trận biến thể hiện tại. Tiếp tục?",
-      )
+      !await confirmAction({
+        confirmLabel: "Tắt biến thể",
+        message: "Hệ thống sẽ giữ lại một SKU mặc định và bỏ ma trận biến thể hiện tại.",
+        title: "Xác nhận tắt biến thể",
+        tone: "danger",
+      })
     )
       return;
     setHasVariants(next);
@@ -862,7 +874,7 @@ export function ProductPage() {
                   </table>
                 </div>
               </Card>
-              <div className="grid justify-start gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(148px,172px))] sm:gap-3">
+              <div className="grid grid-cols-2 justify-start gap-2 sm:[grid-template-columns:repeat(auto-fill,minmax(168px,184px))] sm:gap-3">
                 {filtered.map((product) => (
                   <ProductAdminCard
                     key={product.id}
@@ -928,7 +940,12 @@ export function ProductPage() {
                         </Button>
                         <Button
                           onClick={async () => {
-                            if (window.confirm(`Ẩn ${product.name}?`)) {
+                            if (await confirmAction({
+                              confirmLabel: "Ẩn sản phẩm",
+                              message: `Bạn có chắc muốn ẩn “${product.name}”?`,
+                              title: "Xác nhận ẩn sản phẩm",
+                              tone: "danger",
+                            })) {
                                await archiveProduct(product.id);
                                await load();
                                showSuccess("Đã ẩn sản phẩm.");
@@ -1725,7 +1742,7 @@ function ProductAdminCard({
     null;
   return (
     <ConfigurableProductCard
-      action={preview && posPreview ? <div className="flex items-center gap-1 rounded-full bg-moss-50 p-1"><span className="grid h-7 w-7 place-items-center rounded-full bg-white text-moss-700 shadow-sm ring-1 ring-moss-100"><Minus className="h-4 w-4" /></span><span className="min-w-5 text-center text-sm font-black">2</span><span className="grid h-8 w-8 place-items-center rounded-full bg-moss-700 text-white shadow-sm"><Plus className="h-4 w-4" /></span></div> : undefined}
+      action={preview && posPreview ? <div className="flex items-center gap-0.5 rounded-full bg-coal p-0.5 text-white shadow-sm"><span className="grid h-7 w-7 place-items-center rounded-full text-white/80"><Minus className="h-3.5 w-3.5" /></span><span className="min-w-4 text-center text-xs font-black">2</span><span className="grid h-7 w-7 place-items-center rounded-full bg-white text-coal"><Plus className="h-3.5 w-3.5" /></span></div> : undefined}
       category={product.category?.name ?? product.product_type?.name}
       compareAtPrice={comparePrice}
       imageUrl={image}
@@ -2065,7 +2082,7 @@ function DefinitionManager({
   onSaved: () => Promise<void>;
   records: ProductType[] | ProductAttribute[];
 }) {
-  const { showSuccess } = useActionNotice();
+  const { confirmAction, showSuccess } = useActionNotice();
   const [openEditor, setOpenEditor] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -2157,9 +2174,12 @@ function DefinitionManager({
     if (!canDelete) return;
     const label = kind === "type" ? "loại sản phẩm" : "thuộc tính";
     if (
-      !window.confirm(
-        `Xóa ${label} “${record.name}”? Dữ liệu snapshot đã lưu trên sản phẩm sẽ được giữ.`,
-      )
+      !await confirmAction({
+        confirmLabel: `Xóa ${label}`,
+        message: `Xóa ${label} “${record.name}”? Dữ liệu snapshot đã lưu trên sản phẩm sẽ được giữ.`,
+        title: `Xác nhận xóa ${label}`,
+        tone: "danger",
+      })
     )
       return;
     setLocalError("");

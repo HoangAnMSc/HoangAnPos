@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
+  ChevronRight,
   Edit3,
   Mail,
   MapPin,
@@ -169,7 +170,7 @@ function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
 }
 
 export function CustomersPage() {
-  const { showSuccess } = useActionNotice();
+  const { confirmAction, showSuccess } = useActionNotice();
   const { canAccess } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -255,7 +256,12 @@ export function CustomersPage() {
       return;
     }
 
-    const confirmed = window.confirm(`Xóa khách hàng "${customer.name}"?`);
+    const confirmed = await confirmAction({
+      confirmLabel: "Xóa khách hàng",
+      message: `Bạn có chắc muốn xóa khách hàng “${customer.name}”?`,
+      title: "Xác nhận xóa khách hàng",
+      tone: "danger",
+    });
     if (!confirmed) {
       return;
     }
@@ -288,37 +294,28 @@ export function CustomersPage() {
 
   return (
     <PageContainer className="pb-28 sm:pb-6">
-      <section className="rounded-xl bg-white p-4 shadow-soft ring-1 ring-coal/5">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <p className="text-xs font-extrabold uppercase tracking-wide text-coal/45">
-              Khách hàng
-            </p>
-            <h2 className="mt-1 font-display text-xl font-bold text-coal">
-              Quản lý khách hàng
-            </h2>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Badge tone="neutral">{customers.length} khách hàng</Badge>
-              <Badge tone="neutral">{filteredCustomers.length} đang hiển thị</Badge>
-              <Badge tone="green">{completeContactCount} có liên hệ</Badge>
-            </div>
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+        <div className="hidden items-center gap-3 p-4 sm:flex">
+          <div className="relative hidden min-w-0 flex-1 sm:block">
+            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              className="h-11 rounded-xl border-slate-200 bg-slate-50 py-2 pl-11 focus:bg-white"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tìm tên, số điện thoại, email hoặc địa chỉ"
+              value={query}
+            />
           </div>
           {canCreateCustomer ? (
-            <Button className="hidden h-10 rounded-xl px-3 sm:inline-flex" onClick={openCreateModal}>
+            <Button className="ml-auto hidden h-11 shrink-0 sm:inline-flex" onClick={openCreateModal}>
               <UserPlus className="h-4 w-4" />
               Thêm khách hàng
             </Button>
           ) : null}
         </div>
-
-        <div className="relative mt-3 hidden w-full sm:block xl:max-w-xl">
-          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-coal/35" />
-          <Input
-            className="h-10 rounded-xl py-2 pl-11"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Tìm tên, số điện thoại, email hoặc địa chỉ..."
-            value={query}
-          />
+        <div className="grid grid-cols-3 border-t border-slate-100 bg-slate-50/70">
+          <div className="px-3 py-3 sm:px-4"><p className="text-lg font-black tabular-nums text-slate-950">{customers.length}</p><p className="text-[11px] font-bold text-slate-500 sm:text-xs">Tổng khách hàng</p></div>
+          <div className="border-x border-slate-200 px-3 py-3 sm:px-4"><p className="text-lg font-black tabular-nums text-moss-800">{completeContactCount}</p><p className="text-[11px] font-bold text-slate-500 sm:text-xs">Có liên hệ</p></div>
+          <div className="px-3 py-3 sm:px-4"><p className="text-lg font-black tabular-nums text-slate-950">{filteredCustomers.length}</p><p className="text-[11px] font-bold text-slate-500 sm:text-xs">Đang hiển thị</p></div>
         </div>
       </section>
 
@@ -337,33 +334,34 @@ export function CustomersPage() {
           title={query.trim() ? "Không tìm thấy khách hàng" : "Chưa có khách hàng"}
         />
       ) : (
-        <div className="overflow-hidden rounded-xl bg-white shadow-soft ring-1 ring-coal/5">
-          <div className="hidden grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_110px_minmax(0,1.2fr)_auto] gap-3 border-b border-coal/5 bg-coal px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white/70 lg:grid">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none">
+          <div className="hidden grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_110px_minmax(0,1.2fr)_32px] gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500 lg:grid">
             <span>Khách hàng</span>
             <span>Liên hệ</span>
             <span>Điểm</span>
             <span>Thông tin thêm</span>
-            <span className="text-right">Thao tác</span>
+            <span />
           </div>
-          <div className="divide-y divide-coal/5">
+          <div className="divide-y divide-coal/5 max-lg:grid max-lg:gap-3 max-lg:divide-y-0">
             {filteredCustomers.map((customer) => (
               <button
-                className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3 text-left transition hover:bg-cream/30 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_110px_minmax(0,1.2fr)_auto] lg:gap-3"
+                className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 bg-white px-4 py-4 text-left transition hover:bg-moss-50/60 max-lg:rounded-2xl max-lg:border max-lg:border-slate-200 max-lg:shadow-[0_4px_16px_rgba(15,23,42,0.05)] lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_110px_minmax(0,1.2fr)_32px] lg:px-5"
                 key={customer.id}
                 onClick={() => setViewingCustomer(customer)}
                 type="button"
               >
                 <div className="flex min-w-0 items-center gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-moss-100 text-sm font-black uppercase text-moss-800">
+                    {customer.name.trim().charAt(0) || "K"}
+                  </span>
                   <div className="min-w-0">
                     <h3 className="truncate text-base font-extrabold text-coal">
                       {customer.name}
                     </h3>
-                    <p className="mt-1 truncate text-xs font-semibold text-coal/45 lg:hidden">
-                      {customer.phone || customer.email || "Chưa có liên hệ"}
-                    </p>
                     <Badge className="mt-1.5 lg:hidden" tone="amber">
                       {(customer.points ?? 0).toLocaleString("vi-VN")} điểm
                     </Badge>
+                    {customer.address ? <p className="mt-2 line-clamp-1 text-xs font-semibold text-slate-500 lg:hidden"><MapPin className="mr-1 inline h-3.5 w-3.5" />{customer.address}</p> : null}
                   </div>
                 </div>
 
@@ -395,23 +393,21 @@ export function CustomersPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end">
-                  <Badge tone="neutral">Xem</Badge>
-                </div>
+                <ChevronRight className="h-5 w-5 text-slate-400" />
               </button>
             ))}
           </div>
         </div>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden">
-        <div className="mx-auto grid max-w-lg grid-cols-2 gap-2">
-          <Button onClick={() => setSearchModalOpen(true)} variant="secondary"><Search className="h-4 w-4" />Tìm kiếm</Button>
-          {canCreateCustomer ? <Button onClick={openCreateModal}><UserPlus className="h-4 w-4" />Thêm khách hàng</Button> : <span />}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 pb-[calc(.65rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_28px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:hidden">
+        <div className={`mx-auto grid max-w-lg gap-2 ${canCreateCustomer ? "grid-cols-2" : "grid-cols-1"}`}>
+          <button className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-extrabold text-slate-700" onClick={() => setSearchModalOpen(true)} type="button"><Search className="h-4 w-4" />Tìm kiếm</button>
+          {canCreateCustomer ? <button className="flex h-11 items-center justify-center gap-2 rounded-xl bg-coal text-sm font-extrabold text-white shadow-sm" onClick={openCreateModal} type="button"><UserPlus className="h-4 w-4" />Thêm khách hàng</button> : null}
         </div>
       </div>
 
-      <Modal footer={<Button onClick={() => setSearchModalOpen(false)} variant="secondary">Đóng</Button>} onClose={() => setSearchModalOpen(false)} open={searchModalOpen} size="sm" title="Tìm khách hàng">
+      <Modal footer={<Button className="w-full sm:w-auto" onClick={() => setSearchModalOpen(false)}>Xem {filteredCustomers.length} kết quả</Button>} onClose={() => setSearchModalOpen(false)} open={searchModalOpen} size="sm" title="Tìm khách hàng">
         <div className="space-y-3"><div className="relative"><Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-coal/35" /><Input autoFocus className="h-12 rounded-xl pl-11" onChange={(event) => setQuery(event.target.value)} placeholder="Tên, số điện thoại hoặc email..." value={query} /></div><p className="text-sm font-semibold text-slate-500">Tìm thấy {filteredCustomers.length} khách hàng</p></div>
       </Modal>
 
@@ -452,40 +448,40 @@ export function CustomersPage() {
                 <p className="text-xs font-bold">điểm tích lũy</p>
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-100 p-3">
-                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+            <dl className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="grid gap-1 px-4 py-3 sm:grid-cols-[140px_1fr] sm:gap-4">
+                <dt className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
                   Số điện thoại
-                </p>
-                <p className="mt-1 text-sm font-bold text-slate-700">
+                </dt>
+                <dd className="text-sm font-bold text-slate-800 sm:text-right">
                   {viewingCustomer.phone || "Chưa có"}
-                </p>
+                </dd>
               </div>
-              <div className="rounded-xl border border-slate-100 p-3">
-                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+              <div className="grid gap-1 px-4 py-3 sm:grid-cols-[140px_1fr] sm:gap-4">
+                <dt className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
                   Email
-                </p>
-                <p className="mt-1 break-words text-sm font-bold text-slate-700">
+                </dt>
+                <dd className="break-words text-sm font-bold text-slate-800 sm:text-right">
                   {viewingCustomer.email || "Chưa có"}
-                </p>
+                </dd>
               </div>
-              <div className="rounded-xl border border-slate-100 p-3 sm:col-span-2">
-                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+              <div className="grid gap-1 px-4 py-3 sm:grid-cols-[140px_1fr] sm:gap-4">
+                <dt className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
                   Địa chỉ
-                </p>
-                <p className="mt-1 text-sm font-bold text-slate-700">
+                </dt>
+                <dd className="text-sm font-bold text-slate-800 sm:text-right">
                   {viewingCustomer.address || "Chưa có"}
-                </p>
+                </dd>
               </div>
-              <div className="rounded-xl border border-slate-100 p-3 sm:col-span-2">
-                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
+              <div className="grid gap-1 px-4 py-3 sm:grid-cols-[140px_1fr] sm:gap-4">
+                <dt className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
                   Ghi chú
-                </p>
-                <p className="mt-1 whitespace-pre-line text-sm font-bold text-slate-700">
+                </dt>
+                <dd className="whitespace-pre-line text-sm font-bold text-slate-800 sm:text-right">
                   {viewingCustomer.note || "Chưa có"}
-                </p>
+                </dd>
               </div>
-            </div>
+            </dl>
           </div>
         ) : null}
       </Modal>

@@ -34,7 +34,7 @@ export function ConfigurableProductCard({
   const imageVisible = visible("image");
   return (
     <div
-      className={`group flex h-full w-full max-w-[172px] min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-moss-300 hover:shadow-md ${onActivate ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-500" : ""}`}
+      className={`group flex h-[270px] w-full max-w-[184px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_7px_20px_rgba(15,23,42,0.07)] transition hover:-translate-y-0.5 hover:border-moss-300 hover:shadow-[0_12px_28px_rgba(15,23,42,0.10)] ${onActivate ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-500" : ""}`}
       onClick={onActivate}
       onKeyDown={onActivate ? (event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -46,18 +46,18 @@ export function ConfigurableProductCard({
       tabIndex={onActivate ? 0 : undefined}
     >
       {imageVisible ? (
-        <div className="relative aspect-[1.45/1] overflow-hidden bg-slate-100">
+        <div className="relative mx-2 mt-2 aspect-[1.25/1] shrink-0 overflow-hidden rounded-2xl bg-slate-100">
           {imageUrl ? (
             <img
               alt={name}
-              className={`h-full w-full transition duration-300 group-hover:scale-[1.02] ${settings.imageFit === "contain" ? "object-contain p-1.5" : "object-cover"}`}
+              className={`h-full w-full transition duration-300 group-hover:scale-[1.035] ${settings.imageFit === "contain" ? "object-contain p-2" : "object-cover"}`}
               src={imageUrl}
             />
           ) : (
             <div className="grid h-full place-items-center text-slate-300"><Package className="h-9 w-9" /></div>
           )}
           {visible("stock") ? (
-            <span className={`absolute left-2 top-2 max-w-[calc(100%-3rem)] truncate rounded-lg px-2 py-1 text-[10px] font-extrabold shadow-sm ${stock > 0 ? "bg-emerald-50/95 text-emerald-700" : "bg-red-50/95 text-red-600"}`}>
+            <span className={`absolute bottom-2 left-2 max-w-[calc(100%-3rem)] truncate rounded-full px-2 py-1 text-[10px] font-extrabold shadow-sm backdrop-blur ${stock > 0 ? "bg-white/90 text-slate-700" : "bg-red-600/95 text-white"}`}>
               {stock > 0 ? `Còn ${stock}` : "Hết hàng"}
             </span>
           ) : null}
@@ -67,41 +67,39 @@ export function ConfigurableProductCard({
             </span>
           ) : null}
           {visible("variant_count") && variantCount > 1 ? (
-            <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-slate-950/85 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur">
+            <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-slate-950/80 px-2 py-1 text-[10px] font-extrabold text-white shadow-sm backdrop-blur">
               <Layers3 className="h-3 w-3" /> {variantCount} biến thể
             </span>
           ) : null}
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col p-3">
+      <div className="flex min-h-0 flex-1 flex-col px-3 pb-2.5 pt-2">
         {visible("category") && category ? (
-          <p className="mb-1 truncate text-[10px] font-extrabold uppercase tracking-wide text-slate-400">{category}</p>
+          <p className="mb-1 flex items-center gap-1 truncate text-[10px] font-extrabold text-moss-700"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-moss-500" />{category}</p>
         ) : null}
         {visible("name") ? (
           <h3 className="line-clamp-2 min-h-10 text-sm font-black leading-5 text-slate-950" title={name}>{name}</h3>
         ) : null}
-        {visible("price") || visible("compare_price") ? (
-          <div className="mt-2 min-w-0">
-            {visible("compare_price") && compareAtPrice != null && compareAtPrice > price ? (
-              <p className="truncate text-[11px] font-bold tabular-nums text-slate-400 line-through">{formatCurrency(compareAtPrice)}</p>
-            ) : <div className="h-4" />}
-            {visible("price") ? (
-              <p className="truncate text-base font-black tabular-nums text-moss-800" title={formatCurrency(price)}>{formatCurrency(price)}</p>
-            ) : null}
-          </div>
-        ) : null}
 
-        {action || (!imageVisible && visible("stock")) ? (
-        <div className="mt-auto flex min-h-11 items-end justify-between gap-1 pt-2">
+        <div className="mt-auto flex min-h-[48px] items-end justify-between gap-1.5 border-t border-dashed border-slate-200 pt-1.5">
+          {visible("price") || visible("compare_price") ? (
+            <div className="min-w-0 flex-1">
+              {visible("compare_price") && compareAtPrice != null && compareAtPrice > price ? (
+                <p className="truncate text-[10px] font-bold tabular-nums text-slate-400 line-through">{formatCurrency(compareAtPrice)}</p>
+              ) : <div className="h-3.5" />}
+              {visible("price") ? (
+                <p className="truncate text-[15px] font-black tabular-nums text-slate-950" title={formatCurrency(price)}>{formatCurrency(price)}</p>
+              ) : null}
+            </div>
+          ) : <span className="flex-1" />}
           {!imageVisible && visible("stock") ? (
-            <span className={`mb-0.5 w-fit max-w-full truncate rounded-lg px-2 py-1 text-[10px] font-extrabold ${stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+            <span className={`mb-0.5 w-fit max-w-full truncate rounded-lg px-2 py-1 text-[10px] font-extrabold ${stock > 0 ? "bg-slate-100 text-slate-700" : "bg-red-50 text-red-600"}`}>
               {stock > 0 ? `Còn ${stock}` : "Hết hàng"}
             </span>
-          ) : <span />}
+          ) : null}
           {action ? <div className="shrink-0">{action}</div> : null}
         </div>
-        ) : null}
       </div>
     </div>
   );

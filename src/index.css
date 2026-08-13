@@ -70,3 +70,66 @@ select:focus-visible {
     display: none;
   }
 }
+
+@keyframes action-notice-pop {
+  0% { opacity: 0; transform: translateY(12px) scale(0.88); }
+  12% { opacity: 1; transform: translateY(0) scale(1.03); }
+  18%, 82% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-8px) scale(0.96); }
+}
+
+@keyframes action-notice-ring {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.1); opacity: 1; }
+  72%, 100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes action-notice-check-draw {
+  0%, 16% { stroke-dashoffset: 1; }
+  72%, 100% { stroke-dashoffset: 0; }
+}
+
+@keyframes action-dialog-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes action-dialog-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.action-notice-card {
+  animation: action-notice-pop 2.2s ease-in-out both;
+}
+
+.action-notice-ring {
+  animation: action-notice-ring 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.action-notice-check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: action-notice-check-draw 0.72s 0.1s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+
+.action-dialog-overlay {
+  animation: action-dialog-overlay-in 0.18s ease-out both;
+}
+
+.action-dialog-card {
+  animation: action-dialog-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-notice-card,
+  .action-notice-ring,
+  .action-notice-check path {
+    animation: none;
+  }
+
+  .action-dialog-overlay,
+  .action-dialog-card {
+    animation: none;
+  }
+}

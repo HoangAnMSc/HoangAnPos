@@ -1,14 +1,12 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Barcode, Boxes, ClipboardCheck, Edit3, Trash2 } from "lucide-react";
+import { Barcode, Boxes, CheckCircle2, ChevronRight, ClipboardCheck } from "lucide-react";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
-import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
-import { Card } from "../components/ui/Card";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal } from "../components/ui/ErrorNoticeModal";
 import { Modal } from "../components/ui/Modal";
-import { PageContainer, SearchInput, StateNotice } from "../components/ui/Page";
+import { PageContainer, StateNotice } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
@@ -106,7 +104,6 @@ export function InventoryPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<InventoryCountProduct[]>([]);
-  const [query, setQuery] = useState("");
   const [quantityDraft, setQuantityDraft] = useState("");
   const [quantityError, setQuantityError] = useState("");
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
@@ -141,17 +138,8 @@ export function InventoryPage() {
     () => products.filter((product) => hasInventoryCount(counts[product.id])),
     [counts, products]
   );
-  const normalizedQuery = query.trim().toLocaleLowerCase("vi");
   const visibleProducts = useMemo(() => {
-    const matched = normalizedQuery
-      ? products.filter((product) =>
-          [product.name, product.sku, product.category, getProductEan13Value(product)]
-            .filter(Boolean)
-            .some((value) => value!.toLocaleLowerCase("vi").includes(normalizedQuery))
-        )
-      : products;
-
-    return [...matched].sort((first, second) => {
+    return [...products].sort((first, second) => {
       const firstCounted = hasInventoryCount(counts[first.id]);
       const secondCounted = hasInventoryCount(counts[second.id]);
 
@@ -161,7 +149,7 @@ export function InventoryPage() {
 
       return first.name.localeCompare(second.name, "vi");
     });
-  }, [counts, normalizedQuery, products]);
+  }, [counts, products]);
 
   function openQuantityModal(product: InventoryCountProduct) {
     if (!canCountInventory) {
@@ -191,17 +179,7 @@ export function InventoryPage() {
     }
 
     setCounts((current) => ({ ...current, [countingProduct.id]: String(parsed) }));
-    showSuccess(`Đã ghi nhận số lượng thực tế của ${countingProduct.name}.`);
-    setQuery("");
     closeQuantityModal();
-  }
-
-  function removeCount(productId: string) {
-    setCounts((current) => {
-      const next = { ...current };
-      delete next[productId];
-      return next;
-    });
   }
 
   function handleEan13Detected(value: string) {
@@ -261,174 +239,70 @@ export function InventoryPage() {
       maxWidth="none"
     >
       <ConfigNotice />
-      <Card className="border border-slate-200 p-3 shadow-soft sm:p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <SearchInput
-            className="lg:max-w-xl"
-            onChange={setQuery}
-            placeholder="Tìm tên, nhóm hàng, SKU hoặc EAN-13..."
-            value={query}
-          />
-          <div className="flex flex-wrap gap-2">
-            <Badge tone="neutral">{products.length} sản phẩm</Badge>
-            <Badge tone="green">{countedProducts.length} đã nhập</Badge>
-            <Badge tone={products.length - countedProducts.length > 0 ? "amber" : "green"}>
-              {products.length - countedProducts.length} chưa nhập
-            </Badge>
-          </div>
-        </div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-moss-500 to-moss-700 transition-all"
-            style={{
-              width: `${products.length ? (countedProducts.length / products.length) * 100 : 0}%`,
-            }}
-          />
-        </div>
-      </Card>
-
       {error ? <StateNotice message={error} tone="error" /> : null}
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
-        <Card className="min-w-0 border border-sky-100 p-3 shadow-[0_10px_28px_rgba(14,165,233,0.07)] sm:p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+      <section className="mx-auto w-full max-w-3xl min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-5">
             <div>
-              <h3 className="font-extrabold text-slate-950">Chọn sản phẩm</h3>
+              <h3 className="font-extrabold text-slate-950">Danh sách kiểm kê</h3>
               <p className="mt-0.5 text-xs font-semibold text-slate-500">
-                Chọn một sản phẩm để nhập số lượng đếm được.
+                Chạm vào sản phẩm để nhập hoặc sửa số lượng.
               </p>
             </div>
-            <Badge>{visibleProducts.length}</Badge>
+            <p className="shrink-0 text-sm font-extrabold tabular-nums text-slate-600">
+              <span className="text-moss-700">{countedProducts.length}</span>/{products.length}
+            </p>
           </div>
 
           {loading ? (
-            <Spinner label="Đang tải sản phẩm..." />
+            <div className="p-10"><Spinner label="Đang tải sản phẩm..." /></div>
           ) : visibleProducts.length === 0 ? (
-            <EmptyState
-              description="Không có sản phẩm phù hợp với từ khóa."
-              icon={Boxes}
-              title="Không tìm thấy sản phẩm"
-            />
+            <div className="p-4 sm:p-6"><EmptyState description="Sản phẩm sẽ xuất hiện tại đây khi có dữ liệu trong kho." icon={Boxes} title="Chưa có sản phẩm cần kiểm kê" /></div>
           ) : (
-            <div className="max-h-[68vh] space-y-2 overflow-y-auto overscroll-contain pr-1">
+            <div className="max-h-[70vh] space-y-2 overflow-y-auto overscroll-contain bg-slate-50/70 p-2.5 sm:p-3">
               {visibleProducts.map((product) => {
                 const counted = hasInventoryCount(counts[product.id]);
 
                 return (
                   <button
-                    className={`grid w-full grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-2.5 text-left transition ${
+                    className={`grid w-full grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3 text-left shadow-[0_3px_12px_rgba(15,23,42,0.04)] transition ${
                       counted
-                        ? "border-moss-300 bg-moss-50 shadow-[0_5px_14px_rgba(72,84,54,0.08)] hover:bg-moss-100/70"
-                        : "border-slate-200 bg-white hover:border-sky-200 hover:bg-sky-50/50"
+                        ? "border-moss-200 bg-moss-50/90 hover:bg-moss-100/80"
+                        : "border-slate-200 bg-white hover:border-slate-300"
                     } disabled:cursor-not-allowed disabled:opacity-60`}
                     disabled={!canCountInventory}
                     key={product.id}
                     onClick={() => openQuantityModal(product)}
                     type="button"
                   >
-                    <div className="h-12 w-12 overflow-hidden rounded-lg bg-slate-100">
+                    <span className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">
                       {product.image_url ? (
-                        <img
-                          alt={product.name}
-                          className="h-full w-full object-contain p-1"
-                          src={product.image_url}
-                        />
+                        <img alt={product.name} className="h-full w-full object-contain p-1" src={product.image_url} />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center text-slate-400">
-                          <Boxes className="h-5 w-5" />
-                        </div>
+                        <Boxes className="h-5 w-5" />
                       )}
-                    </div>
+                    </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-extrabold text-slate-950">{product.name}</p>
-                      <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                        {product.category || "Chưa phân nhóm"} · {getProductEan13Value(product)}
+                      <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">
+                        {product.sku || "Chưa có SKU"} · EAN {getProductEan13Value(product)}
                       </p>
                     </div>
-                    <Badge tone={counted ? "green" : "neutral"}>
-                      {counted ? `Đã nhập ${parseInventoryCount(counts[product.id])}` : "Chưa nhập"}
-                    </Badge>
+                    {counted ? (
+                      <span aria-label="Đã nhập số lượng" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-moss-100 text-moss-700">
+                        <CheckCircle2 className="h-5 w-5" strokeWidth={2.5} />
+                      </span>
+                    ) : (
+                      <span className="flex shrink-0 items-center gap-1 text-xs font-extrabold text-slate-400">
+                        Chưa nhập <ChevronRight className="h-4 w-4" />
+                      </span>
+                    )}
                   </button>
                 );
               })}
             </div>
           )}
-        </Card>
-
-        <Card className="min-w-0 border border-moss-100 p-3 shadow-[0_10px_28px_rgba(57,67,46,0.07)] sm:p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="font-extrabold text-slate-950">Số lượng đã nhập</h3>
-              <p className="mt-0.5 text-xs font-semibold text-slate-500">
-                Kiểm tra lại dữ liệu trước khi hoàn tất phiên kiểm kê.
-              </p>
-            </div>
-            {canCountInventory && countedProducts.length > 0 ? (
-              <Button
-                className="!bg-red-50 px-3 !text-red-700 ring-red-200 hover:!bg-red-100"
-                onClick={() => setCounts({})}
-                variant="secondary"
-              >
-                Xóa tất cả
-              </Button>
-            ) : null}
-          </div>
-
-          {loading ? (
-            <Spinner label="Đang tải dữ liệu..." />
-          ) : countedProducts.length === 0 ? (
-            <EmptyState
-              description="Quét EAN-13 hoặc chọn sản phẩm ở danh sách bên cạnh để bắt đầu."
-              icon={ClipboardCheck}
-              title="Chưa nhập số lượng"
-            />
-          ) : (
-            <div className="space-y-2">
-              {countedProducts.map((product) => (
-                <article
-                  className="flex flex-col gap-3 rounded-xl border border-moss-200 bg-gradient-to-r from-moss-50/80 to-white p-3 shadow-[0_5px_14px_rgba(72,84,54,0.06)] sm:flex-row sm:items-center"
-                  key={product.id}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-extrabold text-slate-950">{product.name}</p>
-                    <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                      EAN-13 {getProductEan13Value(product)}
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 sm:justify-end">
-                    <div className="rounded-xl bg-moss-50 px-4 py-2 text-center">
-                      <p className="text-[11px] font-bold uppercase text-moss-700">Đã đếm</p>
-                      <p className="text-xl font-extrabold tabular-nums text-moss-800">
-                        {parseInventoryCount(counts[product.id])}
-                      </p>
-                    </div>
-                    {canCountInventory ? (
-                      <div className="flex gap-1">
-                        <button
-                          aria-label={`Sửa số lượng ${product.name}`}
-                          className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
-                          onClick={() => openQuantityModal(product)}
-                          type="button"
-                        >
-                          <Edit3 className="h-4 w-4" />
-                        </button>
-                        <button
-                          aria-label={`Xóa ${product.name} khỏi phiên kiểm kê`}
-                          className="flex h-10 w-10 items-center justify-center rounded-lg text-red-500 transition hover:bg-red-50 hover:text-red-700"
-                          onClick={() => removeCount(product.id)}
-                          type="button"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
+      </section>
 
       {hasInventoryActions ? (
         <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-moss-100 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-14px_36px_rgba(57,67,46,0.16)] backdrop-blur-xl lg:left-72">

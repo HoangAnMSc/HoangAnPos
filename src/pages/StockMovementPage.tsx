@@ -3,7 +3,6 @@ import { ArrowDownToLine, ArrowUpFromLine, Boxes } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
-import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { Textarea } from "../components/ui/Textarea";
 import { fetchProducts } from "../features/products/services/productEngine";
@@ -27,8 +26,6 @@ export function StockMovementPage({ type }: Props) {
   const [variantId, setVariantId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
-  const [importDate, setImportDate] = useState("");
-  const [expiryDate, setExpiryDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -77,16 +74,14 @@ export function StockMovementPage({ type }: Props) {
         await receiveVariantStock({
           variantId,
           quantity: amount,
-          importDate: importDate || null,
-          expiryDate: expiryDate || null,
+          importDate: null,
+          expiryDate: null,
         });
       } else {
         await issueVariantStock(variantId, amount, reason);
       }
       setQuantity("");
       setReason("");
-      setImportDate("");
-      setExpiryDate("");
       showSuccess(inbound ? "Đã nhập kho cho SKU." : "Đã xuất kho cho SKU.");
       await load();
     } catch (requestError) {
@@ -98,6 +93,9 @@ export function StockMovementPage({ type }: Props) {
 
   const Icon = inbound ? ArrowDownToLine : ArrowUpFromLine;
   const actionLabel = inbound ? "Nhập kho" : "Xuất kho";
+  const movementIconClass = inbound
+    ? "bg-emerald-50 text-emerald-700"
+    : "bg-red-50 text-red-700";
   if (loading && !products.length) return <Spinner label="Đang tải danh sách SKU..." />;
 
   return (
@@ -114,48 +112,60 @@ export function StockMovementPage({ type }: Props) {
         </div>
       </div>
 
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
-        <label className="block sm:col-span-2">
-          <span className="mb-1.5 block text-sm font-bold">Sản phẩm và SKU</span>
-          <Select onChange={(event) => { setVariantId(event.target.value); setError(""); }} value={variantId}>
-            <option value="">Chọn SKU cần cập nhật</option>
-            {products.map((product) => (
-              <optgroup key={product.id} label={product.name}>
-                {skuOptions.filter((item) => item.product.id === product.id).map((item) => (
-                  <option key={item.variant.id} value={item.variant.id}>
-                    {item.variant.sku} · {item.label} · tồn {item.variant.stock_quantity}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </Select>
-        </label>
-
-        {selected ? (
-          <div className="flex items-center gap-3 rounded-xl border border-moss-100 bg-moss-50/60 p-3 sm:col-span-2">
-            <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-white text-slate-400">
-              {selected.variant.image_url ? <img alt="" className="h-full w-full object-contain" src={selected.variant.image_url} /> : <Boxes className="h-5 w-5" />}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-black">{selected.product.name} · {selected.label}</p>
-              <p className="text-xs font-semibold text-slate-500">SKU {selected.variant.sku}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] font-bold uppercase text-slate-500">Tồn hiện tại</p>
-              <strong className="text-xl tabular-nums text-moss-700">{selected.variant.stock_quantity}</strong>
-            </div>
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+        <section className="sm:col-span-2">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-sm font-extrabold text-slate-900">Chọn sản phẩm</p>
+            <span className="text-xs font-bold text-slate-500">{skuOptions.length} SKU</span>
           </div>
-        ) : null}
+          {skuOptions.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm font-semibold text-slate-500">Chưa có SKU khả dụng.</div>
+          ) : (
+            <div className="max-h-[52vh] space-y-2 overflow-y-auto overscroll-contain rounded-2xl bg-slate-50/80 p-2.5">
+              {skuOptions.map((item) => {
+                const active = item.variant.id === variantId;
+                const imageUrl =
+                  item.variant.image_url ??
+                  item.product.images.find((image) => image.is_primary)?.image_url ??
+                  item.product.images[0]?.image_url ??
+                  null;
+                return (
+                  <button
+                    aria-pressed={active}
+                    className={`grid w-full min-w-0 grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3 text-left shadow-[0_3px_12px_rgba(15,23,42,0.04)] transition ${active ? inbound ? "border-moss-300 bg-moss-50 ring-2 ring-moss-100" : "border-red-200 bg-red-50/70 ring-2 ring-red-100" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                    key={item.variant.id}
+                    onClick={() => { setVariantId(item.variant.id); setError(""); }}
+                    type="button"
+                  >
+                    <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">
+                      {imageUrl ? <img alt={item.product.name} className="h-full w-full object-contain p-1" src={imageUrl} /> : <Boxes className="h-5 w-5" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <strong className="block truncate text-sm text-slate-950">{item.product.name}</strong>
+                      <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">{item.label} · {item.variant.sku}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2.5">
+                      <span className={`text-right ${active ? inbound ? "text-moss-700" : "text-red-700" : "text-slate-600"}`}>
+                        <span className="block text-[9px] font-extrabold uppercase">Tồn</span>
+                        <strong className="text-lg tabular-nums">{item.variant.stock_quantity}</strong>
+                      </span>
+                      <span className={`grid h-10 w-10 place-items-center rounded-xl ${movementIconClass}`}>
+                        <Icon className="h-5 w-5" />
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
-        <Input inputMode="numeric" label="Số lượng" onChange={(event) => setQuantity(normalizeIntegerInput(event.target.value))} value={formatIntegerInput(quantity)} />
-        {inbound ? (
-          <Input label="Ngày nhập" onChange={(event) => setImportDate(event.target.value)} type="date" value={importDate} />
-        ) : <div />}
-        {inbound ? (
-          <Input label="Hạn sử dụng (nếu có)" onChange={(event) => setExpiryDate(event.target.value)} type="date" value={expiryDate} />
-        ) : (
-          <div className="sm:col-span-2"><Textarea label="Lý do xuất kho" onChange={(event) => setReason(event.target.value)} placeholder="Ví dụ: hàng hỏng, dùng nội bộ..." value={reason} /></div>
-        )}
+        <div className={inbound ? "sm:col-span-2 sm:max-w-sm" : ""}>
+          <Input inputMode="numeric" label="Số lượng" onChange={(event) => setQuantity(normalizeIntegerInput(event.target.value))} value={formatIntegerInput(quantity)} />
+        </div>
+        {!inbound ? (
+          <div><Textarea label="Lý do xuất kho" onChange={(event) => setReason(event.target.value)} placeholder="Ví dụ: hàng hỏng, dùng nội bộ..." value={reason} /></div>
+        ) : null}
 
         {error ? <p className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700 sm:col-span-2">{error}</p> : null}
         <div className="sm:col-span-2 sm:flex sm:justify-end">

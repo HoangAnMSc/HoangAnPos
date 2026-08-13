@@ -3,6 +3,7 @@ import type { AppRole } from "../types";
 
 export type RoleInput = {
   code: string;
+  color: string;
   description?: string | null;
   is_active: boolean;
   name: string;
@@ -34,10 +35,12 @@ export async function fetchRoles() {
 
 export async function createRole(input: RoleInput) {
   requireSupabaseConfig();
+  const normalizedCode = normalizeRoleCode(input.code);
 
   const payload = {
     ...input,
-    code: normalizeRoleCode(input.code),
+    code: normalizedCode,
+    color: normalizedCode === "admin" ? "#d4a72c" : normalizedCode === "staff" ? "#94a3b8" : input.color,
     description: input.description?.trim() || null,
     name: input.name.trim(),
   };
@@ -57,10 +60,12 @@ export async function createRole(input: RoleInput) {
 
 export async function updateRole(id: string, input: RoleInput) {
   requireSupabaseConfig();
+  const normalizedCode = normalizeRoleCode(input.code);
 
   const payload = {
     ...input,
-    code: normalizeRoleCode(input.code),
+    code: normalizedCode,
+    color: normalizedCode === "admin" ? "#d4a72c" : normalizedCode === "staff" ? "#94a3b8" : input.color,
     description: input.description?.trim() || null,
     name: input.name.trim(),
   };
