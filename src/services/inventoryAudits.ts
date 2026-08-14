@@ -2,7 +2,6 @@ import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { InventoryAuditLine, InventoryAuditSession } from "../lib/inventoryAudits";
 import type { Json } from "../types/database";
 import { productEngineClient } from "../features/products/services/client";
-import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
 
 type InventoryAuditQueryRow = {
   created_at: string;
@@ -12,6 +11,7 @@ type InventoryAuditQueryRow = {
     ean13: string;
     product_id: string | null;
     product_name: string;
+    system_stock?: number | null;
   }>;
   staff_name: string;
 };
@@ -24,6 +24,7 @@ function isMissingInventoryAuditSchema(error: unknown) {
     typeof error.message === "string" &&
     (error.message.includes("inventory_audits") ||
       error.message.includes("inventory_audit_lines") ||
+      error.message.includes("system_stock") ||
       error.message.includes("submit_inventory_audit"))
   );
 }
@@ -42,17 +43,15 @@ export async function fetchInventoryAudits(): Promise<InventoryAuditSession[]> {
   requireSupabaseConfig();
 
   try {
-    const [audits, lines, products] = await Promise.all([
+    const [audits, lines] = await Promise.all([
       productEngineClient.from("inventory_audits").select("*").order("created_at", { ascending: false }).limit(50),
       productEngineClient.from("inventory_audit_lines").select("*"),
-      fetchEngineProducts(),
     ]);
     if (audits.error) throw audits.error;
     if (lines.error) throw lines.error;
-    const productByVariant = new Map(products.flatMap((product) => product.variants.map((variant) => [variant.id, product.id] as const)));
     return (audits.data ?? []).map((audit) => ({
       createdAt: String(audit.created_at), id: String(audit.id), staffName: String(audit.staff_name),
-      lines: (lines.data ?? []).filter((line) => line.audit_id === audit.id).map((line) => ({ counted: Number(line.counted), ean13: String(line.sku), productId: productByVariant.get(String(line.variant_id)) ?? null, productName: String(line.product_name) })),
+      lines: (lines.data ?? []).filter((line) => line.audit_id === audit.id).map((line) => ({ counted: Number(line.counted), ean13: String(line.sku), productId: line.variant_id ? String(line.variant_id) : null, productName: String(line.product_name), systemStock: line.system_stock == null ? null : Number(line.system_stock) })),
     }));
   } catch (engineError) {
     if (!(engineError instanceof Error) || !/variant_id|schema cache|does not exist/i.test(engineError.message)) throw engineError;
@@ -61,7 +60,7 @@ export async function fetchInventoryAudits(): Promise<InventoryAuditSession[]> {
   const { data, error } = await supabase
     .from("inventory_audits")
     .select(
-      "id,created_at,staff_name,inventory_audit_lines(product_id,product_name,ean13,counted)"
+      "id,created_at,staff_name,inventory_audit_lines(product_id,product_name,ean13,counted,system_stock)"
     )
     .order("created_at", { ascending: false })
     .limit(50);
@@ -79,6 +78,7 @@ export async function fetchInventoryAudits(): Promise<InventoryAuditSession[]> {
         ean13: line.ean13,
         productId: line.product_id,
         productName: line.product_name,
+        systemStock: line.system_stock ?? null,
       })
     ),
     staffName: audit.staff_name,
@@ -87,7 +87,7 @@ export async function fetchInventoryAudits(): Promise<InventoryAuditSession[]> {
 
 export async function submitInventoryAudit(
   staffName: string,
-  lines: Array<Omit<InventoryAuditLine, "productId"> & { productId: string }>
+  lines: Array<Omit<InventoryAuditLine, "productId" | "systemStock"> & { productId: string }>
 ) {
   requireSupabaseConfig();
 

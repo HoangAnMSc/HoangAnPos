@@ -1,6 +1,7 @@
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import { productEngineClient } from "../features/products/services/client";
 import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
+import type { Json } from "../types/database";
 
 export type StockMovement = {
   id: string;
@@ -76,6 +77,27 @@ export async function issueVariantStock(
   const { data, error } = await productEngineClient.rpc("issue_variant_stock", {
     variant_id_input: variantId,
     quantity_input: Math.floor(quantity),
+    reason_input: reason.trim(),
+  });
+  if (error) throw error;
+  return data;
+}
+
+export type VariantStockLine = { variantId: string; quantity: number };
+
+export async function receiveVariantStocks(lines: VariantStockLine[]) {
+  requireSupabaseConfig();
+  const { data, error } = await productEngineClient.rpc("bulk_receive_variant_stock", {
+    items_input: lines.map((line) => ({ variant_id: line.variantId, quantity: Math.floor(line.quantity) })) as Json,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function issueVariantStocks(lines: VariantStockLine[], reason: string) {
+  requireSupabaseConfig();
+  const { data, error } = await productEngineClient.rpc("bulk_issue_variant_stock", {
+    items_input: lines.map((line) => ({ variant_id: line.variantId, quantity: Math.floor(line.quantity) })) as Json,
     reason_input: reason.trim(),
   });
   if (error) throw error;

@@ -574,9 +574,18 @@ export function PosPage() {
     activeVariantCompareValue > activeVariantPrice
       ? activeVariantCompareValue
       : null;
+  const activeSelectedOptionImage = activeVariantDefinitions
+    .map((definition) => {
+      const option = variantOptionSelection[definition.id]?.[0];
+      return option ? definition.optionImages?.[option] : undefined;
+    })
+    .find((image): image is string => Boolean(image));
   const activeVariantImage = activeCartVariant
-    ? activeCartVariant.image_url ?? productToVariantSelect?.image_url ?? null
-    : productToVariantSelect?.image_url ?? null;
+    ? activeCartVariant.image_url ??
+      activeSelectedOptionImage ??
+      productToVariantSelect?.image_url ??
+      null
+    : activeSelectedOptionImage ?? productToVariantSelect?.image_url ?? null;
 
   const loadCheckoutShiftStatus = useCallback(async () => {
     if (!canCheckout) {
@@ -3604,6 +3613,17 @@ export function PosPage() {
                 {activeVariantDefinitions.map((definition) => {
                   const selected = variantOptionSelection[definition.id] ?? [];
                   const multiple = definition.type === "multiple";
+                  const displayType =
+                    definition.variantDisplayType ?? "text_button";
+                  const selectOption = (option: string, checked: boolean) =>
+                    setVariantOptionSelection((current) => ({
+                      ...current,
+                      [definition.id]: multiple
+                        ? checked
+                          ? selected.filter((value) => value !== option)
+                          : [...selected, option]
+                        : [option],
+                    }));
                   return (
                     <fieldset
                       className="rounded-2xl border border-slate-200 bg-white p-3"
@@ -3617,27 +3637,69 @@ export function PosPage() {
                           {multiple ? "Chọn nhiều" : "Chọn 1"}
                         </span>
                       </div>
+                      {displayType === "dropdown" ? (
+                        <Select
+                          aria-label={`Chọn ${definition.name}`}
+                          multiple={multiple}
+                          onChange={(event) =>
+                            setVariantOptionSelection((current) => ({
+                              ...current,
+                              [definition.id]: multiple
+                                ? Array.from(event.target.selectedOptions).map(
+                                    (option) => option.value,
+                                  )
+                                : event.target.value
+                                  ? [event.target.value]
+                                  : [],
+                            }))
+                          }
+                          value={multiple ? selected : selected[0] ?? ""}
+                        >
+                          {!multiple ? (
+                            <option value="">Chọn {definition.name.toLocaleLowerCase()}</option>
+                          ) : null}
+                          {definition.options.map((option) => {
+                            const available = isProductVariantOptionAvailable(
+                              productToVariantSelect,
+                              variantOptionSelection,
+                              definition.id,
+                              option,
+                            );
+                            return (
+                              <option disabled={!available} key={option} value={option}>
+                                {formatVariantValueLabel(option, definition.unit)}
+                                {!available ? " · Hết hàng" : ""}
+                              </option>
+                            );
+                          })}
+                        </Select>
+                      ) : (
                       <div
                         className={
-                          definition.variantDisplayType === "image_text_horizontal"
+                          displayType === "image_text_horizontal"
                             ? "grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(145px,190px))]"
-                            : definition.variantDisplayType === "image_text" ||
-                                definition.variantDisplayType === "image"
+                            : displayType === "image_text" ||
+                                displayType === "image"
                             ? "grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(128px,160px))]"
-                            : "grid grid-cols-2 gap-2 sm:grid-cols-3"
+                            : displayType === "color_circle" || displayType === "color"
+                              ? "flex flex-wrap gap-2.5"
+                              : "flex flex-wrap gap-2"
                         }
                       >
                         {definition.options.map((option) => {
                           const checked = selected.includes(option);
                           const isImageText =
-                            definition.variantDisplayType === "image_text";
+                            displayType === "image_text";
                           const isImageOnly =
-                            definition.variantDisplayType === "image";
+                            displayType === "image";
                           const isHorizontalImageText =
-                            definition.variantDisplayType ===
-                            "image_text_horizontal";
+                            displayType === "image_text_horizontal";
+                          const isColorWithText = displayType === "color_circle";
+                          const isColorOnly = displayType === "color";
+                          const isColorOption = isColorWithText || isColorOnly;
                           const isImageCard = isImageText || isImageOnly;
                           const optionImage = definition.optionImages?.[option];
+                          const optionColor = definition.optionColors?.[option];
                           const available = isProductVariantOptionAvailable(
                             productToVariantSelect,
                             variantOptionSelection,
@@ -3646,19 +3708,11 @@ export function PosPage() {
                           );
                           return (
                             <button
-                              className={`relative overflow-hidden rounded-xl border text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-35 ${isImageCard ? "flex min-h-0 flex-col p-0" : isHorizontalImageText ? "flex min-h-14 items-center gap-2 p-1.5 pr-8 text-left" : "flex min-h-12 items-center justify-center gap-2 px-3 py-2"} ${checked ? "border-moss-600 bg-moss-50 text-moss-900 ring-2 ring-moss-500" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300"}`}
+                              aria-label={`${definition.name}: ${formatVariantValueLabel(option, definition.unit)}`}
+                              className={`relative overflow-hidden border text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-35 ${isColorOnly ? "flex h-12 w-12 items-center justify-center rounded-full p-1" : "rounded-xl"} ${isImageCard ? "flex min-h-0 flex-col p-0" : isHorizontalImageText ? "flex min-h-14 items-center gap-2 p-1.5 pr-8 text-left" : isColorWithText ? "flex min-h-[72px] min-w-[72px] flex-col items-center justify-center gap-1.5 px-2 py-2" : !isColorOnly ? "flex min-h-11 items-center justify-center px-4 py-2" : ""} ${checked ? "border-moss-600 bg-moss-50 text-moss-900 ring-2 ring-moss-500" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300"}`}
                               disabled={!available}
                               key={option}
-                              onClick={() =>
-                                setVariantOptionSelection((current) => ({
-                                  ...current,
-                                  [definition.id]: multiple
-                                    ? checked
-                                      ? selected.filter((value) => value !== option)
-                                      : [...selected, option]
-                                    : [option],
-                                }))
-                              }
+                              onClick={() => selectOption(option, checked)}
                               type="button"
                             >
                               {isImageCard ? (
@@ -3695,17 +3749,22 @@ export function PosPage() {
                                   </span>
                                 </>
                               ) : null}
-                              {!isImageCard && !isHorizontalImageText && definition.optionDisplay !== "text" &&
-                              definition.optionColors?.[option] ? (
+                              {isColorOption ? (
+                                <>
                                 <span
-                                  className="h-6 w-6 rounded-full border border-white shadow ring-1 ring-slate-300"
+                                  className={`grid place-items-center rounded-full border-2 border-white text-[10px] font-black text-slate-500 shadow ring-1 ring-slate-300 ${isColorOnly ? "h-9 w-9" : "h-8 w-8"}`}
                                   style={{
-                                    backgroundColor:
-                                      definition.optionColors[option],
+                                    backgroundColor: optionColor ?? "#f1f5f9",
                                   }}
-                                />
+                                >
+                                  {!optionColor ? option.slice(0, 1).toLocaleUpperCase() : null}
+                                </span>
+                                {isColorWithText ? <span className="max-w-20 truncate text-[11px] leading-4">
+                                  {formatVariantValueLabel(option, definition.unit)}
+                                </span> : null}
+                                </>
                               ) : null}
-                              {!isImageCard && !isHorizontalImageText && definition.optionDisplay !== "color"
+                              {!isImageCard && !isHorizontalImageText && !isColorOption
                                 ? formatVariantValueLabel(option, definition.unit)
                                 : null}
                               {checked ? (
@@ -3715,6 +3774,7 @@ export function PosPage() {
                           );
                         })}
                       </div>
+                      )}
                     </fieldset>
                   );
                 })}

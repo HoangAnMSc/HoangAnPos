@@ -21,6 +21,7 @@ export type AttributeInputType =
   | "image"
   | "image_text";
 export type VariantDisplayType =
+  | "color"
   | "color_circle"
   | "text_button"
   | "image"

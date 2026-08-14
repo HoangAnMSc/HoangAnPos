@@ -82,6 +82,14 @@ type EngineDatabase = {
         };
         Returns: BaseRow;
       };
+      bulk_receive_variant_stock: {
+        Args: { items_input: Json };
+        Returns: number;
+      };
+      bulk_issue_variant_stock: {
+        Args: { items_input: Json; reason_input: string };
+        Returns: number;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

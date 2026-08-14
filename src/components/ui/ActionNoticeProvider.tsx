@@ -140,15 +140,15 @@ export function ActionNoticeProvider({ children }: { children: React.ReactNode }
           role="dialog"
         >
           <form
-            className="action-dialog-card w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-[0_28px_90px_rgba(15,23,42,0.32)] ring-1 ring-white/70"
+            className="action-dialog-card max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto overflow-x-hidden rounded-3xl bg-white shadow-[0_28px_90px_rgba(15,23,42,0.32)] ring-1 ring-white/70"
             onSubmit={(event) => { event.preventDefault(); submitDialog(); }}
           >
             <div className="flex flex-col items-center px-6 pb-5 pt-7 text-center">
               <span className={`grid h-14 w-14 place-items-center rounded-full ring-8 ${iconStyle}`}>
                 <DialogIcon className="h-7 w-7" strokeWidth={2.4} />
               </span>
-              <h2 className="mt-5 text-lg font-black text-slate-950" id="action-dialog-title">{dialog.title}</h2>
-              <p className="mt-1.5 text-sm font-semibold leading-6 text-slate-600">{dialog.message}</p>
+              <h2 className="mt-5 max-w-full break-words text-lg font-black text-slate-950 [overflow-wrap:anywhere]" id="action-dialog-title">{dialog.title}</h2>
+              <p className={`mt-2 max-w-full whitespace-pre-wrap break-all text-sm font-semibold leading-6 text-slate-600 ${dialogTone === "danger" ? "w-full rounded-xl bg-red-50 px-3 py-2.5 text-left text-red-700" : "text-center"}`}>{dialog.message}</p>
               {dialog.kind === "prompt" ? (
                 <label className="mt-5 block w-full text-left">
                   <span className="mb-2 block text-xs font-extrabold uppercase tracking-wide text-slate-500">

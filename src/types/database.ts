@@ -231,6 +231,7 @@ export type Database = {
           product_name: string;
           ean13: string;
           counted: number;
+          system_stock: number | null;
           created_at: string;
         };
         Insert: {
@@ -240,6 +241,7 @@ export type Database = {
           product_name: string;
           ean13: string;
           counted: number;
+          system_stock?: number | null;
           created_at?: string;
         };
         Update: {
@@ -249,6 +251,7 @@ export type Database = {
           product_name?: string;
           ean13?: string;
           counted?: number;
+          system_stock?: number | null;
           created_at?: string;
         };
         Relationships: [

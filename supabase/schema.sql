@@ -1849,6 +1849,40 @@ begin
 end;
 $$;
 
+CREATE FUNCTION public.bulk_receive_variant_stock(items_input jsonb) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare item jsonb; processed integer := 0;
+begin
+  if jsonb_typeof(items_input) <> 'array' or jsonb_array_length(items_input) = 0 then
+    raise exception 'At least one stock receipt line is required';
+  end if;
+  for item in select value from jsonb_array_elements(items_input) loop
+    perform public.receive_variant_stock((item->>'variant_id')::uuid, (item->>'quantity')::integer, null, null);
+    processed := processed + 1;
+  end loop;
+  return processed;
+end;
+$$;
+
+CREATE FUNCTION public.bulk_issue_variant_stock(items_input jsonb, reason_input text) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare item jsonb; processed integer := 0;
+begin
+  if jsonb_typeof(items_input) <> 'array' or jsonb_array_length(items_input) = 0 then
+    raise exception 'At least one stock issue line is required';
+  end if;
+  for item in select value from jsonb_array_elements(items_input) loop
+    perform public.issue_variant_stock((item->>'variant_id')::uuid, (item->>'quantity')::integer, reason_input);
+    processed := processed + 1;
+  end loop;
+  return processed;
+end;
+$$;
+
 
 --
 -- Name: restore_cancelled_orders(uuid[]); Type: FUNCTION; Schema: public; Owner: -
@@ -2037,8 +2071,8 @@ begin
     select * into variant_record from public.product_variants
     where id=(line->>'variant_id')::uuid and is_active;
     if variant_record.id is null then raise exception 'Product variant not found'; end if;
-    insert into public.inventory_audit_lines(audit_id,variant_id,product_name,sku,counted)
-    values(audit_id_value,variant_record.id,line->>'product_name',variant_record.sku,(line->>'counted')::integer);
+    insert into public.inventory_audit_lines(audit_id,variant_id,product_name,sku,counted,system_stock)
+    values(audit_id_value,variant_record.id,line->>'product_name',variant_record.sku,(line->>'counted')::integer,variant_record.stock_quantity);
   end loop;
   return audit_id_value;
 end;
@@ -2316,8 +2350,10 @@ CREATE TABLE public.inventory_audit_lines (
     product_name text NOT NULL,
     sku text NOT NULL,
     counted integer NOT NULL,
+    system_stock integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT inventory_audit_lines_counted_check CHECK ((counted >= 0))
+    CONSTRAINT inventory_audit_lines_counted_check CHECK ((counted >= 0)),
+    CONSTRAINT inventory_audit_lines_system_stock_check CHECK (((system_stock IS NULL) OR (system_stock >= 0)))
 );
 
 
@@ -2510,7 +2546,7 @@ CREATE TABLE public.product_type_attributes (
     display_type text,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT product_type_attributes_display_type_check CHECK (((display_type IS NULL) OR (display_type = ANY (ARRAY['color_circle'::text, 'text_button'::text, 'image'::text, 'image_text'::text, 'image_text_horizontal'::text, 'dropdown'::text])))),
+    CONSTRAINT product_type_attributes_display_type_check CHECK (((display_type IS NULL) OR (display_type = ANY (ARRAY['color'::text, 'color_circle'::text, 'text_button'::text, 'image'::text, 'image_text'::text, 'image_text_horizontal'::text, 'dropdown'::text])))),
     CONSTRAINT product_type_attributes_role_check CHECK ((role = ANY (ARRAY['specification'::text, 'variant'::text])))
 );
 
@@ -2547,7 +2583,7 @@ CREATE TABLE public.product_variant_attributes (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT product_variant_attributes_data_type_check CHECK ((data_type = ANY (ARRAY['text'::text, 'number'::text, 'boolean'::text, 'date'::text, 'option'::text, 'json'::text]))),
-    CONSTRAINT product_variant_attributes_display_type_check CHECK ((display_type = ANY (ARRAY['color_circle'::text, 'text_button'::text, 'image'::text, 'image_text'::text, 'image_text_horizontal'::text, 'dropdown'::text])))
+    CONSTRAINT product_variant_attributes_display_type_check CHECK ((display_type = ANY (ARRAY['color'::text, 'color_circle'::text, 'text_button'::text, 'image'::text, 'image_text'::text, 'image_text_horizontal'::text, 'dropdown'::text])))
 );
 
 
@@ -5050,6 +5086,10 @@ GRANT ALL ON FUNCTION public.receive_product_stock(product_id_input uuid, quanti
 
 GRANT ALL ON FUNCTION public.receive_variant_stock(variant_id_input uuid, quantity_input integer, import_date_input date, expiry_date_input date) TO service_role;
 GRANT ALL ON FUNCTION public.receive_variant_stock(variant_id_input uuid, quantity_input integer, import_date_input date, expiry_date_input date) TO authenticated;
+GRANT ALL ON FUNCTION public.bulk_receive_variant_stock(items_input jsonb) TO service_role;
+GRANT ALL ON FUNCTION public.bulk_receive_variant_stock(items_input jsonb) TO authenticated;
+GRANT ALL ON FUNCTION public.bulk_issue_variant_stock(items_input jsonb, reason_input text) TO service_role;
+GRANT ALL ON FUNCTION public.bulk_issue_variant_stock(items_input jsonb, reason_input text) TO authenticated;
 
 
 --

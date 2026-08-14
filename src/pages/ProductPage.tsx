@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  CircleHelp,
   LayoutGrid,
   Minus,
   PackageCheck,
@@ -31,6 +32,12 @@ import { Spinner } from "../components/ui/Spinner";
 import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
+import { getErrorMessage } from "../lib/errors";
+import {
+  clearLocalDraft,
+  readLocalDraft,
+  writeLocalDraft,
+} from "../lib/localDraft";
 import { VariantBuilder } from "../features/products/components/VariantBuilder";
 import { SkuMatrix } from "../features/products/components/SkuMatrix";
 import {
@@ -56,6 +63,7 @@ import type {
   ProductType,
   ProductTypeAttribute,
   VariantAttribute,
+  VariantDisplayType,
   VariantDraft,
 } from "../features/products/types";
 import {
@@ -66,7 +74,11 @@ import {
   variantCombinationKey,
 } from "../features/products/utils/variants";
 import { formatCurrency } from "../lib/format";
-import { isValidEan13, normalizeEan13Input } from "../lib/productDisplay";
+import {
+  createVietnamEan13FromSeed,
+  isValidEan13,
+  normalizeEan13Input,
+} from "../lib/productDisplay";
 import {
   defaultProductSettings,
   fetchProductSettings,
@@ -202,12 +214,66 @@ function ProductSearchPopup({
 }
 type EditorTab = "general" | "specifications" | "variants" | "images" | "seo";
 const editorSteps: Array<[EditorTab, string]> = [
-  ["general", "Thông tin chung"],
+  ["general", "Thông tin & ảnh"],
   ["specifications", "Thuộc tính"],
-  ["variants", "Biến thể"],
-  ["images", "Hình ảnh"],
+  ["variants", "Tùy chọn"],
+  ["images", "Tổ hợp"],
   ["seo", "SEO"],
 ];
+type ProductEditorDraft = {
+  form: ProductEditorInput;
+  editorTab: EditorTab;
+  hasVariants: boolean;
+  dirtyDimensions: boolean;
+};
+const editorGuides: Record<EditorTab, { title: string; description: string }> = {
+  general: {
+    title: "Thông tin & hình ảnh",
+    description: "Nhập thông tin bán hàng và chọn ảnh dùng trên danh sách, POS.",
+  },
+  specifications: {
+    title: "Thuộc tính",
+    description: "Điền thông số của sản phẩm; trường không bắt buộc có thể để trống.",
+  },
+  variants: {
+    title: "Tùy chọn",
+    description: "Tạo các nhóm như màu sắc, kích thước và giá trị tương ứng.",
+  },
+  images: {
+    title: "Tổ hợp",
+    description: "Tạo SKU rồi nhập mã, giá, tồn kho và ảnh riêng cho từng tổ hợp.",
+  },
+  seo: {
+    title: "SEO",
+    description: "Nhập tiêu đề và mô tả dùng khi sản phẩm xuất hiện trên công cụ tìm kiếm.",
+  },
+};
+
+function ProductEditorGuide({
+  onDismiss,
+  step,
+}: {
+  onDismiss: () => void;
+  step: EditorTab;
+}) {
+  const guide = editorGuides[step];
+  return (
+    <div className="flex gap-3 rounded-2xl border border-moss-200 bg-moss-50 p-3 sm:p-4">
+      <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-moss-700" />
+      <div className="min-w-0 flex-1">
+        <p className="font-extrabold text-moss-900">{guide.title}</p>
+        <p className="mt-1 text-sm leading-5 text-moss-800">{guide.description}</p>
+        <button
+          className="mt-2 text-xs font-extrabold text-moss-800 underline decoration-moss-300 underline-offset-4"
+          onClick={onDismiss}
+          type="button"
+        >
+          Đã hiểu
+        </button>
+      </div>
+    </div>
+  );
+}
 const slugify = (value: string) =>
   value
     .normalize("NFD")
@@ -224,6 +290,16 @@ const inferVariantDisplay = (
   if (inputType === "image_text") return "image_text";
   if (inputType === "select" || inputType === "multi_select") return "dropdown";
   return "text_button";
+};
+const variantDisplayInputType = (
+  displayType: VariantDisplayType,
+): AttributeInputType => {
+  if (displayType === "color" || displayType === "color_circle") return "color";
+  if (displayType === "image") return "image";
+  if (displayType === "image_text" || displayType === "image_text_horizontal")
+    return "image_text";
+  if (displayType === "dropdown") return "select";
+  return "radio";
 };
 const emptyInput = (ean13: string | null = null): ProductEditorInput => ({
   name: "",
@@ -259,8 +335,8 @@ const emptyInput = (ean13: string | null = null): ProductEditorInput => ({
 });
 
 export function ProductPage() {
-  const { confirmAction, showSuccess } = useActionNotice();
-  const { canAccess } = useAuth();
+  const { alertAction, confirmAction, showSuccess } = useActionNotice();
+  const { canAccess, user } = useAuth();
   const canCreateProduct = canAccess("products.create");
   const canUpdateProduct = canAccess("products.update");
   const canDeleteProduct = canAccess("products.delete");
@@ -298,6 +374,10 @@ export function ProductPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [restoredDraftKey, setRestoredDraftKey] = useState("");
+  const draftKey = `product-editor-draft:${user?.id ?? "anonymous"}`;
+  const guideKey = `product-editor-guides:${user?.id ?? "anonymous"}`;
+  const [guideDismissed, setGuideDismissed] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -324,6 +404,31 @@ export function ProductPage() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    const saved = readLocalDraft<unknown>(guideKey, false);
+    setGuideDismissed(
+      saved === true || (Array.isArray(saved) && saved.length > 0),
+    );
+  }, [guideKey]);
+  useEffect(() => {
+    const draft = readLocalDraft<ProductEditorDraft | null>(draftKey, null);
+    if (draft?.form && editorSteps.some(([key]) => key === draft.editorTab)) {
+      setForm(draft.form);
+      setEditorTab(draft.editorTab);
+      setHasVariants(draft.hasVariants);
+      setDirtyDimensions(draft.dirtyDimensions);
+    }
+    setRestoredDraftKey(draftKey);
+  }, [draftKey]);
+  useEffect(() => {
+    if (restoredDraftKey !== draftKey || !open) return;
+    writeLocalDraft(draftKey, {
+      form,
+      editorTab,
+      hasVariants,
+      dirtyDimensions,
+    } satisfies ProductEditorDraft);
+  }, [dirtyDimensions, draftKey, editorTab, form, hasVariants, open, restoredDraftKey]);
   const filtered = useMemo(
     () =>
       products.filter((product) =>
@@ -333,6 +438,24 @@ export function ProductPage() {
       ),
     [products, query],
   );
+  const guideVisible = !guideDismissed;
+  function dismissCurrentGuide() {
+    setGuideDismissed(true);
+    writeLocalDraft(guideKey, true);
+  }
+  function showAllGuides() {
+    setGuideDismissed(false);
+    writeLocalDraft(guideKey, false);
+  }
+  function showProductSaveError(message: string) {
+    setError(message);
+    void alertAction({
+      confirmLabel: "Đã hiểu",
+      message,
+      title: "Không thể lưu sản phẩm",
+      tone: "danger",
+    });
+  }
   const usedEan13Codes = useMemo(
     () =>
       products.flatMap((product) =>
@@ -400,16 +523,17 @@ export function ProductPage() {
     setOpen(true);
   }
   async function submit() {
+    setError("");
     if (form.id ? !canUpdateProduct : !canCreateProduct) {
-      setError("Tài khoản không có quyền lưu sản phẩm này.");
+      showProductSaveError("Tài khoản không có quyền lưu sản phẩm này.");
       return;
     }
     if (!form.name.trim() || !form.slug.trim()) {
-      setError("Tên và slug là bắt buộc.");
+      showProductSaveError("Tên và slug là bắt buộc.");
       return;
     }
     if (hasVariants && !form.variant_attributes.length) {
-      setError("Hãy thêm ít nhất một loại biến thể trước khi lưu.");
+      showProductSaveError("Hãy thêm ít nhất một loại biến thể trước khi lưu.");
       setEditorTab("variants");
       return;
     }
@@ -417,75 +541,131 @@ export function ProductPage() {
       hasVariants &&
       form.variant_attributes.some((attribute) => !attribute.values.length)
     ) {
-      setError("Mỗi loại biến thể cần có ít nhất một giá trị.");
+      showProductSaveError("Mỗi loại biến thể cần có ít nhất một giá trị.");
       setEditorTab("variants");
       return;
     }
     if (dirtyDimensions) {
-      setError(
+      showProductSaveError(
         "Cấu hình biến thể vừa thay đổi. Hãy bấm “Tạo tất cả tổ hợp” để đồng bộ SKU trước khi lưu.",
       );
-      setEditorTab("variants");
+      setEditorTab("images");
       return;
     }
     if (!form.variants.length) {
-      setError(
+      showProductSaveError(
         hasVariants
           ? "Hãy tạo tổ hợp SKU trước khi lưu sản phẩm."
           : "Sản phẩm phải có một SKU mặc định.",
       );
-      if (hasVariants) setEditorTab("variants");
+      if (hasVariants) setEditorTab("images");
       return;
     }
+    let formToSave = form;
+    const missingEan13Count = form.variants.filter(
+      (variant) => !normalizeEan13Input(variant.barcode),
+    ).length;
+    if (missingEan13Count > 0) {
+      const shouldGenerateEan13 = await confirmAction({
+        confirmLabel: "Tạo mã và lưu",
+        message: `${missingEan13Count} tổ hợp chưa có EAN-13. Bạn có muốn hệ thống tự tạo mã Việt Nam không trùng cho các tổ hợp này rồi tiếp tục lưu?`,
+        title: "Thiếu mã EAN-13",
+      });
+      if (!shouldGenerateEan13) return;
+
+      const usedCodes = new Set([
+        ...usedEan13Codes.map(normalizeEan13Input),
+        ...form.variants
+          .map((variant) => normalizeEan13Input(variant.barcode))
+          .filter(Boolean),
+      ]);
+      const generatedAt = Date.now();
+      let generationFailed = false;
+      const variants = form.variants.map((variant, index) => {
+        if (normalizeEan13Input(variant.barcode)) return variant;
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          const code = createVietnamEan13FromSeed(
+            `product-variant:${form.id ?? form.slug}:${variant.id ?? variant.sku}:${generatedAt}:${index}:${attempt}:${Math.random()}`,
+          );
+          if (!usedCodes.has(code)) {
+            usedCodes.add(code);
+            return { ...variant, barcode: code };
+          }
+        }
+        generationFailed = true;
+        return variant;
+      });
+      if (generationFailed) {
+        showProductSaveError(
+          "Không thể tạo đủ mã EAN-13 duy nhất. Vui lòng thử lưu lại.",
+        );
+        return;
+      }
+      formToSave = { ...form, variants };
+      setForm(formToSave);
+    }
     if (
-      form.variants.some(
+      formToSave.variants.some(
         (variant) =>
           variant.compare_at_price != null &&
           variant.compare_at_price < variant.base_price,
       )
     ) {
-      setError("Giá so sánh phải lớn hơn hoặc bằng giá bán của SKU.");
-      setEditorTab(hasVariants ? "variants" : "general");
+      showProductSaveError("Giá so sánh phải lớn hơn hoặc bằng giá bán của SKU.");
+      setEditorTab(hasVariants ? "images" : "general");
       return;
     }
-    const barcodes = form.variants
+    const barcodes = formToSave.variants
       .map((variant) => normalizeEan13Input(variant.barcode ?? ""))
       .filter(Boolean);
     if (barcodes.some((barcode) => !isValidEan13(barcode))) {
-      setError("Mỗi EAN-13 phải có đúng 13 chữ số và số kiểm tra hợp lệ.");
-      setEditorTab("variants");
+      showProductSaveError("Mỗi EAN-13 phải có đúng 13 chữ số và số kiểm tra hợp lệ.");
+      setEditorTab(hasVariants ? "images" : "general");
       return;
     }
     if (new Set(barcodes).size !== barcodes.length) {
-      setError("EAN-13 không được trùng giữa các SKU.");
-      setEditorTab("variants");
+      showProductSaveError("EAN-13 không được trùng giữa các SKU.");
+      setEditorTab(hasVariants ? "images" : "general");
       return;
     }
     setSaving(true);
     try {
-      const baseSlug = form.slug.trim();
+      const baseSlug = formToSave.slug.trim();
       let uniqueSlug = baseSlug;
       let suffix = 2;
       while (
         products.some(
-          (product) => product.id !== form.id && product.slug === uniqueSlug,
+          (product) => product.id !== formToSave.id && product.slug === uniqueSlug,
         )
       ) {
         uniqueSlug = `${baseSlug}-${suffix++}`;
       }
       const payload =
-        uniqueSlug === form.slug ? form : { ...form, slug: uniqueSlug };
-      if (uniqueSlug !== form.slug) setForm(payload);
-      const wasEditing = Boolean(form.id);
+        uniqueSlug === formToSave.slug
+          ? formToSave
+          : { ...formToSave, slug: uniqueSlug };
+      if (uniqueSlug !== formToSave.slug) setForm(payload);
+      const wasEditing = Boolean(formToSave.id);
       await saveProduct(payload);
+      clearLocalDraft(draftKey);
       setOpen(false);
       await load();
       showSuccess(
         wasEditing ? "Đã lưu thay đổi của sản phẩm." : "Đã thêm sản phẩm mới.",
       );
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Không lưu được sản phẩm.",
+      const requestMessage = getErrorMessage(
+        reason,
+        "Không lưu được sản phẩm.",
+      );
+      showProductSaveError(
+        requestMessage.includes(
+          "product_variant_attributes_product_id_code_key",
+        )
+          ? "Sản phẩm đang có tùy chọn biến thể bị trùng mã. Hãy đóng bản nháp, mở lại sản phẩm và thử lưu lần nữa."
+          : requestMessage.includes("stock_movements_variant_id_fkey")
+            ? "Không thể thay thế tổ hợp đã có lịch sử kho. Hệ thống sẽ giữ lại mã tổ hợp cũ; hãy mở lại sản phẩm rồi thử lưu lần nữa."
+          : requestMessage,
       );
     } finally {
       setSaving(false);
@@ -506,6 +686,7 @@ export function ProductPage() {
     setError("");
     try {
       await archiveProduct(form.id);
+      clearLocalDraft(draftKey);
       setOpen(false);
       await load();
       showSuccess("Đã xóa sản phẩm.");
@@ -527,6 +708,27 @@ export function ProductPage() {
         variant.is_default || index === 0 ? { ...variant, ...patch } : variant,
       ),
     }));
+  }
+  async function createVariantCatalogAttribute(input: {
+    code: string;
+    displayType: VariantDisplayType;
+    name: string;
+    unit: string | null;
+  }) {
+    const saved = await saveAttribute({
+      name: input.name,
+      code: input.code,
+      data_type: "option",
+      input_type: variantDisplayInputType(input.displayType),
+      unit: input.unit,
+      is_active: true,
+    });
+    setAttributes((current) =>
+      [...current.filter((attribute) => attribute.id !== saved.id), saved].sort(
+        (first, second) => first.name.localeCompare(second.name, "vi"),
+      ),
+    );
+    return saved;
   }
   async function generate() {
     const count = countVariantCombinations(form.variant_attributes);
@@ -1087,6 +1289,16 @@ export function ProductPage() {
             </Button> : null}
           </div>
         }
+        headerAction={
+          <button
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-extrabold text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+            onClick={showAllGuides}
+            type="button"
+          >
+            <CircleHelp className="h-3.5 w-3.5" />
+            <span>Xem hướng dẫn</span>
+          </button>
+        }
         onClose={() => setOpen(false)}
         open={open}
         size="wide"
@@ -1135,33 +1347,17 @@ export function ProductPage() {
         </div>
         {editorTab === "general" ? (
           <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0">
-            <div className="flex gap-3 rounded-2xl border border-moss-200 bg-moss-50 p-3 sm:p-4 lg:col-span-2">
-              <Sparkles className="h-5 w-5 shrink-0 text-moss-700" />
-              <div>
-                <p className="font-extrabold text-moss-900">
-                  Nhập nhanh trong 3 bước
-                </p>
-                <p className="mt-1 text-sm text-moss-800">
-                  Chọn danh mục → chọn có biến thể hay không → nhập thông tin
-                  bán hàng. Slug và SKU được hệ thống chuẩn bị.
-                </p>
+            {guideVisible ? (
+              <div className="lg:col-span-2">
+                <ProductEditorGuide onDismiss={dismissCurrentGuide} step="general" />
               </div>
-            </div>
+            ) : null}
 
-            <section className="rounded-2xl border border-slate-200 p-3 sm:p-4">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="grid h-7 w-7 place-items-center rounded-full bg-coal text-xs font-black text-white">
-                  1
-                </span>
-                <div>
-                  <h3 className="font-black">Sản phẩm là gì?</h3>
-                  <p className="text-xs text-slate-500">
-                    Danh mục sẽ tự nạp bộ thuộc tính đã cấu hình trong tab Danh
-                    mục sản phẩm.
-                  </p>
-                </div>
+            <section className="flex flex-col rounded-2xl border border-slate-200 p-3 sm:p-4 lg:col-span-2">
+              <div className="order-1 mb-4">
+                <h3 className="font-black">Thông tin sản phẩm</h3>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="order-3 mt-5 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
                 <Select
                   label="Danh mục sản phẩm *"
                   onChange={(event) => applyProductType(event.target.value)}
@@ -1217,37 +1413,148 @@ export function ProductPage() {
                   <option value="active">Đăng bán ngay</option>
                   <option value="inactive">Tạm ẩn</option>
                 </Select>
-                <label className="flex min-h-12 items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 sm:col-span-2">
-                  <span>
-                    <strong className="block text-sm">
-                      Sản phẩm có biến thể
-                    </strong>
-                    <span className="text-xs text-slate-500">
-                      Ví dụ: màu sắc, kích thước hoặc dung lượng
-                    </span>
-                  </span>
-                  <input
-                    checked={hasVariants}
-                    className="h-5 w-5 accent-moss-600"
-                    onChange={(event) => setVariantMode(event.target.checked)}
-                    type="checkbox"
+              </div>
+
+              <div className="order-2 space-y-4">
+                <div>
+                  <p className="mb-2 text-sm font-extrabold text-slate-800">
+                    Ảnh đại diện
+                  </p>
+                  <CloudinaryImageField
+                    appearance="row"
+                    imageUrl={form.images[0]?.image_url}
+                    label=""
+                    onChange={(selected) =>
+                      setForm((current) => ({
+                        ...current,
+                        images: selected.imageUrl
+                          ? [
+                              {
+                                ...(current.images[0] ?? {
+                                  alt_text: current.name,
+                                  sort_order: 0,
+                                  variant_id: null,
+                                  variant_value_id: null,
+                                }),
+                                image_url: selected.imageUrl,
+                                cloudinary_public_id: selected.publicId,
+                                is_primary: true,
+                              },
+                              ...current.images.slice(1),
+                            ]
+                          : current.images.slice(1).map((image, index) => ({
+                              ...image,
+                              is_primary: index === 0,
+                              sort_order: index,
+                            })),
+                      }))
+                    }
+                    publicId={form.images[0]?.cloudinary_public_id}
                   />
-                </label>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                  <p className="text-sm font-extrabold text-slate-800">
+                    Ảnh bổ sung
+                  </p>
+                  <Button
+                    className="shrink-0"
+                    onClick={() =>
+                      setForm((current) => {
+                        const primary = current.images.length
+                          ? current.images
+                          : [
+                              {
+                                image_url: "",
+                                cloudinary_public_id: null,
+                                alt_text: current.name,
+                                sort_order: 0,
+                                is_primary: true,
+                                variant_id: null,
+                                variant_value_id: null,
+                              },
+                            ];
+                        return {
+                          ...current,
+                          images: [
+                            ...primary,
+                            {
+                              image_url: "",
+                              cloudinary_public_id: null,
+                              alt_text: current.name,
+                              sort_order: primary.length,
+                              is_primary: false,
+                              variant_id: null,
+                              variant_value_id: null,
+                            },
+                          ],
+                        };
+                      })
+                    }
+                    variant="secondary"
+                  >
+                    <Plus className="h-4 w-4" /> Thêm ảnh
+                  </Button>
+                </div>
+                {form.images.slice(1).map((image, additionalIndex) => {
+                  const index = additionalIndex + 1;
+                  return (
+                    <CloudinaryImageField
+                      appearance="row"
+                      imageUrl={image.image_url}
+                      key={image.id ?? `additional-${index}`}
+                      label={`Ảnh bổ sung ${additionalIndex + 1}`}
+                      onChange={(selected) =>
+                        setForm((current) => ({
+                          ...current,
+                          images: current.images.map((item, position) =>
+                            position === index
+                              ? {
+                                  ...item,
+                                  image_url: selected.imageUrl,
+                                  cloudinary_public_id: selected.publicId,
+                                }
+                              : item,
+                          ),
+                        }))
+                      }
+                      onRemove={() =>
+                        setForm((current) => ({
+                          ...current,
+                          images: current.images
+                            .filter((_, position) => position !== index)
+                            .map((item, position) => ({
+                              ...item,
+                              sort_order: position,
+                            })),
+                        }))
+                      }
+                      publicId={image.cloudinary_public_id}
+                    />
+                  );
+                })}
               </div>
             </section>
 
+            <section className="flex min-h-16 items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:col-span-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-extrabold text-slate-800">
+                  Sản phẩm có biến thể
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Dùng cho màu sắc, kích thước hoặc dung lượng.
+                </p>
+              </div>
+              <CompactSwitch
+                checked={hasVariants}
+                label="Sản phẩm có biến thể"
+                onChange={setVariantMode}
+              />
+            </section>
+
             {!hasVariants && form.variants[0] ? (
-              <section className="rounded-2xl border border-slate-200 p-3 sm:p-4">
-                <div className="mb-4 flex items-center gap-2">
-                  <span className="grid h-7 w-7 place-items-center rounded-full bg-coal text-xs font-black text-white">
-                    2
-                  </span>
-                  <div>
-                    <h3 className="font-black">Thông tin bán hàng</h3>
-                    <p className="text-xs text-slate-500">
-                      Giá và tồn kho của SKU mặc định.
-                    </p>
-                  </div>
+              <section className="rounded-2xl border border-slate-200 p-3 sm:p-4 lg:col-span-2">
+                <div className="mb-4">
+                  <h3 className="font-black">Thông tin bán hàng</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Input
@@ -1301,15 +1608,14 @@ export function ProductPage() {
                 </div>
               </section>
             ) : (
-              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-                <strong>Giá và tồn kho sẽ nhập theo từng SKU.</strong> Sang bước
-                “Biến thể” để thêm lựa chọn và tạo tổ hợp.
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 lg:col-span-2">
+                Giá và tồn kho được nhập theo từng SKU ở bước “Tổ hợp”.
               </div>
             )}
 
-            <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:col-span-2">
               <summary className="cursor-pointer text-sm font-extrabold">
-                Thông tin nâng cao: slug và mô tả
+                Thông tin nâng cao
               </summary>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <Input
@@ -1324,7 +1630,7 @@ export function ProductPage() {
                 />
                 <div className="sm:col-span-2">
                   <Textarea
-                    label="Mô tả"
+                    label="Mô tả sản phẩm"
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
@@ -1339,14 +1645,22 @@ export function ProductPage() {
           </div>
         ) : null}
         {editorTab === "specifications" ? (
-          <SpecificationsEditor
-            attributes={attributes}
-            form={form}
-            setForm={setForm}
-          />
+          <div className="space-y-4">
+            {guideVisible ? (
+              <ProductEditorGuide onDismiss={dismissCurrentGuide} step="specifications" />
+            ) : null}
+            <SpecificationsEditor
+              attributes={attributes}
+              form={form}
+              setForm={setForm}
+            />
+          </div>
         ) : null}
         {editorTab === "variants" ? (
           <div className="space-y-6">
+            {guideVisible ? (
+              <ProductEditorGuide onDismiss={dismissCurrentGuide} step="variants" />
+            ) : null}
             {!hasVariants ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
                 <h3 className="font-black">Sản phẩm không có biến thể</h3>
@@ -1362,29 +1676,49 @@ export function ProductPage() {
                 </Button>
               </div>
             ) : null}
-            {hasVariants && dirtyDimensions ? (
-              <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <strong>Cần đồng bộ lại SKU</strong>
-                  <p className="mt-1 text-amber-700">
-                    Bạn đã thêm hoặc xóa chiều/giá trị biến thể. SKU cũ chưa bị
-                    xóa cho đến khi bạn xác nhận tạo lại tổ hợp.
-                  </p>
-                </div>
-                <Button className="shrink-0" onClick={generate}>
-                  Tạo lại tổ hợp SKU
-                </Button>
-              </div>
-            ) : null}
             {hasVariants ? (
-              <>
+              <div>
                 <VariantBuilder
                   attributes={form.variant_attributes}
+                  catalogAttributes={attributes}
                   onChange={(variant_attributes: VariantAttribute[]) =>
                     setForm((current) => ({ ...current, variant_attributes }))
                   }
+                  onCreateAttribute={createVariantCatalogAttribute}
                   onDimensionsChanged={() => setDirtyDimensions(true)}
                 />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {editorTab === "images" ? (
+          <div className="space-y-5">
+            {guideVisible ? (
+              <ProductEditorGuide onDismiss={dismissCurrentGuide} step="images" />
+            ) : null}
+            {!hasVariants ? (
+              <div className="rounded-2xl border border-slate-200 p-6 text-center">
+                <h3 className="font-black">Không cần tạo tổ hợp</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Sản phẩm này dùng một SKU mặc định đã nhập ở bước Thông tin & ảnh.
+                </p>
+              </div>
+            ) : (
+              <>
+                {dirtyDimensions ? (
+                  <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <strong>Cần đồng bộ lại tổ hợp</strong>
+                      <p className="mt-1 text-amber-700">
+                        Tùy chọn vừa thay đổi. Tổ hợp cũ được giữ nguyên cho đến
+                        khi bạn xác nhận tạo lại.
+                      </p>
+                    </div>
+                    <Button className="shrink-0" onClick={generate}>
+                      Tạo lại tổ hợp
+                    </Button>
+                  </div>
+                ) : null}
                 <SkuMatrix
                   attributes={form.variant_attributes}
                   fallbackImageUrl={form.images[0]?.image_url}
@@ -1395,128 +1729,34 @@ export function ProductPage() {
                   variants={form.variants}
                 />
               </>
-            ) : null}
-          </div>
-        ) : null}
-        {editorTab === "images" ? (
-          <div className="space-y-4">
-            <section className="rounded-2xl border border-slate-200 p-3 sm:p-4">
-              <div className="mb-3">
-                <h3 className="font-black">Hình ảnh</h3>
-                <p className="text-xs text-slate-500">Hiển thị mặc định trước khi khách chọn một SKU cụ thể.</p>
-              </div>
-              <CloudinaryImageField
-                appearance="row"
-                imageUrl={form.images[0]?.image_url}
-                label=""
-                onChange={(selected) => setForm((current) => ({
-                  ...current,
-                  images: selected.imageUrl
-                    ? [{
-                        ...(current.images[0] ?? {
-                          alt_text: current.name,
-                          sort_order: 0,
-                          variant_id: null,
-                          variant_value_id: null,
-                        }),
-                        image_url: selected.imageUrl,
-                        cloudinary_public_id: selected.publicId,
-                        is_primary: true,
-                      }, ...current.images.slice(1)]
-                    : current.images.slice(1).map((image, index) => ({
-                        ...image,
-                        is_primary: index === 0,
-                        sort_order: index,
-                      })),
-                }))}
-                publicId={form.images[0]?.cloudinary_public_id}
-              />
-            </section>
-            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
-              <strong>Ảnh bổ sung của sản phẩm</strong>
-              <p className="mt-1 text-xs leading-5 text-blue-700">
-                Ảnh đại diện được chọn ở phía trên. Ảnh riêng của SKU được chọn trong Ma trận SKU.
-              </p>
-            </div>
-            <Button
-              disabled={!form.images[0]?.image_url}
-              onClick={() =>
-                setForm((current) => ({
-                  ...current,
-                  images: [
-                    ...current.images,
-                    {
-                      image_url: "",
-                      cloudinary_public_id: null,
-                      alt_text: current.name,
-                      sort_order: current.images.length,
-                      is_primary: false,
-                      variant_id: null,
-                      variant_value_id: null,
-                    },
-                  ],
-                }))
-              }
-            >
-              + Thêm ảnh bổ sung
-            </Button>
-            {form.images.slice(1).map((image, additionalIndex) => {
-              const index = additionalIndex + 1;
-              return (
-              <CloudinaryImageField
-                appearance="row"
-                imageUrl={image.image_url}
-                key={image.id ?? index}
-                label={`Ảnh bổ sung ${additionalIndex + 1}`}
-                onChange={(selected) =>
-                  setForm((current) => ({
-                    ...current,
-                    images: selected.imageUrl
-                      ? current.images.map((item, position) =>
-                          position === index
-                            ? {
-                                ...item,
-                                image_url: selected.imageUrl,
-                                cloudinary_public_id: selected.publicId,
-                              }
-                            : item,
-                        )
-                      : current.images.filter(
-                          (_, position) => position !== index,
-                        ),
-                  }))
-                }
-                publicId={image.cloudinary_public_id}
-              />
-              );
-            })}
-            {form.images.length <= 1 ? (
-              <p className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-center text-sm text-slate-500">
-                Chưa có ảnh bổ sung.
-              </p>
-            ) : null}
+            )}
           </div>
         ) : null}
         {editorTab === "seo" ? (
           <div className="space-y-4">
+            {guideVisible ? (
+              <ProductEditorGuide onDismiss={dismissCurrentGuide} step="seo" />
+            ) : null}
             <Input
-              label="SEO title"
+              label="SEO tiêu đề"
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
                   seo_title: event.target.value,
                 }))
               }
+              placeholder="Tiêu đề ngắn gọn, nêu rõ tên sản phẩm"
               value={form.seo_title ?? ""}
             />
             <Textarea
-              label="SEO description"
+              label="SEO Mô tả"
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
                   seo_description: event.target.value,
                 }))
               }
+              placeholder="Tóm tắt điểm nổi bật của sản phẩm"
               value={form.seo_description ?? ""}
             />
           </div>
@@ -1842,26 +2082,17 @@ function SpecificationsEditor({
   }
   return (
     <div className="space-y-3">
-      <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="font-black leading-5 text-blue-950">
-              Thông số sản phẩm
-            </h3>
-            <p className="mt-0.5 text-xs leading-4 text-blue-700">
-              Điền thông tin có sẵn, trường không bắt buộc có thể để trống.
-            </p>
-          </div>
-          <Button
-            className="shrink-0 px-3 py-2"
-            onClick={() => setPickerOpen(true)}
-            variant="secondary"
-          >
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Thêm thuộc tính</span>
-            <span className="sm:hidden">Thêm</span>
-          </Button>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-black">Thông số sản phẩm</h3>
+        <Button
+          className="shrink-0 px-3 py-2"
+          onClick={() => setPickerOpen(true)}
+          variant="secondary"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Thêm thuộc tính</span>
+          <span className="sm:hidden">Thêm</span>
+        </Button>
       </div>
       {!form.specifications.length ? (
         <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center">

@@ -154,6 +154,7 @@ export async function fetchProducts() {
         _defaultVariantId: defaultVariant?.id,
         _variantAttributeIds: product.variant_attributes.map((attribute) => attribute.id),
         _variants: variants.map((variant) => ({
+          display_label: getVariantLabel(variant, product.variant_attributes),
           values: Object.fromEntries(variant.value_ids.map((id) => {
             const item = valuesById.get(id);
             return [item?.attribute.id ?? id, item?.value.label ?? id];

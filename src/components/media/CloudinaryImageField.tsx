@@ -25,6 +25,7 @@ type Props = {
   onChange: (value: CloudinaryImageValue) => void;
   onRemove?: () => void;
   publicId?: string | null;
+  showRemove?: boolean;
   showTileLabel?: boolean;
 };
 
@@ -36,6 +37,7 @@ export function CloudinaryImageField({
   onChange,
   onRemove,
   publicId,
+  showRemove = true,
   showTileLabel = true,
 }: Props) {
   const { canAccess } = useAuth();
@@ -138,10 +140,10 @@ export function CloudinaryImageField({
                 )}
               </span>
               <span className="min-w-0 flex-1 truncate text-xs font-extrabold text-slate-900">
-                {label}
+                {showTileLabel ? label : imageUrl ? "Đổi ảnh" : "Thêm ảnh"}
               </span>
             </button>
-            {imageUrl || onRemove ? (
+            {showRemove && (imageUrl || onRemove) ? (
               <button
                 aria-label={`Xóa ${label}`}
                 className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
@@ -182,7 +184,7 @@ export function CloudinaryImageField({
                 </span>
               ) : null}
             </button>
-            {imageUrl ? (
+            {showRemove && imageUrl ? (
               <button
                 aria-label={`Bỏ ${label}`}
                 className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/95 text-red-600 shadow-md transition hover:bg-red-50"
@@ -225,13 +227,13 @@ export function CloudinaryImageField({
               </span>
               <ChevronRight className="h-5 w-5 shrink-0 text-slate-800" />
             </button>
-            {imageUrl ? (
+            {showRemove && (imageUrl || onRemove) ? (
               <button
-                aria-label={`Bỏ ${label || "ảnh"}`}
+                aria-label={`Xóa ${label || "ảnh"}`}
                 className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-red-50 text-red-600 transition hover:bg-red-100"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onChange({ imageUrl: "", publicId: null });
+                  remove();
                 }}
                 type="button"
               >
@@ -281,7 +283,7 @@ export function CloudinaryImageField({
               </span>
               <Images className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-moss-700" />
             </button>
-            {imageUrl ? (
+            {showRemove && imageUrl ? (
               <button
                 aria-label={`Bỏ ${label}`}
                 className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-red-100 bg-red-50 text-red-600"

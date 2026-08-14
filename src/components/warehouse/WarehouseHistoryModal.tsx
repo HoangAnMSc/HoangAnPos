@@ -3,6 +3,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Bell,
+  ChevronRight,
 } from "lucide-react";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -83,6 +84,7 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedMovement, setSelectedMovement] = useState<StockMovement | null>(null);
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
@@ -115,20 +117,28 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
       }),
     [filter, movements]
   );
+  const selectedDisplay = selectedMovement ? getMovementDisplay(selectedMovement) : null;
 
-  return (
+  function closeHistory() {
+    setSelectedMovement(null);
+    onClose();
+  }
+
+  return <>
     <Modal
+      bodyClassName="!flex !min-h-0 !flex-col !overflow-hidden"
+      contentClassName="sm:h-[min(760px,86vh)]"
       footer={
-        <Button className="w-full sm:w-auto" onClick={onClose} variant="secondary">
+        <Button className="w-full sm:w-auto" onClick={closeHistory} variant="secondary">
           Đóng
         </Button>
       }
-      onClose={onClose}
+      onClose={closeHistory}
       open={open}
       size="xl"
       title="Lịch sử kho"
     >
-      <div className="space-y-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
             {filters.map((item) => (
               <button
@@ -157,14 +167,16 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
             title="Chưa có lịch sử"
           />
         ) : (
-          <div className="max-h-[58dvh] divide-y divide-slate-100 overflow-y-auto overscroll-contain rounded-xl border border-slate-200">
+          <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto overscroll-contain rounded-xl border border-slate-200">
             {visibleMovements.map((movement) => {
               const display = getMovementDisplay(movement);
 
               return (
-                <article
-                  className="grid grid-cols-[40px_minmax(0,1fr)_auto] gap-3 px-3 py-3 sm:grid-cols-[40px_minmax(0,1fr)_auto_150px] sm:items-center sm:px-4"
+                <button
+                  className="grid w-full grid-cols-[40px_minmax(0,1fr)_auto_16px] items-center gap-3 px-3 py-3 text-left transition hover:bg-slate-50 sm:grid-cols-[40px_minmax(0,1fr)_auto_150px_16px] sm:px-4"
                   key={movement.id}
+                  onClick={() => setSelectedMovement(movement)}
+                  type="button"
                 >
                   <span
                     className={`flex h-10 w-10 items-center justify-center rounded-xl ${display.iconClassName}`}
@@ -193,12 +205,33 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
                     <br />
                     {dateTimeFormatter.format(new Date(movement.created_at))}
                   </p>
-                </article>
+                  <ChevronRight className="h-4 w-4 text-slate-400" />
+                </button>
               );
             })}
           </div>
         )}
       </div>
     </Modal>
-  );
+
+    <Modal
+      footer={<Button className="w-full sm:w-auto" onClick={() => setSelectedMovement(null)} variant="secondary">Đóng</Button>}
+      onClose={() => setSelectedMovement(null)}
+      open={Boolean(selectedMovement)}
+      size="md"
+      title="Chi tiết thao tác kho"
+    >
+      {selectedMovement && selectedDisplay ? (
+        <dl className="divide-y divide-slate-100">
+          <div className="grid gap-1 py-3 first:pt-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Sản phẩm</dt><dd className="break-words text-sm font-black text-slate-950">{selectedMovement.products?.name ?? "Sản phẩm không còn trong kho"}</dd></div>
+          <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Thao tác</dt><dd><span className="inline-flex items-center gap-2"><span className={`grid h-8 w-8 place-items-center rounded-lg ${selectedDisplay.iconClassName}`}><selectedDisplay.Icon className="h-4 w-4" /></span><Badge tone="neutral">{selectedDisplay.label}</Badge></span></dd></div>
+          <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Số lượng</dt><dd className={`text-lg font-black tabular-nums ${selectedDisplay.quantityClassName}`}>{selectedDisplay.quantity} sản phẩm</dd></div>
+          <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">SKU</dt><dd className="break-words text-sm font-extrabold text-slate-900">{selectedMovement.products?.sku || "Chưa có SKU"}</dd></div>
+          <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Người thực hiện</dt><dd className="break-words text-sm font-extrabold text-slate-900">{selectedMovement.actor_name || "Hệ thống"}</dd></div>
+          <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Thời gian</dt><dd className="text-sm font-extrabold text-slate-900">{dateTimeFormatter.format(new Date(selectedMovement.created_at))}</dd></div>
+          <div className="grid gap-1 py-3 last:pb-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Lý do / ghi chú</dt><dd className="whitespace-pre-wrap break-words text-sm font-semibold leading-6 text-slate-700">{selectedMovement.reason || "Không có ghi chú cho thao tác này."}</dd></div>
+        </dl>
+      ) : null}
+    </Modal>
+  </>;
 }

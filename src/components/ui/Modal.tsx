@@ -10,6 +10,7 @@ type ModalProps = {
   children: React.ReactNode;
   contentClassName?: string;
   footer?: React.ReactNode;
+  headerAction?: React.ReactNode;
   open: boolean;
   size?: ModalSize;
   title: string;
@@ -51,6 +52,7 @@ export function Modal({
   children,
   contentClassName,
   footer,
+  headerAction,
   onClose,
   open,
   size = "lg",
@@ -112,9 +114,12 @@ export function Modal({
       >
         <div className="mx-auto mt-2 h-1 w-10 flex-none rounded-full bg-slate-200 sm:hidden" />
         <header className="flex flex-none items-center justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-8 sm:py-7">
-          <h2 className="min-w-0 truncate text-base font-extrabold text-slate-950 sm:text-2xl">
-            {title}
-          </h2>
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+            <h2 className="min-w-0 truncate text-base font-extrabold text-slate-950 sm:text-2xl">
+              {title}
+            </h2>
+            {headerAction}
+          </div>
           <button
             aria-label="Đóng cửa sổ"
             className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-slate-950 transition hover:bg-slate-100"

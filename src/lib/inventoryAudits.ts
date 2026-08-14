@@ -5,6 +5,7 @@ export type InventoryAuditLine = {
   ean13: string;
   productId: string | null;
   productName: string;
+  systemStock: number | null;
 };
 
 export type InventoryAuditSession = {

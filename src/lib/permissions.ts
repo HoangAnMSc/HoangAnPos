@@ -250,7 +250,7 @@ export const permissionGroups = [
     label: "Kho",
     path: "/warehouse",
     icon: Warehouse,
-    description: "Xem số lượng hiện tại và so sánh kết quả kiểm kê.",
+    description: "Xem sản phẩm trong kho, lịch sử kiểm kê và thực hiện nhập xuất kho.",
     actions: [
       {
         key: "warehouse.audit.delete",
@@ -259,28 +259,28 @@ export const permissionGroups = [
       },
       {
         key: "inventory",
-        label: "Mở tab tồn kho",
-        description: "Mở màn hình kiểm đếm tồn kho thực tế.",
+        label: "Sử dụng kiểm kê kho",
+        description: "Cho phép truy cập chức năng tạo và xem phiên kiểm kê kho.",
       },
       {
         key: "inventory.count",
-        label: "Nhập tồn kho",
-        description: "Quét mã, nhập, sửa hoặc xóa số lượng thực tế đã đếm.",
+        label: "Nhập số lượng kiểm kê",
+        description: "Quét mã và nhập số lượng thực tế của các sản phẩm trong một phiên kiểm kê.",
       },
       {
         key: "inventory.submit",
-        label: "Hoàn tất kiểm kê",
-        description: "Gửi phiên kiểm kê sang tab Kho để đối chiếu.",
+        label: "Hoàn tất phiên kiểm kê",
+        description: "Xác nhận và lưu kết quả của một phiên kiểm kê.",
       },
       {
         key: "products.receive-stock",
-        label: "Nhập kho",
-        description: "Tạo lô hàng và cộng số lượng tồn.",
+        label: "Nhập hàng vào kho",
+        description: "Nhập nhiều SKU và cộng số lượng tồn trong một lần xác nhận.",
       },
       {
         key: "warehouse.stock-out",
-        label: "Xuất kho",
-        description: "Trừ hàng khỏi kho và ghi nhận lý do xuất.",
+        label: "Xuất hàng khỏi kho",
+        description: "Xuất nhiều SKU, trừ số lượng tồn và ghi nhận lý do.",
       },
     ],
   },

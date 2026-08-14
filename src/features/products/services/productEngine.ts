@@ -262,6 +262,32 @@ export async function fetchProducts(): Promise<Product[]> {
 }
 
 export async function saveProduct(input: ProductEditorInput) {
+  let normalizedVariantAttributes = input.variant_attributes;
+  if (input.id && input.variant_attributes.length) {
+    const { data: storedAttributes, error: storedAttributesError } =
+      await productEngineClient
+        .from("product_variant_attributes")
+        .select("id,code")
+        .eq("product_id", input.id);
+    throwIfError(storedAttributesError);
+    const storedIdByCode = new Map(
+      ((storedAttributes ?? []) as Array<{ code: string; id: string }>).map(
+        (attribute) => [attribute.code, attribute.id],
+      ),
+    );
+    normalizedVariantAttributes = input.variant_attributes.map((attribute) => {
+      const storedId = storedIdByCode.get(attribute.code);
+      if (!storedId || storedId === attribute.id) return attribute;
+      return {
+        ...attribute,
+        id: storedId,
+        values: attribute.values.map((value) => ({
+          ...value,
+          variant_attribute_id: storedId,
+        })),
+      };
+    });
+  }
   let slugQuery = productEngineClient
     .from("products")
     .select("id,slug")
@@ -279,21 +305,43 @@ export async function saveProduct(input: ProductEditorInput) {
   }
   const originalPrefix = createSkuPrefix(input.slug);
   const uniquePrefix = createSkuPrefix(uniqueSlug);
+  const { data: skuRows, error: skuError } = await productEngineClient
+    .from("product_variants")
+    .select("id,product_id,sku");
+  throwIfError(skuError);
+  const allVariantRows = (skuRows ?? []) as Array<{
+    id: string;
+    product_id: string;
+    sku: string;
+  }>;
+  const storedVariants = input.id
+    ? allVariantRows.filter((row) => row.product_id === input.id)
+    : [];
+  const storedVariantIds = new Set(storedVariants.map((row) => row.id));
+  const claimedStoredIds = new Set<string>();
+  const variantsWithStoredIds = input.variants.map((variant) => {
+    if (variant.id && storedVariantIds.has(variant.id)) {
+      claimedStoredIds.add(variant.id);
+      return variant;
+    }
+    const storedVariant = storedVariants.find(
+      (row) => row.sku === variant.sku && !claimedStoredIds.has(row.id),
+    );
+    if (!storedVariant) return variant;
+    claimedStoredIds.add(storedVariant.id);
+    return { ...variant, id: storedVariant.id };
+  });
   const inputVariantIds = new Set(
-    input.variants
+    variantsWithStoredIds
       .map((variant) => variant.id)
       .filter((id): id is string => Boolean(id)),
   );
-  const { data: skuRows, error: skuError } = await productEngineClient
-    .from("product_variants")
-    .select("id,sku");
-  throwIfError(skuError);
   const usedSkus = new Set(
-    ((skuRows ?? []) as Array<{ id: string; sku: string }>)
+    allVariantRows
       .filter((row) => !inputVariantIds.has(row.id))
       .map((row) => row.sku),
   );
-  const normalizedVariants = input.variants.map((variant) => {
+  const normalizedVariants = variantsWithStoredIds.map((variant) => {
     const generatedSku =
       uniqueSlug !== input.slug && variant.sku.startsWith(`${originalPrefix}-`)
         ? `${uniquePrefix}${variant.sku.slice(originalPrefix.length)}`
@@ -308,6 +356,7 @@ export async function saveProduct(input: ProductEditorInput) {
   const payload: ProductEditorInput = {
     ...input,
     slug: uniqueSlug,
+    variant_attributes: normalizedVariantAttributes,
     specifications: input.specifications.map((item) => ({
       ...item,
       id: item.id ?? crypto.randomUUID(),
