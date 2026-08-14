@@ -17,6 +17,7 @@ import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../li
 
 type Draft = Omit<Promotion, "created_at" | "updated_at" | "usage_count"> & { id: string };
 type CategoryOption = { id: string; name: string };
+type PromotionLifecycle = "active" | "scheduled" | "expired" | "inactive";
 const emptyDraft = (): Draft => ({
   id: "", name: "", code: null, trigger_type: "coupon", discount_type: "percentage",
   discount_value: 0, max_discount_amount: null, start_at: null, end_at: null,
@@ -50,6 +51,17 @@ const triggerLabel = (value: PromotionTrigger) => value === "coupon" ? "Mã gi�
 const discountLabel = (item: Pick<Promotion, "discount_type" | "discount_value">) =>
   item.discount_type === "percentage" ? `${item.discount_value}%` :
     item.discount_type === "fixed_amount" ? formatCurrency(item.discount_value) : "Miễn phí vận chuyển";
+const promotionLifecycle = (
+  item: Pick<Promotion, "end_at" | "is_active" | "start_at">,
+  now: number,
+): PromotionLifecycle => {
+  const startAt = item.start_at ? new Date(item.start_at).getTime() : null;
+  const endAt = item.end_at ? new Date(item.end_at).getTime() : null;
+  if (endAt != null && Number.isFinite(endAt) && endAt <= now) return "expired";
+  if (!item.is_active) return "inactive";
+  if (startAt != null && Number.isFinite(startAt) && startAt > now) return "scheduled";
+  return "active";
+};
 
 export function PromotionsPage() {
   const { canAccess } = useAuth();
@@ -68,7 +80,8 @@ export function PromotionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
+  const [status, setStatus] = useState<"all" | PromotionLifecycle>("all");
+  const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,11 +101,15 @@ export function PromotionsPage() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const filtered = useMemo(() => items.filter((item) => {
     const matchesText = `${item.name} ${item.code ?? ""}`.toLocaleLowerCase("vi").includes(query.trim().toLocaleLowerCase("vi"));
-    return matchesText && (status === "all" || item.is_active === (status === "active"));
-  }), [items, query, status]);
+    return matchesText && (status === "all" || promotionLifecycle(item, now) === status);
+  }), [items, now, query, status]);
 
   function edit(item?: Promotion) {
     if (item ? (!canUpdatePromotion && !canDeletePromotion) : !canCreatePromotion) return;
@@ -154,7 +171,7 @@ export function PromotionsPage() {
           </div>
           <div className="flex shrink-0 items-center gap-1.5 text-[11px] font-extrabold">
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{items.length} chương trình</span>
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">{items.filter((item) => item.is_active).length} hoạt động</span>
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">{items.filter((item) => promotionLifecycle(item, now) === "active").length} hoạt động</span>
           </div>
         </div>
       </Card>
@@ -170,14 +187,14 @@ export function PromotionsPage() {
             <td className="p-4"><p className="font-extrabold">{item.name}</p><p className="mt-0.5 font-mono text-xs text-slate-500">{item.code ?? "Không cần mã"}</p></td>
             <td>{triggerLabel(item.trigger_type)}</td><td className="font-bold text-moss-700">{discountLabel(item)}</td>
             <td className="text-xs text-slate-600">{item.start_at ? vietnamDateTimeLabel(item.start_at) : "Áp dụng ngay"} → {item.end_at ? vietnamDateTimeLabel(item.end_at) : "∞"}</td>
-            <td>{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</td><td className="pr-4"><div className="flex items-center justify-between gap-2"><Status active={item.is_active} /><ChevronRight className="h-4 w-4 text-slate-300" /></div></td>
+            <td>{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</td><td className="pr-4"><div className="flex items-center justify-between gap-2"><Status status={promotionLifecycle(item, now)} /><ChevronRight className="h-4 w-4 text-slate-300" /></div></td>
           </tr>)}</tbody>
         </table>
       </Card>}
 
       {!loading ? <div className="grid gap-2.5 md:hidden">{filtered.map((item) => <button className={`w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 ${canUpdatePromotion || canDeletePromotion ? "active:scale-[0.99] active:bg-slate-50" : "cursor-default"}`} key={item.id} onClick={() => edit(item)} type="button">
         <div className="flex items-start gap-3 p-3.5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-moss-50 text-moss-700"><TicketPercent className="h-5 w-5" /></span>
-          <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><h3 className="truncate font-black text-slate-950">{item.name}</h3><Status active={item.is_active} /></div><p className="mt-0.5 font-mono text-[11px] font-semibold uppercase text-slate-500">{item.code ?? "Tự động"}</p></div></div>
+          <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><h3 className="truncate font-black text-slate-950">{item.name}</h3><Status status={promotionLifecycle(item, now)} /></div><p className="mt-0.5 font-mono text-[11px] font-semibold uppercase text-slate-500">{item.code ?? "Tự động"}</p></div></div>
         <div className="mx-3.5 grid grid-cols-2 divide-x divide-slate-200 rounded-xl bg-slate-50 px-3 py-2.5 text-sm"><div className="pr-3"><p className="text-[11px] font-semibold text-slate-500">Ưu đãi</p><strong className="mt-0.5 block text-moss-800">{discountLabel(item)}</strong></div><div className="pl-3"><p className="text-[11px] font-semibold text-slate-500">Lượt dùng</p><strong className="mt-0.5 block">{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</strong></div></div>
         <div className="mt-3 flex items-center gap-2 border-t border-slate-100 px-3.5 py-3 text-xs font-medium text-slate-500"><CalendarDays className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1 truncate">{item.start_at ? vietnamDateTimeLabel(item.start_at) : "Áp dụng ngay"} → {item.end_at ? vietnamDateTimeLabel(item.end_at) : "∞"}</span><ChevronRight className="h-4 w-4 shrink-0 text-slate-300" /></div>
       </button>)}</div> : null}
@@ -197,7 +214,7 @@ export function PromotionsPage() {
           </label>
           <div className="w-28 shrink-0 sm:w-44">
             <Select className="!min-h-12 !py-2 !pl-3 !pr-7" onChange={(event) => setStatus(event.target.value as typeof status)} value={status}>
-              <option value="all">Tất cả</option><option value="active">Hoạt động</option><option value="inactive">Tạm dừng</option>
+              <option value="all">Tất cả</option><option value="active">Đang hoạt động</option><option value="scheduled">Sắp diễn ra</option><option value="expired">Đã hết hạn</option><option value="inactive">Tạm dừng</option>
             </Select>
           </div>
           {canCreatePromotion ? <Button aria-label="Thêm chương trình" className="h-12 min-h-12 w-12 shrink-0 px-0 sm:w-auto sm:px-4" onClick={() => edit()}>
@@ -251,7 +268,16 @@ export function PromotionsPage() {
   );
 }
 
-function Status({ active }: { active: boolean }) { return <span className={`inline-flex shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{active ? "Hoạt động" : "Tạm dừng"}</span>; }
+const statusPresentation: Record<PromotionLifecycle, { className: string; label: string }> = {
+  active: { className: "bg-emerald-50 text-emerald-700", label: "Đang hoạt động" },
+  scheduled: { className: "bg-amber-50 text-amber-700", label: "Sắp diễn ra" },
+  expired: { className: "bg-red-50 text-red-700", label: "Đã hết hạn" },
+  inactive: { className: "bg-slate-100 text-slate-600", label: "Tạm dừng" },
+};
+function Status({ status }: { status: PromotionLifecycle }) {
+  const presentation = statusPresentation[status];
+  return <span className={`inline-flex shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${presentation.className}`}>{presentation.label}</span>;
+}
 function FormSection({ children, description, title }: { children: React.ReactNode; description: string; title: string }) { return <section className="rounded-2xl border border-slate-200 p-3 sm:p-4"><div className="mb-3"><h3 className="font-extrabold">{title}</h3><p className="text-xs text-slate-500">{description}</p></div>{children}</section>; }
 function Toggle({ checked, label, onChange }: { checked: boolean; label: string; onChange: (value: boolean) => void }) { return <label className="flex min-h-11 cursor-pointer items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-bold"><span>{label}</span><input checked={checked} className="h-4 w-4 accent-moss-700" onChange={(event) => onChange(event.target.checked)} type="checkbox" /></label>; }
 

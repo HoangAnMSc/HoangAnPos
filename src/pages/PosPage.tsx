@@ -1972,11 +1972,6 @@ export function PosPage() {
                               tabIndex={disabled ? -1 : 0}
                             >
                               <ConfigurableProductCard
-                                action={
-                                  quantityInCart === 0 ? (
-                                    <button aria-label={`Thêm ${product.name}`} className="flex h-8 items-center gap-1 rounded-full bg-coal px-2.5 text-[11px] font-extrabold text-white shadow-sm disabled:bg-slate-300" disabled={disabled} onClick={(event) => { event.stopPropagation(); addToCart(product, false); }} type="button"><Plus className="h-3.5 w-3.5" />Thêm</button>
-                                  ) : undefined
-                                }
                                 category={product.category}
                                 compareAtPrice={cardData.compareAtPrice}
                                 imageUrl={cardData.imageUrl}
