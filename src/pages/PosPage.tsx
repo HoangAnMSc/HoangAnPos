@@ -586,6 +586,9 @@ export function PosPage() {
       productToVariantSelect?.image_url ??
       null
     : activeSelectedOptionImage ?? productToVariantSelect?.image_url ?? null;
+  const selectedVariantDefinitionCount = activeVariantDefinitions.filter(
+    (definition) => (variantOptionSelection[definition.id]?.length ?? 0) > 0,
+  ).length;
 
   const loadCheckoutShiftStatus = useCallback(async () => {
     if (!canCheckout) {
@@ -1180,20 +1183,6 @@ export function PosPage() {
         })
         .filter((item) => item.quantity > 0),
     );
-  }
-
-  function decreaseProductQuantity(productId: string) {
-    if (!canCheckout) return;
-
-    const matchingItems = cart.filter((item) => item.product.id === productId);
-    const item = matchingItems[matchingItems.length - 1];
-    if (!item) return;
-
-    if (item.quantity > 1) {
-      changeQuantity(item.lineId, item.quantity - 1);
-    } else {
-      removeFromCart(item.lineId);
-    }
   }
 
   function removeFromCart(lineId: string) {
@@ -1984,15 +1973,9 @@ export function PosPage() {
                             >
                               <ConfigurableProductCard
                                 action={
-                                  quantityInCart > 0 ? (
-                                    <div className="flex items-center gap-0.5 rounded-full bg-coal p-0.5 text-white shadow-sm">
-                                      <button aria-label={`Giảm ${product.name}`} className="grid h-7 w-7 place-items-center rounded-full text-white/80 transition hover:bg-white/10 disabled:opacity-40" disabled={!canCheckout} onClick={(event) => { event.stopPropagation(); decreaseProductQuantity(product.id); }} type="button"><Minus className="h-3.5 w-3.5" /></button>
-                                      <span className="min-w-4 text-center text-xs font-black tabular-nums">{quantityInCart}</span>
-                                      <button aria-label={`Thêm ${product.name}`} className="grid h-7 w-7 place-items-center rounded-full bg-white text-coal shadow-sm disabled:bg-slate-300" disabled={disabled} onClick={(event) => { event.stopPropagation(); addToCart(product, false); }} type="button"><Plus className="h-3.5 w-3.5" /></button>
-                                    </div>
-                                  ) : (
+                                  quantityInCart === 0 ? (
                                     <button aria-label={`Thêm ${product.name}`} className="flex h-8 items-center gap-1 rounded-full bg-coal px-2.5 text-[11px] font-extrabold text-white shadow-sm disabled:bg-slate-300" disabled={disabled} onClick={(event) => { event.stopPropagation(); addToCart(product, false); }} type="button"><Plus className="h-3.5 w-3.5" />Thêm</button>
-                                  )
+                                  ) : undefined
                                 }
                                 category={product.category}
                                 compareAtPrice={cardData.compareAtPrice}
@@ -3533,20 +3516,33 @@ export function PosPage() {
       </Modal>
       {canCheckout ? (
         <Modal
+          bodyClassName="!p-0 bg-white"
+          contentClassName="bg-white [&>header]:hidden [&>footer]:border-slate-100 [&>footer]:bg-white"
           footer={
-            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:justify-end">
-              <Button
-                onClick={() => {
-                  setVariantModalOpen(false);
-                  setProductToVariantSelect(null);
-                  setVariantOptionSelection({});
-                }}
-                type="button"
-                variant="secondary"
-              >
-                Đóng
-              </Button>
-              <Button
+            <div className="grid w-full grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-center gap-2 rounded-full bg-white/75 p-2 shadow-[0_14px_35px_rgba(91,65,42,0.12)] ring-1 ring-white/80 sm:ml-auto sm:max-w-xl">
+              <div className="min-w-0 px-3">
+                {activeCartVariant ? (
+                  <>
+                    <span className="block text-[10px] font-extrabold uppercase tracking-wide text-slate-500">
+                      Giá đã chọn
+                    </span>
+                    <strong className="block truncate text-lg font-black tabular-nums text-slate-800">
+                      {formatCurrency(activeVariantPrice)}
+                    </strong>
+                    {activeVariantComparePrice ? (
+                      <span className="block truncate text-[10px] font-bold tabular-nums text-slate-400 line-through">
+                        {formatCurrency(activeVariantComparePrice)}
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  <strong className="block text-xl font-black tabular-nums text-slate-400">
+                    ---
+                  </strong>
+                )}
+              </div>
+              <button
+                className="min-h-12 rounded-full bg-moss-700 px-4 text-sm font-black text-white shadow-[0_8px_20px_rgba(76,96,52,0.25)] transition hover:bg-moss-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
                 disabled={!activeCartVariant || activeVariantRemaining <= 0}
                 onClick={() => {
                   if (!productToVariantSelect || !activeCartVariant) return;
@@ -3559,7 +3555,7 @@ export function PosPage() {
                 type="button"
               >
                 Thêm vào đơn
-              </Button>
+              </button>
             </div>
           }
           onClose={() => {
@@ -3568,48 +3564,71 @@ export function PosPage() {
             setVariantOptionSelection({});
           }}
           open={variantModalOpen}
-          size="lg"
+          size="md"
           title="Chọn biến thể"
         >
           {productToVariantSelect ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 sm:gap-4 sm:p-4">
-                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 sm:h-24 sm:w-24">
-                  {activeVariantImage ? (
-                    <img
-                      alt={productToVariantSelect.name}
-                      className="h-full w-full object-cover"
-                      src={activeVariantImage}
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-slate-400">
-                      <ShoppingBag className="h-8 w-8" />
-                    </div>
-                  )}
-                  {activeCartVariant ? (
-                    <span className={`absolute left-2 top-2 rounded-lg px-2 py-1 text-[10px] font-extrabold shadow-sm ${activeVariantRemaining > 0 ? "bg-emerald-50/95 text-emerald-700" : "bg-red-50/95 text-red-600"}`}>
+            <div>
+              <div className="relative h-[32dvh] min-h-[230px] max-h-[330px] overflow-hidden rounded-t-[2rem] bg-slate-100 sm:h-[310px]">
+                {activeVariantImage ? (
+                  <img
+                    alt={productToVariantSelect.name}
+                    className="h-full w-full object-cover"
+                    src={activeVariantImage}
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400">
+                    <ShoppingBag className="h-14 w-14" />
+                  </div>
+                )}
+                <div className="absolute inset-x-0 top-0 flex justify-end bg-gradient-to-b from-black/25 to-transparent p-4 pb-14">
+                  <button
+                    aria-label="Đóng chọn biến thể"
+                    className="grid h-10 w-10 place-items-center rounded-full bg-white/95 text-slate-800 shadow-lg backdrop-blur transition hover:bg-white"
+                    onClick={() => {
+                      setVariantModalOpen(false);
+                      setProductToVariantSelect(null);
+                      setVariantOptionSelection({});
+                    }}
+                    type="button"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                {activeCartVariant ? (
+                    <span className={`absolute bottom-8 right-4 rounded-full px-3 py-1.5 text-xs font-extrabold shadow-lg ${activeVariantRemaining > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
                       {activeVariantRemaining > 0 ? `Còn ${activeVariantRemaining}` : "Hết hàng"}
                     </span>
-                  ) : null}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
-                    {getProductVariantCount(productToVariantSelect)} biến thể
-                  </p>
-                  <p className="mt-1 line-clamp-2 text-lg font-extrabold leading-6 text-slate-900 sm:text-xl">
+                ) : null}
+              </div>
+              <div className="relative -mt-6 rounded-t-[2rem] bg-white px-4 pb-6 pt-5 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] sm:px-6">
+                <div className="border-b border-slate-100 pb-4">
+                  <p className="line-clamp-2 text-xl font-black leading-7 text-slate-950">
                     {productToVariantSelect.name}
                   </p>
-                  {activeVariantComparePrice ? (
-                    <p className="mt-1 text-xs font-bold tabular-nums text-slate-400 line-through">
-                      {formatCurrency(activeVariantComparePrice)}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-slate-500">
+                    <span>
+                      {getProductVariantCount(productToVariantSelect)} biến thể
+                    </span>
+                    {productToVariantSelect.category ? (
+                      <span>
+                        {productToVariantSelect.category}
+                      </span>
+                    ) : null}
+                    {productToVariantSelect.sku ? (
+                      <span>SKU: {productToVariantSelect.sku}</span>
+                    ) : null}
+                  </div>
+                  {productToVariantSelect.description ? (
+                    <p className="mt-2 line-clamp-2 text-xs font-medium leading-5 text-slate-600">
+                      {productToVariantSelect.description}
                     </p>
                   ) : null}
-                  <p className="text-base font-black tabular-nums text-moss-800">
-                    {formatCurrency(activeVariantPrice)}
-                  </p>
                 </div>
-              </div>
-              <div className="space-y-4">
+                <p className="mt-4 text-sm font-extrabold text-slate-700">
+                  Tùy chọn sản phẩm
+                </p>
+              <div className="mt-3 space-y-5">
                 {activeVariantDefinitions.map((definition) => {
                   const selected = variantOptionSelection[definition.id] ?? [];
                   const multiple = definition.type === "multiple";
@@ -3630,11 +3649,17 @@ export function PosPage() {
                       key={definition.id}
                     >
                       <div className="mb-2 flex items-center justify-between gap-2">
-                        <legend className="font-extrabold text-slate-900">
+                        <legend className="text-sm font-extrabold text-slate-900">
                           {definition.name}
                         </legend>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase text-slate-500">
-                          {multiple ? "Chọn nhiều" : "Chọn 1"}
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${selected.length ? "bg-moss-100 text-moss-800" : "bg-slate-100 text-slate-500"}`}>
+                          {selected.length
+                            ? multiple
+                              ? `Đã chọn ${selected.length}`
+                              : "Đã chọn"
+                            : multiple
+                              ? "Chọn nhiều"
+                              : "Chọn 1"}
                         </span>
                       </div>
                       {displayType === "dropdown" ? (
@@ -3677,10 +3702,10 @@ export function PosPage() {
                       <div
                         className={
                           displayType === "image_text_horizontal"
-                            ? "grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(145px,190px))]"
+                            ? "grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(125px,160px))]"
                             : displayType === "image_text" ||
                                 displayType === "image"
-                            ? "grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(128px,160px))]"
+                            ? "grid grid-cols-3 gap-2"
                             : displayType === "color_circle" || displayType === "color"
                               ? "flex flex-wrap gap-2.5"
                               : "flex flex-wrap gap-2"
@@ -3709,7 +3734,7 @@ export function PosPage() {
                           return (
                             <button
                               aria-label={`${definition.name}: ${formatVariantValueLabel(option, definition.unit)}`}
-                              className={`relative overflow-hidden border text-sm font-extrabold transition disabled:cursor-not-allowed disabled:opacity-35 ${isColorOnly ? "flex h-12 w-12 items-center justify-center rounded-full p-1" : "rounded-xl"} ${isImageCard ? "flex min-h-0 flex-col p-0" : isHorizontalImageText ? "flex min-h-14 items-center gap-2 p-1.5 pr-8 text-left" : isColorWithText ? "flex min-h-[72px] min-w-[72px] flex-col items-center justify-center gap-1.5 px-2 py-2" : !isColorOnly ? "flex min-h-11 items-center justify-center px-4 py-2" : ""} ${checked ? "border-moss-600 bg-moss-50 text-moss-900 ring-2 ring-moss-500" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300"}`}
+                              className={`group relative overflow-hidden border text-xs font-extrabold transition disabled:cursor-not-allowed disabled:opacity-35 ${isColorOnly ? "flex h-10 w-10 items-center justify-center rounded-full p-1" : "rounded-xl"} ${isImageCard ? "flex min-h-0 flex-col p-0" : isHorizontalImageText ? "flex min-h-12 items-center gap-2 p-1.5 pr-7 text-left" : isColorWithText ? "flex min-h-[64px] min-w-[64px] flex-col items-center justify-center gap-1 px-2 py-1.5" : !isColorOnly ? "flex min-h-9 items-center justify-center px-3 py-1.5" : ""} ${checked ? "border-moss-600 bg-moss-50 text-moss-900 ring-2 ring-moss-500" : "border-slate-200 bg-white text-slate-700 hover:border-moss-300"}`}
                               disabled={!available}
                               key={option}
                               onClick={() => selectOption(option, checked)}
@@ -3721,7 +3746,7 @@ export function PosPage() {
                                     {optionImage ? (
                                       <img
                                         alt={formatVariantValueLabel(option, definition.unit)}
-                                        className="h-full w-full object-cover"
+                                        className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                                         src={optionImage}
                                       />
                                     ) : (
@@ -3729,7 +3754,7 @@ export function PosPage() {
                                     )}
                                   </span>
                                   {isImageText ? (
-                                    <span className="flex min-h-11 w-full items-center justify-center border-t border-slate-200 px-2 py-2 text-center leading-4">
+                                    <span className="flex min-h-9 w-full items-center justify-center border-t border-slate-200/80 bg-white px-2 py-1.5 text-center leading-4 text-slate-700">
                                       {formatVariantValueLabel(option, definition.unit)}
                                     </span>
                                   ) : null}
@@ -3780,10 +3805,16 @@ export function PosPage() {
                 })}
               </div>
               {!activeCartVariant ? (
-                <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">
-                  Hãy chọn đủ giá trị cho từng thuộc tính biến thể.
-                </p>
+                <div className="flex items-start gap-3 rounded-2xl bg-amber-50 px-4 py-3 text-amber-800">
+                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-200 text-xs font-black">
+                    {selectedVariantDefinitionCount}/{activeVariantDefinitions.length}
+                  </span>
+                  <p className="text-sm font-bold leading-5">
+                    Chọn đủ tùy chọn để xem đúng giá, tồn kho và thêm sản phẩm vào đơn.
+                  </p>
+                </div>
               ) : null}
+              </div>
             </div>
           ) : null}
         </Modal>

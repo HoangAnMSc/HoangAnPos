@@ -23,7 +23,29 @@ const emptyDraft = (): Draft => ({
   total_usage_limit: null, usage_per_customer: null, priority: 0, is_stackable: false,
   is_active: true, conditions: [], scopes: [{ scope_type: "all", scope_id: null }],
 });
-const localDate = (value: string | null) => value ? value.slice(0, 16) : "";
+const vietnamOffsetMs = 7 * 60 * 60 * 1000;
+const vietnamDateTimeInput = (value: string | null) => {
+  if (!value) return "";
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return "";
+  return new Date(timestamp + vietnamOffsetMs).toISOString().slice(0, 16);
+};
+const vietnamDateTimeIso = (value: string) => {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)) - vietnamOffsetMs).toISOString();
+};
+const vietnamDateTimeLabel = (value: string) => new Intl.DateTimeFormat("vi-VN", {
+  day: "2-digit",
+  hour: "2-digit",
+  hour12: false,
+  minute: "2-digit",
+  month: "2-digit",
+  timeZone: "Asia/Ho_Chi_Minh",
+  year: "numeric",
+}).format(new Date(value));
 const triggerLabel = (value: PromotionTrigger) => value === "coupon" ? "Mã giảm giá" : "Tự động";
 const discountLabel = (item: Pick<Promotion, "discount_type" | "discount_value">) =>
   item.discount_type === "percentage" ? `${item.discount_value}%` :
@@ -147,7 +169,7 @@ export function PromotionsPage() {
           <tbody>{filtered.map((item) => <tr className={`border-t border-slate-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-moss-400 ${canUpdatePromotion || canDeletePromotion ? "cursor-pointer hover:bg-slate-50 focus-visible:bg-slate-50" : ""}`} key={item.id} onClick={() => edit(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); edit(item); } }} tabIndex={canUpdatePromotion || canDeletePromotion ? 0 : -1}>
             <td className="p-4"><p className="font-extrabold">{item.name}</p><p className="mt-0.5 font-mono text-xs text-slate-500">{item.code ?? "Không cần mã"}</p></td>
             <td>{triggerLabel(item.trigger_type)}</td><td className="font-bold text-moss-700">{discountLabel(item)}</td>
-            <td className="text-xs text-slate-600">{item.start_at ? new Date(item.start_at).toLocaleDateString("vi-VN") : "Áp dụng ngay"} → {item.end_at ? new Date(item.end_at).toLocaleDateString("vi-VN") : "∞"}</td>
+            <td className="text-xs text-slate-600">{item.start_at ? vietnamDateTimeLabel(item.start_at) : "Áp dụng ngay"} → {item.end_at ? vietnamDateTimeLabel(item.end_at) : "∞"}</td>
             <td>{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</td><td className="pr-4"><div className="flex items-center justify-between gap-2"><Status active={item.is_active} /><ChevronRight className="h-4 w-4 text-slate-300" /></div></td>
           </tr>)}</tbody>
         </table>
@@ -157,7 +179,7 @@ export function PromotionsPage() {
         <div className="flex items-start gap-3 p-3.5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-moss-50 text-moss-700"><TicketPercent className="h-5 w-5" /></span>
           <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><h3 className="truncate font-black text-slate-950">{item.name}</h3><Status active={item.is_active} /></div><p className="mt-0.5 font-mono text-[11px] font-semibold uppercase text-slate-500">{item.code ?? "Tự động"}</p></div></div>
         <div className="mx-3.5 grid grid-cols-2 divide-x divide-slate-200 rounded-xl bg-slate-50 px-3 py-2.5 text-sm"><div className="pr-3"><p className="text-[11px] font-semibold text-slate-500">Ưu đãi</p><strong className="mt-0.5 block text-moss-800">{discountLabel(item)}</strong></div><div className="pl-3"><p className="text-[11px] font-semibold text-slate-500">Lượt dùng</p><strong className="mt-0.5 block">{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</strong></div></div>
-        <div className="mt-3 flex items-center gap-2 border-t border-slate-100 px-3.5 py-3 text-xs font-medium text-slate-500"><CalendarDays className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1 truncate">{item.start_at ? new Date(item.start_at).toLocaleDateString("vi-VN") : "Áp dụng ngay"} → {item.end_at ? new Date(item.end_at).toLocaleDateString("vi-VN") : "∞"}</span><ChevronRight className="h-4 w-4 shrink-0 text-slate-300" /></div>
+        <div className="mt-3 flex items-center gap-2 border-t border-slate-100 px-3.5 py-3 text-xs font-medium text-slate-500"><CalendarDays className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1 truncate">{item.start_at ? vietnamDateTimeLabel(item.start_at) : "Áp dụng ngay"} → {item.end_at ? vietnamDateTimeLabel(item.end_at) : "∞"}</span><ChevronRight className="h-4 w-4 shrink-0 text-slate-300" /></div>
       </button>)}</div> : null}
       {!loading && !filtered.length ? <Card className="p-8 text-center text-sm text-slate-500">Không tìm thấy chương trình phù hợp trong database.</Card> : null}
 
@@ -203,8 +225,8 @@ export function PromotionsPage() {
 
           <FormSection description="Thời gian hiệu lực và giới hạn số lần sử dụng." title="Thời gian & giới hạn">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Input label="Bắt đầu" onChange={(event) => setDraft((current) => ({ ...current, start_at: event.target.value ? new Date(event.target.value).toISOString() : null }))} type="datetime-local" value={localDate(draft.start_at)} />
-              <Input label="Kết thúc" onChange={(event) => setDraft((current) => ({ ...current, end_at: event.target.value ? new Date(event.target.value).toISOString() : null }))} type="datetime-local" value={localDate(draft.end_at)} />
+              <Input label="Bắt đầu (giờ Việt Nam)" onChange={(event) => setDraft((current) => ({ ...current, start_at: vietnamDateTimeIso(event.target.value) }))} type="datetime-local" value={vietnamDateTimeInput(draft.start_at)} />
+              <Input label="Kết thúc (giờ Việt Nam)" onChange={(event) => setDraft((current) => ({ ...current, end_at: vietnamDateTimeIso(event.target.value) }))} type="datetime-local" value={vietnamDateTimeInput(draft.end_at)} />
               <UsageLimitField label="Tổng lượt sử dụng" onChange={(total_usage_limit) => setDraft((current) => ({ ...current, total_usage_limit }))} value={draft.total_usage_limit} />
               <UsageLimitField label="Số lượt mỗi khách" onChange={(usage_per_customer) => setDraft((current) => ({ ...current, usage_per_customer }))} value={draft.usage_per_customer} />
             </div>
@@ -269,14 +291,38 @@ const numericOperatorLabels: Partial<Record<PromotionCondition["operator"], stri
   lte: "Tối đa",
 };
 function Conditions({ onChange, value }: { onChange: (value: PromotionCondition[]) => void; value: PromotionCondition[] }) {
-  return <FormSection description="Khách phải thỏa tất cả điều kiện. Điều kiện về khách hàng chỉ áp dụng khi POS đã chọn khách." title="Điều kiện áp dụng">
-    <div className="space-y-2">{value.map((condition, index) => <div className="grid gap-2 rounded-xl bg-slate-50 p-2.5 sm:grid-cols-[1.3fr_1fr_1.5fr_auto]" key={`${condition.condition_type}-${index}`}>
-      <Select aria-label="Loại điều kiện" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, condition_type: event.target.value, value: 0 } : item))} value={condition.condition_type}>{Object.entries(conditionLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select>
-      <Select aria-label="Phép so sánh" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, operator: event.target.value as PromotionCondition["operator"] } : item))} value={condition.operator}>{Object.entries(numericOperatorLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select>
-      <Input aria-label="Giá trị điều kiện" inputMode="numeric" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, value: Number(normalizeIntegerInput(event.target.value)) || 0 } : item))} placeholder={condition.condition_type === "customer_points" ? "Nhập số điểm" : "Nhập giá trị"} value={formatIntegerInput(String(condition.value ?? ""))} />
-      <Button aria-label="Xóa điều kiện" className="px-3" onClick={() => onChange(value.filter((_, position) => position !== index))} variant="danger"><Trash2 className="h-4 w-4" /></Button>
-    </div>)}</div>
-    <Button className="mt-3 w-full sm:w-auto" onClick={() => onChange([...value, { condition_type: "order_total", operator: "gte", value: 0 }])} variant="secondary"><Plus className="h-4 w-4" />Thêm điều kiện</Button>
+  const unconditional = value.length === 0;
+  const defaultCondition: PromotionCondition = {
+    condition_type: "order_total",
+    operator: "gte",
+    value: 0,
+  };
+
+  return <FormSection description={unconditional ? "Chương trình được áp dụng ngay khi đúng phạm vi sản phẩm." : "Khách phải thỏa tất cả điều kiện. Điều kiện về khách hàng chỉ áp dụng khi POS đã chọn khách."} title="Điều kiện áp dụng">
+    <label className={`mb-3 flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-3 transition ${unconditional ? "border-moss-200 bg-moss-50/70" : "border-slate-200 bg-slate-50"}`}>
+      <span className="min-w-0">
+        <strong className="block text-sm font-extrabold text-slate-900">Không điều kiện</strong>
+        <small className="mt-0.5 block text-xs font-medium text-slate-500">Áp dụng mà không yêu cầu giá trị đơn hàng hoặc thông tin khách.</small>
+      </span>
+      <input
+        aria-label="Không điều kiện"
+        checked={unconditional}
+        className="peer sr-only"
+        onChange={(event) => onChange(event.target.checked ? [] : [defaultCondition])}
+        type="checkbox"
+      />
+      <span className="relative h-6 w-11 shrink-0 rounded-full bg-slate-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform after:content-[''] peer-checked:bg-moss-700 peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-moss-300" />
+    </label>
+
+    {!unconditional ? <>
+      <div className="space-y-2">{value.map((condition, index) => <div className="grid gap-2 rounded-xl bg-slate-50 p-2.5 sm:grid-cols-[1.3fr_1fr_1.5fr_auto]" key={`${condition.condition_type}-${index}`}>
+        <Select aria-label="Loại điều kiện" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, condition_type: event.target.value, value: 0 } : item))} value={condition.condition_type}>{Object.entries(conditionLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select>
+        <Select aria-label="Phép so sánh" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, operator: event.target.value as PromotionCondition["operator"] } : item))} value={condition.operator}>{Object.entries(numericOperatorLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select>
+        <Input aria-label="Giá trị điều kiện" inputMode="numeric" onChange={(event) => onChange(value.map((item, position) => position === index ? { ...item, value: Number(normalizeIntegerInput(event.target.value)) || 0 } : item))} placeholder={condition.condition_type === "customer_points" ? "Nhập số điểm" : "Nhập giá trị"} value={formatIntegerInput(String(condition.value ?? ""))} />
+        <Button aria-label="Xóa điều kiện" className="px-3" onClick={() => onChange(value.filter((_, position) => position !== index))} variant="danger"><Trash2 className="h-4 w-4" /></Button>
+      </div>)}</div>
+      <Button className="mt-3 w-full sm:w-auto" onClick={() => onChange([...value, defaultCondition])} variant="secondary"><Plus className="h-4 w-4" />Thêm điều kiện</Button>
+    </> : null}
   </FormSection>;
 }
 

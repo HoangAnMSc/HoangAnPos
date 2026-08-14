@@ -1,4 +1,10 @@
-import { ChevronRight, Image as ImageIcon, Images, Trash2 } from "lucide-react";
+import {
+  ChevronRight,
+  Image as ImageIcon,
+  ImagePlus,
+  Images,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -160,8 +166,10 @@ export function CloudinaryImageField({
         <div className="space-y-2">
           <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-moss-400 hover:shadow-sm">
             <button
+              aria-label={imageUrl ? `Đổi ảnh ${label}` : `Thêm ảnh ${label}`}
               className="group block w-full text-left"
               onClick={() => setOpen(true)}
+              title={imageUrl ? `Đổi ảnh ${label}` : `Thêm ảnh ${label}`}
               type="button"
             >
               <span className="grid aspect-square w-full place-items-center overflow-hidden bg-slate-100 text-slate-400">
@@ -172,9 +180,8 @@ export function CloudinaryImageField({
                     src={imageUrl}
                   />
                 ) : (
-                  <span className="flex flex-col items-center gap-2 text-xs font-bold">
-                    <ImageIcon className="h-7 w-7" />
-                    Chọn hình ảnh
+                  <span className="grid h-11 w-11 place-items-center rounded-full bg-white text-slate-600 shadow-sm ring-1 ring-slate-200 transition group-hover:text-moss-700 group-hover:ring-moss-300">
+                    <ImagePlus className="h-6 w-6" />
                   </span>
                 )}
               </span>

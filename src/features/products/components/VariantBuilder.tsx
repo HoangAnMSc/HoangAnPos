@@ -408,7 +408,7 @@ export function VariantBuilder({
                 ? "mt-3 grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,190px))]"
                 : attribute.display_type === "image_text" ||
                     attribute.display_type === "image"
-                  ? "mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(128px,160px))]"
+                  ? "mt-3 grid grid-cols-3 gap-2"
                   : attribute.display_type === "dropdown"
                     ? "mt-2 space-y-2"
                   : "mt-2 flex flex-wrap gap-2"
@@ -476,20 +476,23 @@ export function VariantBuilder({
                   );
                 }
                 return (
-                  <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-1.5" key={value.id}>
+                  <div className="relative min-w-0 rounded-xl border border-slate-200 bg-white p-1.5" key={value.id}>
                     {imageField}
-                    <div className="mt-1.5 flex min-w-0 items-center gap-1 border-t border-slate-100 px-1 pt-1.5">
+                    <div className={`mt-1.5 flex min-w-0 items-center border-t border-slate-100 pt-1.5 ${attribute.display_type === "image_text_horizontal" ? "gap-1 px-1" : "px-0.5"}`}>
                       <button
-                        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-xs font-extrabold text-slate-800 transition hover:bg-slate-50"
+                        className={`min-w-0 flex-1 rounded-lg text-xs font-extrabold text-slate-800 transition hover:bg-slate-50 ${attribute.display_type === "image_text_horizontal" ? "flex items-center gap-1.5 px-1.5 py-1.5 text-left" : "block min-h-9 w-full px-1 py-1.5 text-center leading-4"}`}
                         onClick={() => void renameValue(attribute, value)}
+                        title={`Sửa tên ${label}`}
                         type="button"
                       >
-                        <span className="min-w-0 flex-1 truncate">{label}</span>
-                        <Pencil className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                        <span className={attribute.display_type === "image_text_horizontal" ? "min-w-0 flex-1 truncate" : "line-clamp-2 break-words"}>{label}</span>
+                        {attribute.display_type === "image_text_horizontal" ? (
+                          <Pencil className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                        ) : null}
                       </button>
                       <button
                         aria-label={`Xóa ${value.label}`}
-                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-red-50 text-red-600 transition hover:bg-red-100"
+                        className={attribute.display_type === "image_text_horizontal" ? "grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-red-50 text-red-600 transition hover:bg-red-100" : "absolute right-2.5 top-2.5 z-10 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-red-600 shadow-md transition hover:bg-red-50"}
                         onClick={removeValue}
                         type="button"
                       >
