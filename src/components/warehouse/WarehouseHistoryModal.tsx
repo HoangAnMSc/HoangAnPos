@@ -26,6 +26,7 @@ type WarehouseHistoryModalProps = {
 const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
   dateStyle: "short",
   timeStyle: "short",
+  timeZone: "Asia/Ho_Chi_Minh",
 });
 
 const filters: { key: HistoryFilter; label: string }[] = [
@@ -68,13 +69,38 @@ function getMovementDisplay(movement: StockMovement) {
         quantity: `+${movement.quantity}`,
         quantityClassName: "text-emerald-700",
       };
-    default:
+    case "to_shelf":
+      return {
+        Icon: ArrowUpFromLine,
+        iconClassName: "bg-sky-50 text-sky-700",
+        label: "Đưa ra quầy",
+        quantity: String(movement.quantity),
+        quantityClassName: "text-sky-700",
+      };
+    case "to_warehouse":
       return {
         Icon: ArrowDownToLine,
-        iconClassName: "bg-amber-50 text-amber-700",
-        label: "Điều chỉnh",
+        iconClassName: "bg-indigo-50 text-indigo-700",
+        label: "Thu về kho",
         quantity: String(movement.quantity),
-        quantityClassName: "text-amber-700",
+        quantityClassName: "text-indigo-700",
+      };
+    default:
+      if (movement.reason === "Tồn đầu kỳ khi tạo SKU") {
+        return {
+          Icon: ArrowDownToLine,
+          iconClassName: "bg-emerald-50 text-emerald-700",
+          label: "Tồn đầu kỳ",
+          quantity: `+${movement.quantity}`,
+          quantityClassName: "text-emerald-700",
+        };
+      }
+      return {
+        Icon: movement.quantity < 0 ? ArrowUpFromLine : ArrowDownToLine,
+        iconClassName: movement.quantity < 0 ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700",
+        label: "Điều chỉnh",
+        quantity: movement.quantity > 0 ? `+${movement.quantity}` : String(movement.quantity),
+        quantityClassName: movement.quantity < 0 ? "text-red-700" : "text-amber-700",
       };
   }
 }
@@ -113,7 +139,14 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
     () =>
       movements.filter((movement) => {
         if (filter === "all") return true;
-        return movement.movement_type === filter;
+        if (filter === "in") {
+          return movement.movement_type === "in" ||
+            movement.movement_type === "return" ||
+            (movement.movement_type === "adjustment" && movement.quantity > 0);
+        }
+        return movement.movement_type === "out" ||
+          movement.movement_type === "sale" ||
+          (movement.movement_type === "adjustment" && movement.quantity < 0);
       }),
     [filter, movements]
   );
@@ -188,7 +221,7 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
                       {movement.products?.name ?? "Sản phẩm"}
                     </p>
                     <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                      {movement.reason || movement.products?.sku || "Không có ghi chú"}
+                      {movement.product_archived ? "Đã ẩn · " : ""}{movement.reason || movement.products?.sku || "Không có ghi chú"}
                     </p>
                     <p className="mt-1 text-xs text-slate-400 sm:hidden">
                       {movement.actor_name} · {dateTimeFormatter.format(new Date(movement.created_at))}
@@ -227,6 +260,7 @@ export function WarehouseHistoryModal({ open, onClose }: WarehouseHistoryModalPr
           <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Thao tác</dt><dd><span className="inline-flex items-center gap-2"><span className={`grid h-8 w-8 place-items-center rounded-lg ${selectedDisplay.iconClassName}`}><selectedDisplay.Icon className="h-4 w-4" /></span><Badge tone="neutral">{selectedDisplay.label}</Badge></span></dd></div>
           <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Số lượng</dt><dd className={`text-lg font-black tabular-nums ${selectedDisplay.quantityClassName}`}>{selectedDisplay.quantity} sản phẩm</dd></div>
           <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">SKU</dt><dd className="break-words text-sm font-extrabold text-slate-900">{selectedMovement.products?.sku || "Chưa có SKU"}</dd></div>
+          <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Trạng thái sản phẩm</dt><dd className={`text-sm font-extrabold ${selectedMovement.product_archived ? "text-red-700" : "text-emerald-700"}`}>{selectedMovement.product_archived ? "Đã ẩn khỏi danh mục" : "Đang có trong danh mục"}</dd></div>
           <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Người thực hiện</dt><dd className="break-words text-sm font-extrabold text-slate-900">{selectedMovement.actor_name || "Hệ thống"}</dd></div>
           <div className="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Thời gian</dt><dd className="text-sm font-extrabold text-slate-900">{dateTimeFormatter.format(new Date(selectedMovement.created_at))}</dd></div>
           <div className="grid gap-1 py-3 last:pb-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4"><dt className="text-xs font-extrabold text-slate-500">Lý do / ghi chú</dt><dd className="whitespace-pre-wrap break-words text-sm font-semibold leading-6 text-slate-700">{selectedMovement.reason || "Không có ghi chú cho thao tác này."}</dd></div>

@@ -72,11 +72,14 @@ Các lệnh trên xóa toàn bộ bảng, hàm, policy và dữ liệu trong sch
 
 `supabase/schema.sql` đã bao gồm toàn bộ Product Engine, tồn kho SKU, POS,
 Promotion/Voucher, tích điểm, phân quyền, cấu hình card và dữ liệu khởi tạo.
-Không cần và không được chạy thêm migration SQL nào sau file này.
+Với database cài mới bằng file này, không cần chạy thêm migration SQL.
 
 `product_variants` là nguồn duy nhất cho giá và tồn kho. File schema là bản cài
 mới có tính phá hủy dữ liệu trong `public`; nếu database đang có dữ liệu thật,
-hãy backup và xây dựng migration nâng cấp riêng thay vì chạy lại file này.
+không chạy lại `schema.sql`. Hãy backup rồi chỉ chạy migration nâng cấp tương ứng
+trong `supabase/migrations`. Migration
+`202608140001_warehouse_product_audit.sql` bổ sung lịch sử tồn đầu kỳ, giữ tên/SKU
+sau khi ẩn sản phẩm và chặn ẩn sản phẩm vẫn còn tồn kho.
 
 Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Staff.
 

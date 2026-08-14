@@ -76,7 +76,10 @@ export function ConfigurableProductCard({
 
       <div className="flex min-h-0 flex-1 flex-col px-3 pb-2.5 pt-2">
         {visible("category") && category ? (
-          <p className="mb-1 flex items-center gap-1 truncate text-[10px] font-extrabold text-moss-700"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-moss-500" />{category}</p>
+          <p className="mb-1 flex min-h-4 shrink-0 items-center gap-1 text-[10px] font-extrabold leading-4 text-moss-700" title={category}>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-moss-500" />
+            <span className="min-w-0 truncate">{category}</span>
+          </p>
         ) : null}
         {visible("name") ? (
           <h3 className="line-clamp-2 min-h-10 text-sm font-black leading-5 text-slate-950" title={name}>{name}</h3>

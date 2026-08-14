@@ -134,10 +134,6 @@ type PosWorkspace = {
   bills: PosBill[];
 };
 
-type PosDiscardAction =
-  | { type: "close-bill"; billId: number }
-  | { type: "clear-bill"; billId: number };
-
 type QuickCustomerFormState = {
   name: string;
   phone: string;
@@ -323,6 +319,51 @@ function getSellableStock(product: Product) {
   return Math.max(0, product.stock ?? 0);
 }
 
+function PosProductsLoadingSkeleton() {
+  return (
+    <section
+      aria-busy="true"
+      aria-label="Đang tải danh sách sản phẩm"
+      className="overflow-hidden rounded-xl bg-white shadow-[0_10px_28px_rgba(57,67,46,0.07)] ring-1 ring-moss-100 sm:rounded-2xl"
+      role="status"
+    >
+      <div className="hidden border-b border-moss-100 bg-gradient-to-r from-moss-50/90 to-white px-4 py-3 sm:block">
+        <div className="h-5 w-56 animate-pulse rounded-md bg-slate-200" />
+        <div className="mt-2 h-3 w-36 animate-pulse rounded bg-slate-100" />
+      </div>
+      <div className="flex gap-2 overflow-hidden border-b border-moss-100 px-1.5 py-1.5 sm:px-3 sm:py-2">
+        {[72, 96, 84].map((width) => (
+          <span
+            className="h-9 shrink-0 animate-pulse rounded-full bg-slate-100"
+            key={width}
+            style={{ width }}
+          />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 justify-start gap-2 p-1.5 sm:[grid-template-columns:repeat(auto-fill,minmax(168px,184px))] sm:gap-3 sm:p-3">
+        {Array.from({ length: 6 }, (_, index) => (
+          <div
+            className="flex h-[270px] min-w-0 animate-pulse flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-white p-2"
+            key={index}
+          >
+            <div className="aspect-[1.25/1] w-full rounded-2xl bg-slate-200" />
+            <div className="px-1 pb-1 pt-2">
+              <div className="h-3 w-16 rounded bg-moss-100" />
+              <div className="mt-2 h-4 w-4/5 rounded bg-slate-200" />
+              <div className="mt-1.5 h-4 w-3/5 rounded bg-slate-100" />
+            </div>
+            <div className="mt-auto border-t border-dashed border-slate-200 px-1 pt-2">
+              <div className="h-3 w-16 rounded bg-slate-100" />
+              <div className="mt-1.5 h-5 w-24 max-w-full rounded bg-slate-200" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <span className="sr-only">Đang tải sản phẩm...</span>
+    </section>
+  );
+}
+
 function getPosProductCardData(product: Product) {
   const attributes =
     product.attributes &&
@@ -460,7 +501,7 @@ function QuickCustomerForm({
 
 export function PosPage() {
   const { canAccess, user } = useAuth();
-  const { showSuccess } = useActionNotice();
+  const { confirmAction, showSuccess } = useActionNotice();
   const productSearchRef = useRef<HTMLInputElement>(null);
   const mobileProductSearchRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLInputElement>(null);
@@ -476,9 +517,6 @@ export function PosPage() {
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [discardAction, setDiscardAction] = useState<PosDiscardAction | null>(
-    null,
-  );
   const [error, setError] = useState("");
   const [cartExpanded, setCartExpanded] = useState(true);
   const [lineSeparated, setLineSeparated] = useState(true);
@@ -1006,7 +1044,7 @@ export function PosPage() {
     setSuccess("");
   }
 
-  function requestCloseBill(billId: number) {
+  async function requestCloseBill(billId: number) {
     const bill = workspace.bills.find((item) => item.id === billId);
     if (!bill) return;
 
@@ -1020,7 +1058,14 @@ export function PosPage() {
       return;
     }
 
-    setDiscardAction({ billId, type: "close-bill" });
+    const confirmed = await confirmAction({
+      cancelLabel: "Giữ lại",
+      confirmLabel: "Đóng đơn",
+      message: `Đơn ${billId} và toàn bộ sản phẩm, khách hàng, ghi chú chưa thanh toán sẽ bị xóa. Thao tác này không thể hoàn tác.`,
+      title: "Đóng đơn đang bán?",
+      tone: "danger",
+    });
+    if (confirmed) closeBillNow(billId);
   }
 
   function addToCart(
@@ -1212,20 +1257,17 @@ export function PosPage() {
     setSuccess("");
   }
 
-  function requestClearBill() {
+  async function requestClearBill() {
     if (cart.length === 0) return;
-    setDiscardAction({ billId: activeBill.id, type: "clear-bill" });
-  }
-
-  function confirmDiscardAction() {
-    if (!discardAction) return;
-
-    if (discardAction.type === "close-bill") {
-      closeBillNow(discardAction.billId);
-    } else {
-      clearBillNow(discardAction.billId);
-    }
-    setDiscardAction(null);
+    const billId = activeBill.id;
+    const confirmed = await confirmAction({
+      cancelLabel: "Giữ lại",
+      confirmLabel: "Xóa sản phẩm",
+      message: `Toàn bộ sản phẩm trong đơn ${billId} sẽ bị xóa. Khách hàng và ghi chú vẫn được giữ lại. Thao tác này không thể hoàn tác.`,
+      title: "Xóa toàn bộ sản phẩm?",
+      tone: "danger",
+    });
+    if (confirmed) clearBillNow(billId);
   }
 
   function selectCustomer(customer: Customer) {
@@ -1763,7 +1805,7 @@ export function PosPage() {
                           ? "border-white/15 text-white/65 hover:bg-white/10 hover:text-white"
                           : "border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-500"
                       }`}
-                      onClick={() => requestCloseBill(bill.id)}
+                      onClick={() => void requestCloseBill(bill.id)}
                       type="button"
                     >
                       <X className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
@@ -1856,7 +1898,9 @@ export function PosPage() {
           ) : (
             <div className="grid min-w-0 gap-2 sm:gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_clamp(380px,27vw,480px)]">
               <div className="min-w-0 space-y-2 sm:space-y-3">
-                {!loading && quickProducts.length > 0 ? (
+                {loading ? (
+                  <PosProductsLoadingSkeleton />
+                ) : quickProducts.length > 0 ? (
                   <section className="overflow-hidden rounded-xl bg-white shadow-[0_10px_28px_rgba(57,67,46,0.07)] ring-1 ring-moss-100 sm:rounded-2xl">
                     <div
                       className={`hidden gap-2 bg-gradient-to-r from-moss-50/90 to-white px-3 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4 ${
@@ -2039,7 +2083,7 @@ export function PosPage() {
                         <button
                           aria-label="Xóa tất cả sản phẩm trong giỏ"
                           className="flex h-10 items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 text-sm font-extrabold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          onClick={requestClearBill}
+                          onClick={() => void requestClearBill()}
                           title="Xóa toàn bộ sản phẩm khỏi đơn hiện tại"
                           type="button"
                         >
@@ -2726,7 +2770,7 @@ export function PosPage() {
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 text-sm font-extrabold text-red-700 transition hover:border-red-300 hover:bg-red-100"
                 onClick={() => {
                   setOrderDetailsOpen(false);
-                  requestClearBill();
+                  void requestClearBill();
                 }}
                 type="button"
               >
@@ -3511,8 +3555,8 @@ export function PosPage() {
       </Modal>
       {canCheckout ? (
         <Modal
-          bodyClassName="!p-0 bg-white"
-          contentClassName="bg-white [&>header]:hidden [&>footer]:border-slate-100 [&>footer]:bg-white"
+          bodyClassName="!overflow-hidden !p-0 bg-white"
+          contentClassName="bg-white sm:!h-[min(760px,86vh)] [&>header]:hidden [&>footer]:border-slate-100 [&>footer]:bg-white"
           footer={
             <div className="grid w-full grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-center gap-2 rounded-full bg-white/75 p-2 shadow-[0_14px_35px_rgba(91,65,42,0.12)] ring-1 ring-white/80 sm:ml-auto sm:max-w-xl">
               <div className="min-w-0 px-3">
@@ -3563,8 +3607,8 @@ export function PosPage() {
           title="Chọn biến thể"
         >
           {productToVariantSelect ? (
-            <div>
-              <div className="relative h-[32dvh] min-h-[230px] max-h-[330px] overflow-hidden rounded-t-[2rem] bg-slate-100 sm:h-[310px]">
+            <div className="flex h-full min-h-0 flex-col overflow-hidden">
+              <div className="relative h-[32dvh] min-h-[230px] max-h-[330px] flex-none overflow-hidden rounded-t-[2rem] bg-slate-100 sm:h-[310px]">
                 {activeVariantImage ? (
                   <img
                     alt={productToVariantSelect.name}
@@ -3596,7 +3640,8 @@ export function PosPage() {
                     </span>
                 ) : null}
               </div>
-              <div className="relative -mt-6 rounded-t-[2rem] bg-white px-4 pb-6 pt-5 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] sm:px-6">
+              <div className="relative -mt-6 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-[0_-10px_30px_rgba(15,23,42,0.08)]">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-5 sm:px-6">
                 <div className="border-b border-slate-100 pb-4">
                   <p className="line-clamp-2 text-xl font-black leading-7 text-slate-950">
                     {productToVariantSelect.name}
@@ -3809,48 +3854,10 @@ export function PosPage() {
                   </p>
                 </div>
               ) : null}
+                </div>
               </div>
             </div>
           ) : null}
-        </Modal>
-      ) : null}
-      {canCheckout ? (
-        <Modal
-          footer={
-            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-              <Button
-                onClick={() => setDiscardAction(null)}
-                variant="secondary"
-              >
-                Giữ lại
-              </Button>
-              <Button onClick={confirmDiscardAction} variant="danger">
-                <Trash2 className="h-4 w-4" />
-                {discardAction?.type === "close-bill"
-                  ? "Đóng đơn"
-                  : "Xóa sản phẩm"}
-              </Button>
-            </div>
-          }
-          onClose={() => setDiscardAction(null)}
-          open={Boolean(discardAction)}
-          size="sm"
-          title={
-            discardAction?.type === "close-bill"
-              ? "Đóng đơn đang bán?"
-              : "Xóa toàn bộ sản phẩm?"
-          }
-        >
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm font-bold leading-6 text-red-800">
-              {discardAction?.type === "close-bill"
-                ? `Đơn ${discardAction.billId} sẽ bị đóng và mọi sản phẩm, khách hàng, ghi chú chưa thanh toán sẽ bị xóa.`
-                : `Toàn bộ sản phẩm trong đơn ${discardAction?.billId ?? activeBill.id} sẽ bị xóa. Khách hàng và ghi chú vẫn được giữ lại.`}
-            </div>
-            <p className="text-sm font-semibold text-slate-500">
-              Thao tác này không thể hoàn tác.
-            </p>
-          </div>
         </Modal>
       ) : null}
       {canCheckout ? (

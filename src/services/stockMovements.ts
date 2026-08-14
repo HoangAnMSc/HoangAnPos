@@ -5,8 +5,9 @@ import type { Json } from "../types/database";
 
 export type StockMovement = {
   id: string;
-  movement_type: "in" | "out" | "sale" | "return" | "adjustment";
+  movement_type: "in" | "out" | "sale" | "return" | "to_shelf" | "to_warehouse" | "adjustment";
   product_id: string;
+  product_archived: boolean;
   quantity: number;
   reason: string | null;
   actor_name: string;
@@ -25,7 +26,22 @@ export async function fetchWarehouseMovements() {
     const variants = new Map(products.flatMap((product) => product.variants.map((variant) => [variant.id, { product, variant }] as const)));
     return (movements.data ?? []).map((movement) => {
       const owner = variants.get(String(movement.variant_id));
-      return { ...movement, product_id: owner?.product.id ?? "", quantity: Math.abs(Number(movement.quantity)), products: owner ? { name: `${owner.product.name}${owner.variant.is_default ? "" : ` · ${owner.variant.sku}`}`, sku: owner.variant.sku } : null };
+      const snapshotProductId = typeof movement.product_id_snapshot === "string" ? movement.product_id_snapshot : "";
+      const snapshotName = typeof movement.product_name_snapshot === "string" ? movement.product_name_snapshot.trim() : "";
+      const snapshotSku = typeof movement.variant_sku_snapshot === "string" ? movement.variant_sku_snapshot.trim() : "";
+      const productName = snapshotName || owner?.product.name || "";
+      const sku = snapshotSku || owner?.variant.sku || "";
+      return {
+        ...movement,
+        product_id: snapshotProductId || owner?.product.id || "",
+        product_archived: Boolean(snapshotProductId && !owner),
+        quantity: movement.movement_type === "adjustment"
+          ? Number(movement.quantity)
+          : Math.abs(Number(movement.quantity)),
+        products: productName
+          ? { name: `${productName}${sku ? ` · ${sku}` : ""}`, sku: sku || null }
+          : null,
+      };
     }) as StockMovement[];
   } catch (engineError) {
     if (!(engineError instanceof Error) || !/variant_id|schema cache|does not exist/i.test(engineError.message)) throw engineError;
@@ -37,7 +53,11 @@ export async function fetchWarehouseMovements() {
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw error;
-  return (data ?? []) as unknown as StockMovement[];
+  return (data ?? []).map((movement) => ({
+    ...movement,
+    product_archived: false,
+    quantity: Math.abs(Number(movement.quantity)),
+  })) as unknown as StockMovement[];
 }
 
 export async function issueProductStock(productId: string, quantity: number, reason: string) {

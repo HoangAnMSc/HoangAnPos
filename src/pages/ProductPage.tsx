@@ -96,6 +96,29 @@ const productSections = [
   ["card", "Giao diện card", LayoutGrid],
 ] as const;
 
+function productArchiveErrorMessage(reason: unknown) {
+  const message = getErrorMessage(reason, "Không thể ẩn sản phẩm.");
+  if (message.includes("PRODUCT_HAS_STOCK")) {
+    return message.replace(/^.*PRODUCT_HAS_STOCK:\s*/, "");
+  }
+  return message;
+}
+
+function productSaveErrorMessage(message: string) {
+  for (const tag of ["VARIANT_HAS_STOCK", "STOCK_PERMISSION_DENIED"]) {
+    if (message.includes(tag)) {
+      return message.replace(new RegExp(`^.*${tag}:\\s*`), "");
+    }
+  }
+  if (message.includes("product_variant_attributes_product_id_code_key")) {
+    return "Sản phẩm đang có tùy chọn biến thể bị trùng mã. Hãy đóng bản nháp, mở lại sản phẩm và thử lưu lần nữa.";
+  }
+  if (message.includes("stock_movements_variant_id_fkey")) {
+    return "Không thể thay thế tổ hợp đã có lịch sử kho. Hệ thống sẽ giữ lại mã tổ hợp cũ; hãy mở lại sản phẩm rồi thử lưu lần nữa.";
+  }
+  return message;
+}
+
 function ProductSectionSelect({
   onChange,
   value,
@@ -658,15 +681,7 @@ export function ProductPage() {
         reason,
         "Không lưu được sản phẩm.",
       );
-      showProductSaveError(
-        requestMessage.includes(
-          "product_variant_attributes_product_id_code_key",
-        )
-          ? "Sản phẩm đang có tùy chọn biến thể bị trùng mã. Hãy đóng bản nháp, mở lại sản phẩm và thử lưu lần nữa."
-          : requestMessage.includes("stock_movements_variant_id_fkey")
-            ? "Không thể thay thế tổ hợp đã có lịch sử kho. Hệ thống sẽ giữ lại mã tổ hợp cũ; hãy mở lại sản phẩm rồi thử lưu lần nữa."
-          : requestMessage,
-      );
+      showProductSaveError(productSaveErrorMessage(requestMessage));
     } finally {
       setSaving(false);
     }
@@ -691,9 +706,7 @@ export function ProductPage() {
       await load();
       showSuccess("Đã xóa sản phẩm.");
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Không xóa được sản phẩm.",
-      );
+      setError(productArchiveErrorMessage(reason));
     } finally {
       setSaving(false);
     }
@@ -1148,10 +1161,14 @@ export function ProductPage() {
                               title: "Xác nhận ẩn sản phẩm",
                               tone: "danger",
                             })) {
-                               await archiveProduct(product.id);
-                               await load();
-                               showSuccess("Đã ẩn sản phẩm.");
-                             }
+                              try {
+                                await archiveProduct(product.id);
+                                await load();
+                                showSuccess("Đã ẩn sản phẩm.");
+                              } catch (reason) {
+                                setError(productArchiveErrorMessage(reason));
+                              }
+                            }
                           }}
                           variant="danger"
                         >

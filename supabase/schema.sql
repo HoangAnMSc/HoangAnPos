@@ -1693,7 +1693,17 @@ CREATE FUNCTION public.save_product_engine(payload jsonb) RETURNS uuid
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-declare product_id_value uuid; attribute jsonb; value_row jsonb; variant jsonb; image_row jsonb; specification jsonb;
+declare
+  product_id_value uuid;
+  attribute jsonb;
+  value_row jsonb;
+  variant jsonb;
+  image_row jsonb;
+  specification jsonb;
+  variant_id_value uuid;
+  previous_stock integer;
+  next_stock integer;
+  variant_existed boolean;
 begin
   if auth.uid() is null then raise exception 'Authentication required'; end if;
   if nullif(payload->>'id','') is null then
@@ -1733,20 +1743,58 @@ begin
       on conflict(id) do update set label=excluded.label,value=excluded.value,metadata=excluded.metadata,sort_order=excluded.sort_order,is_active=excluded.is_active,updated_at=now();
     end loop;
   end loop;
-  delete from public.product_variants pv where pv.product_id=product_id_value and not exists(
+  if exists(
+    select 1
+    from public.product_variants pv
+    where pv.product_id=product_id_value
+      and not exists(
+        select 1 from jsonb_array_elements(coalesce(payload->'variants','[]')) item
+        where nullif(item->>'id','')::uuid=pv.id
+      )
+      and (pv.stock_quantity > 0 or pv.shelf_quantity > 0)
+  ) then
+    raise exception 'VARIANT_HAS_STOCK: Không thể bỏ tổ hợp vẫn còn tồn kho. Hãy xuất hoặc điều chỉnh tồn về 0 trước.';
+  end if;
+  update public.product_variants pv
+  set is_active=false,is_default=false,updated_at=now()
+  where pv.product_id=product_id_value and not exists(
     select 1 from jsonb_array_elements(coalesce(payload->'variants','[]')) item where nullif(item->>'id','')::uuid=pv.id
   );
   update public.product_variants set is_default=false where product_id=product_id_value;
   for variant in select value from jsonb_array_elements(coalesce(payload->'variants','[]')) loop
-    delete from public.variant_value_links where variant_id=(variant->>'id')::uuid;
+    variant_id_value := (variant->>'id')::uuid;
+    select pv.stock_quantity into previous_stock
+    from public.product_variants pv where pv.id=variant_id_value for update;
+    variant_existed := found;
+    next_stock := coalesce((variant->>'stock_quantity')::integer,0);
+    delete from public.variant_value_links where variant_id=variant_id_value;
     insert into public.product_variants(id,product_id,sku,barcode,base_price,compare_at_price,cost_price,stock_quantity,shelf_quantity,weight,is_default,is_active)
-    values((variant->>'id')::uuid,product_id_value,variant->>'sku',nullif(variant->>'barcode',''),
+    values(variant_id_value,product_id_value,variant->>'sku',nullif(variant->>'barcode',''),
       coalesce((variant->>'base_price')::numeric,0),nullif(variant->>'compare_at_price','')::numeric,coalesce((variant->>'cost_price')::numeric,0),
-      coalesce((variant->>'stock_quantity')::integer,0),coalesce((variant->>'shelf_quantity')::integer,0),nullif(variant->>'weight','')::numeric,
+      next_stock,coalesce((variant->>'shelf_quantity')::integer,0),nullif(variant->>'weight','')::numeric,
       coalesce((variant->>'is_default')::boolean,false),coalesce((variant->>'is_active')::boolean,true))
     on conflict(id) do update set sku=excluded.sku,barcode=excluded.barcode,base_price=excluded.base_price,compare_at_price=excluded.compare_at_price,cost_price=excluded.cost_price,stock_quantity=excluded.stock_quantity,shelf_quantity=excluded.shelf_quantity,weight=excluded.weight,is_default=excluded.is_default,is_active=excluded.is_active,updated_at=now();
+    if next_stock <> coalesce(previous_stock,0) then
+      if next_stock > coalesce(previous_stock,0) and not public.has_permission('products.receive-stock') then
+        raise exception 'STOCK_PERMISSION_DENIED: Tài khoản không có quyền tăng tồn kho.';
+      end if;
+      if next_stock < coalesce(previous_stock,0) and not public.has_permission('warehouse.stock-out') then
+        raise exception 'STOCK_PERMISSION_DENIED: Tài khoản không có quyền giảm tồn kho.';
+      end if;
+      insert into public.stock_movements(variant_id,movement_type,quantity,reason,reference_type,reference_id,actor_id,actor_name)
+      values(
+        variant_id_value,
+        'adjustment',
+        next_stock-coalesce(previous_stock,0),
+        case when variant_existed then 'Điều chỉnh tồn khi cập nhật sản phẩm' else 'Tồn đầu kỳ khi tạo SKU' end,
+        'product',
+        product_id_value,
+        auth.uid(),
+        coalesce((select full_name from public.profiles where id=auth.uid()),'Hệ thống')
+      );
+    end if;
     insert into public.variant_value_links(variant_id,variant_value_id,variant_attribute_id)
-    select (variant->>'id')::uuid,
+    select variant_id_value,
       vv.id,vv.variant_attribute_id from jsonb_array_elements_text(coalesce(variant->'value_ids','[]')) ids(id)
       join public.product_variant_values vv on vv.id=ids.id::uuid;
     if nullif(variant->>'image_url','') is not null then
@@ -1755,9 +1803,6 @@ begin
       from public.product_variants pv where pv.product_id=product_id_value and pv.sku=variant->>'sku';
     end if;
   end loop;
-  delete from public.product_variants pv where pv.product_id=product_id_value and not exists(
-    select 1 from jsonb_array_elements(coalesce(payload->'variants','[]')) item where nullif(item->>'id','')::uuid=pv.id
-  );
   delete from public.product_variant_values vv using public.product_variant_attributes va where vv.variant_attribute_id=va.id and va.product_id=product_id_value and not exists(
     select 1 from jsonb_array_elements(coalesce(payload->'variant_attributes','[]')) a,
       jsonb_array_elements(coalesce(a->'values','[]')) v where nullif(v->>'id','')::uuid=vv.id
@@ -1955,14 +2000,32 @@ CREATE FUNCTION public.soft_delete_product(product_id_input uuid) RETURNS public
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-declare result public.products;
+declare
+  result public.products;
+  remaining_stock integer;
+  stocked_skus integer;
 begin
   if not public.has_permission('products.delete') then
     raise exception 'Permission denied for product delete';
   end if;
+  perform 1 from public.products where id=product_id_input and deleted_at is null for update;
+  if not found then raise exception 'Product not found'; end if;
+  perform 1 from public.product_variants where product_id=product_id_input for update;
+  select
+    coalesce(sum(greatest(stock_quantity, shelf_quantity)),0)::integer,
+    count(*) filter (where stock_quantity > 0 or shelf_quantity > 0)::integer
+  into remaining_stock, stocked_skus
+  from public.product_variants
+  where product_id=product_id_input;
+  if remaining_stock > 0 then
+    raise exception 'PRODUCT_HAS_STOCK: Sản phẩm còn % đơn vị trong % SKU. Hãy xuất hoặc điều chỉnh tồn về 0 trước khi xóa.', remaining_stock, stocked_skus;
+  end if;
+  update public.product_variants
+  set is_active=false,is_default=false,updated_at=now()
+  where product_id=product_id_input;
   update public.products
   set status = 'inactive', deleted_at = now(), updated_at = now()
-  where id = product_id_input
+  where id = product_id_input and deleted_at is null
   returning * into result;
   return result;
 end;
@@ -2720,6 +2783,9 @@ CREATE TABLE public.promotions (
 CREATE TABLE public.stock_movements (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     variant_id uuid NOT NULL,
+    product_id_snapshot uuid,
+    product_name_snapshot text,
+    variant_sku_snapshot text,
     movement_type text NOT NULL,
     quantity integer NOT NULL,
     reason text,
@@ -5684,5 +5750,54 @@ from public.app_roles r, auth.users u
 where p.id = u.id and u.id = p.id
   and lower(coalesce(u.email, '')) = 'hoanganmsc@gmail.com'
   and r.code = 'admin';
+
+-- Preserve an immutable product/SKU snapshot on every warehouse movement.
+-- These columns keep audit history readable after a product is renamed or archived.
+alter table public.stock_movements
+  add column if not exists product_id_snapshot uuid,
+  add column if not exists product_name_snapshot text,
+  add column if not exists variant_sku_snapshot text;
+
+create or replace function public.set_stock_movement_snapshot() returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  product_id_value uuid;
+  product_name_value text;
+  variant_sku_value text;
+begin
+  select p.id,p.name,pv.sku
+  into product_id_value,product_name_value,variant_sku_value
+  from public.product_variants pv
+  join public.products p on p.id=pv.product_id
+  where pv.id=new.variant_id;
+
+  new.product_id_snapshot := coalesce(new.product_id_snapshot,product_id_value);
+  new.product_name_snapshot := coalesce(nullif(new.product_name_snapshot,''),product_name_value);
+  new.variant_sku_snapshot := coalesce(nullif(new.variant_sku_snapshot,''),variant_sku_value);
+  return new;
+end;
+$$;
+
+drop trigger if exists stock_movements_set_snapshot on public.stock_movements;
+create trigger stock_movements_set_snapshot
+before insert on public.stock_movements
+for each row execute function public.set_stock_movement_snapshot();
+
+update public.stock_movements sm
+set
+  product_id_snapshot=coalesce(sm.product_id_snapshot,p.id),
+  product_name_snapshot=coalesce(nullif(sm.product_name_snapshot,''),p.name),
+  variant_sku_snapshot=coalesce(nullif(sm.variant_sku_snapshot,''),pv.sku)
+from public.product_variants pv
+join public.products p on p.id=pv.product_id
+where sm.variant_id=pv.id
+  and (
+    sm.product_id_snapshot is null
+    or nullif(sm.product_name_snapshot,'') is null
+    or nullif(sm.variant_sku_snapshot,'') is null
+  );
 
 -- End of canonical schema.

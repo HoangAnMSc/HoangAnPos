@@ -136,6 +136,13 @@ const sql = readFileSync(
   new URL("../supabase/schema.sql", import.meta.url),
   "utf8",
 );
+const warehouseAuditMigration = readFileSync(
+  new URL(
+    "../supabase/migrations/202608140001_warehouse_product_audit.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 for (const table of [
   "product_types",
   "product_attributes",
@@ -195,4 +202,56 @@ assert.match(
   /variant_value_links_variant_value_id_variant_attribute_id_fkey[\s\S]*on delete cascade/i,
   "Composite variant-value ownership FK must cascade",
 );
+for (const source of [sql, warehouseAuditMigration]) {
+  assert.match(
+    source,
+    /product_name_snapshot/i,
+    "Warehouse history must preserve the product name at movement time",
+  );
+  assert.match(
+    source,
+    /variant_sku_snapshot/i,
+    "Warehouse history must preserve the SKU at movement time",
+  );
+  assert.match(
+    source,
+    /stock_movements_set_snapshot/i,
+    "Every stock movement must populate its product snapshot",
+  );
+  assert.match(
+    source,
+    /Tồn đầu kỳ khi tạo SKU/i,
+    "Opening stock created in the product editor must be audited",
+  );
+  assert.match(
+    source,
+    /next_stock-coalesce\(previous_stock,0\)/i,
+    "Product edits must record only the stock delta",
+  );
+  assert.match(
+    source,
+    /VARIANT_HAS_STOCK/i,
+    "A stocked SKU cannot be removed from a product",
+  );
+  assert.match(
+    source,
+    /PRODUCT_HAS_STOCK/i,
+    "A product with remaining stock cannot be archived",
+  );
+  assert.match(
+    source,
+    /STOCK_PERMISSION_DENIED/i,
+    "Product editing must respect warehouse stock permissions",
+  );
+  assert.match(
+    source,
+    /set is_active=false,is_default=false,updated_at=now\(\)/i,
+    "Archived products and retired SKUs must no longer remain sellable",
+  );
+  assert.doesNotMatch(
+    source.match(/(?:create or replace function|create function) public\.save_product_engine[\s\S]*?\$\$;/i)?.[0] ?? "",
+    /delete from public\.product_variants/i,
+    "Saving a product must retire omitted SKUs instead of deleting audit-linked rows",
+  );
+}
 console.log("Product engine acceptance checks passed.");
