@@ -61,6 +61,34 @@ export function variantCombinationKey(valueIds: string[]) {
   return [...valueIds].sort().join(":");
 }
 
+export function sortVariantsByAttributeOrder<
+  T extends Pick<ProductVariant, "value_ids">,
+>(variants: T[], attributes: VariantAttribute[]) {
+  const orderedAttributes = [...attributes].sort(
+    (first, second) => first.sort_order - second.sort_order,
+  );
+
+  return [...variants].sort((first, second) => {
+    for (const attribute of orderedAttributes) {
+      const orderedValues = [...attribute.values].sort(
+        (firstValue, secondValue) =>
+          firstValue.sort_order - secondValue.sort_order,
+      );
+      const firstIndex = orderedValues.findIndex((value) =>
+        first.value_ids.includes(value.id),
+      );
+      const secondIndex = orderedValues.findIndex((value) =>
+        second.value_ids.includes(value.id),
+      );
+      const comparison =
+        (firstIndex < 0 ? Number.MAX_SAFE_INTEGER : firstIndex) -
+        (secondIndex < 0 ? Number.MAX_SAFE_INTEGER : secondIndex);
+      if (comparison !== 0) return comparison;
+    }
+    return 0;
+  });
+}
+
 export function mergeGeneratedVariants(
   attributes: VariantAttribute[],
   current: VariantDraft[],

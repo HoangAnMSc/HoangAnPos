@@ -70,10 +70,11 @@ import {
   countVariantCombinations,
   createSkuPrefix,
   formatVariantValueLabel,
+  getVariantLabel,
   mergeGeneratedVariants,
   variantCombinationKey,
 } from "../features/products/utils/variants";
-import { formatCurrency } from "../lib/format";
+import { formatCurrency, formatDateTime } from "../lib/format";
 import {
   createVietnamEan13FromSeed,
   isValidEan13,
@@ -384,6 +385,7 @@ export function ProductPage() {
   const [query, setQuery] = useState("");
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [form, setForm] = useState<ProductEditorInput>(emptyInput());
+  const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
   const [open, setOpen] = useState(false);
   const [ean13GateOpen, setEan13GateOpen] = useState(false);
   const [ean13LabelsOpen, setEan13LabelsOpen] = useState(false);
@@ -490,6 +492,7 @@ export function ProductPage() {
   );
   function edit(product: Product) {
     if (!canUpdateProduct && !canDeleteProduct) return;
+    setViewingProduct(null);
     setForm({
       ...product,
       specifications: product.specifications,
@@ -1093,7 +1096,7 @@ export function ProductPage() {
                 {filtered.map((product) => (
                   <ProductAdminCard
                     key={product.id}
-                    onEdit={canUpdateProduct || canDeleteProduct ? () => edit(product) : undefined}
+                    onView={() => setViewingProduct(product)}
                     product={product}
                     settings={productSettings.card}
                   />
@@ -1225,6 +1228,12 @@ export function ProductPage() {
             </div>
           </>
       ) : null}
+      <ProductDetailModal
+        canEdit={canUpdateProduct || canDeleteProduct}
+        onClose={() => setViewingProduct(null)}
+        onEdit={edit}
+        product={viewingProduct}
+      />
       <ProductSearchPopup
         onChange={setQuery}
         onClose={() => setProductSearchOpen(false)}
@@ -1967,12 +1976,227 @@ function CardAppearanceEditor({
   );
 }
 
-function ProductAdminCard({
+function formatProductStatus(status: ProductStatus) {
+  if (status === "active") return "Đang bán";
+  if (status === "inactive") return "Ngừng bán";
+  return "Bản nháp";
+}
+
+function formatSpecificationValue(value: Product["specifications"][number]["value"]) {
+  if (value === null || value === "") return "Chưa cập nhật";
+  if (typeof value === "boolean") return value ? "Có" : "Không";
+  if (Array.isArray(value)) return value.join(", ") || "Chưa cập nhật";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function ProductDetailModal({
+  canEdit,
+  onClose,
   onEdit,
+  product,
+}: {
+  canEdit: boolean;
+  onClose: () => void;
+  onEdit: (product: Product) => void;
+  product: Product | null;
+}) {
+  if (!product) return null;
+
+  const hasProductVariants =
+    product.variant_attributes.length > 0 || product.variants.length > 1;
+  const displayedVariants = hasProductVariants
+    ? product.variants.filter((variant) => variant.value_ids.length > 0)
+    : product.variants;
+  const activeVariants = displayedVariants.filter((variant) => variant.is_active);
+  const totalStock = activeVariants.reduce(
+    (sum, variant) => sum + variant.stock_quantity,
+    0,
+  );
+  const totalShelfStock = activeVariants.reduce(
+    (sum, variant) => sum + variant.shelf_quantity,
+    0,
+  );
+  const sortedImages = [...product.images].sort(
+    (first, second) => Number(second.is_primary) - Number(first.is_primary),
+  );
+  const primaryImage =
+    sortedImages[0]?.image_url ??
+    activeVariants.find((variant) => variant.image_url)?.image_url ??
+    null;
+
+  return (
+    <Modal
+      footer={
+        <div className="flex w-full justify-end gap-2">
+          <Button onClick={onClose} variant="secondary">Đóng</Button>
+          {canEdit ? (
+            <Button onClick={() => onEdit(product)}>
+              <Pencil className="h-4 w-4" /> Chỉnh sửa
+            </Button>
+          ) : null}
+        </div>
+      }
+      onClose={onClose}
+      open
+      size="wide"
+      title="Chi tiết sản phẩm"
+    >
+      <div className="space-y-5">
+        <section className="grid gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+            {primaryImage ? (
+              <img
+                alt={product.name}
+                className="aspect-square h-full w-full object-cover"
+                src={primaryImage}
+              />
+            ) : (
+              <div className="grid aspect-square place-items-center text-slate-300">
+                <Boxes className="h-14 w-14" />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-moss-700">
+                  {product.category?.name ?? product.product_type?.name ?? "Chưa phân loại"}
+                </p>
+                <h3 className="mt-1 break-words text-2xl font-black text-slate-950">
+                  {product.name}
+                </h3>
+                <p className="mt-1 break-all text-sm font-semibold text-slate-500">/{product.slug}</p>
+              </div>
+              <StatusPill
+                active={product.status === "active"}
+                label={formatProductStatus(product.status)}
+              />
+            </div>
+            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+              {product.description?.trim() || "Sản phẩm chưa có mô tả."}
+            </p>
+            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <ProductDetailMetric label="SKU" value={String(displayedVariants.length)} />
+              <ProductDetailMetric label="Đang bán" value={String(activeVariants.length)} />
+              <ProductDetailMetric label="Tồn kho" value={String(totalStock)} />
+              <ProductDetailMetric label="Tại quầy" value={String(totalShelfStock)} />
+            </dl>
+          </div>
+        </section>
+
+        {sortedImages.length > 1 ? (
+          <section>
+            <h4 className="mb-2 text-sm font-black text-slate-950">Hình ảnh ({sortedImages.length})</h4>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {sortedImages.map((image) => (
+                <img
+                  alt={image.alt_text || product.name}
+                  className="h-20 w-20 shrink-0 rounded-xl border border-slate-200 object-cover"
+                  key={image.id}
+                  src={image.image_url}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <section>
+          <h4 className="mb-2 text-sm font-black text-slate-950">Danh sách SKU</h4>
+          <div className="overflow-hidden rounded-2xl border border-slate-200">
+            <div className="hidden grid-cols-[minmax(150px,1fr)_minmax(120px,0.8fr)_110px_90px_100px] gap-3 bg-slate-50 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 sm:grid">
+              <span>Phiên bản</span><span>Mã SKU / EAN-13</span><span>Giá bán</span><span>Tồn kho</span><span>Trạng thái</span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {displayedVariants.map((variant) => (
+                <div
+                  className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(150px,1fr)_minmax(120px,0.8fr)_110px_90px_100px] sm:items-center sm:gap-3"
+                  key={variant.id}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    {(() => {
+                      const skuImage =
+                        variant.image_url ??
+                        product.images.find((image) => image.variant_id === variant.id)?.image_url ??
+                        product.images.find(
+                          (image) =>
+                            image.variant_value_id != null &&
+                            variant.value_ids.includes(image.variant_value_id),
+                        )?.image_url ??
+                        primaryImage;
+                      return skuImage ? (
+                        <img
+                          alt={`${product.name} - ${getVariantLabel(variant, product.variant_attributes)}`}
+                          className="h-12 w-12 shrink-0 rounded-xl border border-slate-200 object-cover"
+                          src={skuImage}
+                        />
+                      ) : (
+                        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-300">
+                          <Boxes className="h-5 w-5" />
+                        </span>
+                      );
+                    })()}
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-slate-900">{getVariantLabel(variant, product.variant_attributes)}</p>
+                      {!hasProductVariants && variant.is_default ? (
+                        <p className="text-xs font-semibold text-moss-700">Mặc định</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="min-w-0 text-xs font-semibold text-slate-600">
+                    <p className="truncate" title={variant.sku}>{variant.sku}</p>
+                    <p className="truncate text-slate-400" title={variant.barcode ?? undefined}>{variant.barcode || "Chưa có EAN-13"}</p>
+                  </div>
+                  <p className="font-black tabular-nums text-slate-950">{formatCurrency(variant.base_price)}</p>
+                  <p className="font-extrabold tabular-nums text-slate-800">{variant.stock_quantity}</p>
+                  <StatusPill active={variant.is_active} label={variant.is_active ? "Đang bán" : "Đã tắt"} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {product.specifications.length ? (
+          <section>
+            <h4 className="mb-2 text-sm font-black text-slate-950">Thông số sản phẩm</h4>
+            <dl className="overflow-hidden rounded-2xl border border-slate-200 divide-y divide-slate-100">
+              {[...product.specifications]
+                .sort((first, second) => first.sort_order - second.sort_order)
+                .map((specification) => (
+                  <div className="grid gap-1 px-4 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4" key={specification.id}>
+                    <dt className="text-xs font-extrabold text-slate-500">{specification.name}</dt>
+                    <dd className="break-words text-sm font-bold text-slate-900">
+                      {formatSpecificationValue(specification.value)}{specification.unit ? ` ${specification.unit}` : ""}
+                    </dd>
+                  </div>
+                ))}
+            </dl>
+          </section>
+        ) : null}
+
+        <p className="text-xs font-semibold text-slate-400">
+          Tạo {formatDateTime(product.created_at)} · Cập nhật {formatDateTime(product.updated_at)}
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+function ProductDetailMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+      <dt className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className="mt-0.5 text-lg font-black tabular-nums text-slate-950">{value}</dd>
+    </div>
+  );
+}
+
+function ProductAdminCard({
+  onView,
   product,
   settings,
 }: {
-  onEdit?: () => void;
+  onView: () => void;
   product: Product;
   settings: ProductCardSettings;
 }) {
@@ -1994,11 +2218,12 @@ function ProductAdminCard({
     null;
   return (
     <ConfigurableProductCard
+      ariaLabel={`Xem chi tiết ${product.name}`}
       category={product.category?.name ?? product.product_type?.name}
       compareAtPrice={comparePrice}
       imageUrl={image}
       name={product.name}
-      onActivate={onEdit}
+      onActivate={onView}
       price={minPrice}
       settings={settings}
       stock={stock}

@@ -12,7 +12,10 @@ import type {
   VariantAttribute,
   VariantValue,
 } from "../types";
-import { createSkuPrefix } from "../utils/variants";
+import {
+  createSkuPrefix,
+  sortVariantsByAttributeOrder,
+} from "../utils/variants";
 import { productEngineClient } from "./client";
 
 function throwIfError(error: { message: string } | null) {
@@ -212,14 +215,8 @@ export async function fetchProducts(): Promise<Product[]> {
         "specifications" | "variant_attributes" | "variants" | "images"
       >
     >
-  ).map((product) => ({
-    ...product,
-    product_type:
-      types.find((item) => item.id === product.product_type_id) ?? null,
-    category:
-      categories.find((item) => item.id === product.category_id) ?? null,
-    specifications: specs.filter((item) => item.product_id === product.id),
-    variant_attributes: attributes
+  ).map((product) => {
+    const productVariantAttributes = attributes
       .filter((item) => item.product_id === product.id)
       .map((attribute) => ({
         ...attribute,
@@ -230,8 +227,8 @@ export async function fetchProducts(): Promise<Product[]> {
         values: values.filter(
           (value) => value.variant_attribute_id === attribute.id,
         ),
-      })),
-    variants: variants
+      }));
+    const productVariants = variants
       .filter((item) => item.product_id === product.id)
       .map((variant) => {
         const image = images.find(
@@ -245,20 +242,33 @@ export async function fetchProducts(): Promise<Product[]> {
           image_url: image?.image_url ?? null,
           cloudinary_public_id: image?.cloudinary_public_id ?? null,
         };
-      }),
-    images: images
-      .filter(
-        (item) =>
-          item.product_id === product.id &&
-          !item.variant_id &&
-          !item.variant_value_id,
-      )
-      .sort(
-        (first, second) =>
-          Number(second.is_primary) - Number(first.is_primary) ||
-          first.sort_order - second.sort_order,
+      });
+    return {
+      ...product,
+      product_type:
+        types.find((item) => item.id === product.product_type_id) ?? null,
+      category:
+        categories.find((item) => item.id === product.category_id) ?? null,
+      specifications: specs.filter((item) => item.product_id === product.id),
+      variant_attributes: productVariantAttributes,
+      variants: sortVariantsByAttributeOrder(
+        productVariants,
+        productVariantAttributes,
       ),
-  }));
+      images: images
+        .filter(
+          (item) =>
+            item.product_id === product.id &&
+            !item.variant_id &&
+            !item.variant_value_id,
+        )
+        .sort(
+          (first, second) =>
+            Number(second.is_primary) - Number(first.is_primary) ||
+            first.sort_order - second.sort_order,
+        ),
+    };
+  });
 }
 
 export async function saveProduct(input: ProductEditorInput) {
