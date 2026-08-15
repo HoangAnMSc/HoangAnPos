@@ -1831,7 +1831,7 @@ export function PosPage() {
       <main
         className={`w-full max-w-[100vw] px-1 pt-1.5 sm:px-3 sm:pt-3 xl:pb-4 xl:px-4 ${
           hasActiveBill
-            ? "pb-[calc(8.75rem+env(safe-area-inset-bottom))]"
+            ? "pb-[calc(8.75rem+env(safe-area-inset-bottom))] lg:pb-[calc(5rem+env(safe-area-inset-bottom))] xl:pb-4"
             : "pb-5"
         }`}
       >
@@ -1987,40 +1987,18 @@ export function PosPage() {
                           const cardData = getPosProductCardData(product);
 
                           return (
-                            <article
-                              aria-label={`Thêm ${product.name} vào đơn`}
-                              className={`group relative min-w-0 rounded-2xl transition ${
-                                quantityInCart > 0
-                                  ? "cursor-pointer border-moss-500 shadow-[0_8px_20px_rgba(72,84,54,0.14)] ring-1 ring-moss-200"
-                                  : disabled
-                                    ? "cursor-not-allowed border-slate-200 opacity-60 shadow-sm"
-                                    : "cursor-pointer border-slate-200 shadow-sm hover:border-moss-300 hover:bg-moss-50/30"
-                              }`}
-                              key={product.id}
-                              onClick={() => {
-                                if (!disabled)
-                                  addToCart(product, false);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.target !== event.currentTarget)
-                                  return;
-                                if (
-                                  !disabled &&
-                                  (event.key === "Enter" || event.key === " ")
-                                ) {
-                                  event.preventDefault();
-                                  addToCart(product, false);
-                                }
-                              }}
-                              role="button"
-                              tabIndex={disabled ? -1 : 0}
-                            >
+                            <article className="h-full min-w-0" key={product.id}>
                               <ConfigurableProductCard
+                                ariaLabel={`Thêm ${product.name} vào đơn`}
                                 category={product.category}
                                 compareAtPrice={cardData.compareAtPrice}
+                                disabled={disabled}
                                 imageUrl={cardData.imageUrl}
                                 name={product.name}
+                                onActivate={() => addToCart(product, false)}
                                 price={cardData.price}
+                                presentation="pos"
+                                quantity={quantityInCart}
                                 selected={quantityInCart > 0}
                                 settings={effectivePosCardSettings}
                                 stock={Math.max(getSellableStock(product) - quantityInCart, 0)}
@@ -2486,8 +2464,8 @@ export function PosPage() {
 
       {hasActiveBill ? (
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-moss-100 bg-white/95 px-1.5 pb-[calc(0.35rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-14px_36px_rgba(57,67,46,0.16)] backdrop-blur-xl sm:px-3 sm:pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:pt-2 lg:left-72 xl:hidden">
-          <div className="mx-auto max-w-3xl">
-            <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="mx-auto max-w-3xl lg:flex lg:items-center lg:gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 lg:min-w-0 lg:flex-1">
               <button
                 aria-label={`Mở chi tiết đơn ${activeBill.id}`}
                 className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl px-1.5 py-1 text-left transition hover:bg-moss-50 sm:gap-2 sm:px-2 sm:py-1.5"
@@ -2530,10 +2508,10 @@ export function PosPage() {
 
             <nav
               aria-label="Công cụ đơn hàng"
-              className="mt-1 grid grid-cols-4 gap-0.5 rounded-xl bg-moss-50/80 p-0.5 sm:mt-1.5 sm:gap-1 sm:rounded-2xl sm:p-1"
+              className="mt-1 grid grid-cols-4 gap-0.5 rounded-xl bg-moss-50/80 p-0.5 sm:mt-1.5 sm:gap-1 sm:rounded-2xl sm:p-1 lg:mt-0 lg:flex lg:w-auto lg:flex-none lg:bg-transparent lg:p-0"
             >
               <button
-                className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[10px] font-extrabold text-moss-800 transition hover:bg-white sm:py-1.5"
+                className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[10px] font-extrabold text-moss-800 transition hover:bg-white sm:py-1.5 lg:hidden"
                 onClick={() => setEan13ScannerOpen(true)}
                 type="button"
               >
@@ -2541,7 +2519,7 @@ export function PosPage() {
                 Quét
               </button>
               <button
-                className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[10px] font-extrabold text-moss-800 transition hover:bg-white sm:py-1.5"
+                className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[10px] font-extrabold text-moss-800 transition hover:bg-white sm:py-1.5 lg:hidden"
                 onClick={() => setProductSearchModalOpen(true)}
                 type="button"
               >
@@ -2549,7 +2527,7 @@ export function PosPage() {
                 Tìm
               </button>
               <button
-                className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-extrabold transition hover:bg-white ${
+                className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-extrabold transition hover:bg-white lg:h-12 lg:min-w-[5.25rem] lg:px-2 ${
                   selectedCustomer
                     ? "bg-white text-amber-700 shadow-sm"
                     : "text-moss-800"
@@ -2564,7 +2542,7 @@ export function PosPage() {
                 ) : null}
               </button>
               <button
-                className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-extrabold transition hover:bg-white ${
+                className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-extrabold transition hover:bg-white lg:h-12 lg:min-w-[5.25rem] lg:px-2 ${
                   orderNote.trim()
                     ? "bg-white text-sky-700 shadow-sm"
                     : "text-moss-800"
@@ -3556,9 +3534,9 @@ export function PosPage() {
       {canCheckout ? (
         <Modal
           bodyClassName="!overflow-hidden !p-0 bg-white"
-          contentClassName="bg-white sm:!h-[min(760px,86vh)] [&>header]:hidden [&>footer]:border-slate-100 [&>footer]:bg-white"
+          contentClassName="bg-white sm:!h-[calc(100dvh-1rem)] sm:!max-h-[calc(100dvh-1rem)] lg:!h-[calc(100dvh-1.5rem)] lg:!max-h-[calc(100dvh-1.5rem)] [&>header]:hidden [&>footer]:border-slate-100 [&>footer]:bg-white"
           footer={
-            <div className="grid w-full grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-center gap-2 rounded-full bg-white/75 p-2 shadow-[0_14px_35px_rgba(91,65,42,0.12)] ring-1 ring-white/80 sm:ml-auto sm:max-w-xl">
+            <div className="grid w-full grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-center gap-2 rounded-full bg-white/75 p-2 shadow-[0_14px_35px_rgba(91,65,42,0.12)] ring-1 ring-white/80 sm:grid-cols-[minmax(180px,0.35fr)_minmax(0,1.65fr)]">
               <div className="min-w-0 px-3">
                 {activeCartVariant ? (
                   <>
@@ -3603,12 +3581,12 @@ export function PosPage() {
             setVariantOptionSelection({});
           }}
           open={variantModalOpen}
-          size="md"
+          size="xl"
           title="Chọn biến thể"
         >
           {productToVariantSelect ? (
-            <div className="flex h-full min-h-0 flex-col overflow-hidden">
-              <div className="relative h-[32dvh] min-h-[230px] max-h-[330px] flex-none overflow-hidden rounded-t-[2rem] bg-slate-100 sm:h-[310px]">
+            <div className="flex h-full min-h-0 flex-col overflow-hidden sm:grid sm:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.15fr)]">
+              <div className="relative h-[32dvh] min-h-[230px] max-h-[330px] flex-none overflow-hidden rounded-t-[2rem] bg-slate-100 sm:m-5 sm:aspect-square sm:h-auto sm:min-h-0 sm:max-h-none sm:rounded-2xl sm:ring-1 sm:ring-slate-200">
                 {activeVariantImage ? (
                   <img
                     alt={productToVariantSelect.name}
@@ -3623,7 +3601,7 @@ export function PosPage() {
                 <div className="absolute inset-x-0 top-0 flex justify-end bg-gradient-to-b from-black/25 to-transparent p-4 pb-14">
                   <button
                     aria-label="Đóng chọn biến thể"
-                    className="grid h-10 w-10 place-items-center rounded-full bg-white/95 text-slate-800 shadow-lg backdrop-blur transition hover:bg-white"
+                    className="grid h-10 w-10 place-items-center rounded-full bg-white/95 text-slate-800 shadow-lg backdrop-blur transition hover:bg-white sm:hidden"
                     onClick={() => {
                       setVariantModalOpen(false);
                       setProductToVariantSelect(null);
@@ -3640,9 +3618,21 @@ export function PosPage() {
                     </span>
                 ) : null}
               </div>
-              <div className="relative -mt-6 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-[0_-10px_30px_rgba(15,23,42,0.08)]">
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-5 sm:px-6">
-                <div className="border-b border-slate-100 pb-4">
+              <div className="relative -mt-6 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-[0_-10px_30px_rgba(15,23,42,0.08)] sm:mt-0 sm:rounded-none sm:shadow-none">
+                <button
+                  aria-label="Đóng chọn biến thể"
+                  className="absolute right-4 top-4 z-10 hidden h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-100 sm:grid"
+                  onClick={() => {
+                    setVariantModalOpen(false);
+                    setProductToVariantSelect(null);
+                    setVariantOptionSelection({});
+                  }}
+                  type="button"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-5 sm:px-6 sm:py-5">
+                <div className="border-b border-slate-100 pb-4 sm:pr-12">
                   <p className="line-clamp-2 text-xl font-black leading-7 text-slate-950">
                     {productToVariantSelect.name}
                   </p>

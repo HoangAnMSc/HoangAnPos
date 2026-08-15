@@ -101,21 +101,21 @@ export function Modal({
   return createPortal(
     <div
       aria-modal="true"
-      className="fixed left-0 top-0 m-0 flex h-dvh w-screen items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed left-0 top-0 m-0 flex h-dvh w-screen items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-2 lg:p-3"
       role="dialog"
       style={{ zIndex: zIndex + (layer.current ?? 0) }}
     >
       <div
         className={clsx(
-          "flex h-[calc(100dvh-3.5rem)] w-full flex-col overflow-hidden rounded-t-[1.5rem] bg-white text-slate-950 shadow-2xl sm:h-auto sm:max-h-[86vh] sm:rounded-[2rem]",
+          "flex h-[calc(100dvh-3.5rem)] w-full flex-col overflow-hidden rounded-t-[1.5rem] bg-white text-slate-950 shadow-2xl sm:h-auto sm:max-h-[calc(100dvh-1rem)] sm:rounded-[2rem] lg:max-h-[calc(100dvh-1.5rem)]",
           sizeClassNames[size],
           contentClassName,
         )}
       >
         <div className="mx-auto mt-2 h-1 w-10 flex-none rounded-full bg-slate-200 sm:hidden" />
-        <header className="flex flex-none items-center justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-8 sm:py-7">
+        <header className="flex flex-none items-center justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-4">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-            <h2 className="min-w-0 truncate text-base font-extrabold text-slate-950 sm:text-2xl">
+            <h2 className="min-w-0 truncate text-base font-extrabold text-slate-950 sm:text-xl">
               {title}
             </h2>
             {headerAction}
@@ -132,7 +132,7 @@ export function Modal({
 
         <div
           className={clsx(
-            "min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-7",
+            "min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-4",
             bodyClassName,
           )}
         >
@@ -140,7 +140,7 @@ export function Modal({
         </div>
 
         {footer ? (
-          <footer className="flex flex-none items-center justify-end gap-3 overflow-x-auto border-t border-slate-100 bg-white px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-8 sm:py-5">
+          <footer className="flex flex-none items-center justify-end gap-3 overflow-x-auto border-t border-slate-100 bg-white px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-6 sm:py-3">
             {footer}
           </footer>
         ) : null}

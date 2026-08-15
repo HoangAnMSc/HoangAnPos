@@ -6,7 +6,6 @@ import {
   CircleCheck,
   CircleHelp,
   LayoutGrid,
-  Minus,
   PackageCheck,
   Pencil,
   Plus,
@@ -22,6 +21,7 @@ import { CloudinaryImageField } from "../components/media/CloudinaryImageField";
 import { Ean13LabelsModal } from "../components/products/Ean13LabelsModal";
 import { Ean13PickerModal } from "../components/products/Ean13PickerModal";
 import { ConfigurableProductCard } from "../components/products/ConfigurableProductCard";
+import { productCardPreviewData } from "../components/products/productCardPreview";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
@@ -1215,7 +1215,6 @@ export function ProductPage() {
             currentSection={pageTab}
             onChange={setProductSettings}
             onSectionChange={setPageTab}
-            products={products}
             settings={productSettings}
           /> : <>
             <Card className="grid min-h-48 place-items-center p-6 text-center text-sm font-semibold text-slate-500">
@@ -1866,13 +1865,11 @@ function CardAppearanceEditor({
   currentSection,
   onChange,
   onSectionChange,
-  products,
   settings,
 }: {
   currentSection: PageTab;
   onChange: React.Dispatch<React.SetStateAction<ProductSettings>>;
   onSectionChange: (value: PageTab) => void;
-  products: Product[];
   settings: ProductSettings;
 }) {
   const { showSuccess } = useActionNotice();
@@ -1880,7 +1877,6 @@ function CardAppearanceEditor({
   const [savingCard, setSavingCard] = useState(false);
   const [message, setMessage] = useState("");
   const current = settings[target];
-  const sample = products[0] ?? null;
 
   function patch(value: Partial<ProductCardSettings>) {
     onChange((previous) => ({
@@ -1946,15 +1942,18 @@ function CardAppearanceEditor({
 
       <Card className="bg-slate-50 p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div><h3 className="font-black">Xem trước</h3><p className="text-xs text-slate-500">Dữ liệu thật từ sản phẩm đầu tiên.</p></div>
+          <div><h3 className="font-black">Xem trước</h3><p className="text-xs text-slate-500">Dữ liệu mẫu đầy đủ để kiểm tra từng tùy chọn.</p></div>
           <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-500">{target === "card" ? "Sản phẩm" : "POS"}</span>
         </div>
         <div className="mx-auto max-w-sm">
-          {sample ? (
-            <ProductAdminCard onEdit={() => undefined} posPreview={target === "posCard"} preview product={sample} settings={current} />
-          ) : (
-            <div className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-slate-300 bg-white text-sm text-slate-500">Thêm sản phẩm để xem trước.</div>
-          )}
+          <div className="mx-auto w-full max-w-[184px]">
+            <ConfigurableProductCard
+              {...productCardPreviewData}
+              presentation={target === "posCard" ? "pos" : "product"}
+              quantity={2}
+              settings={current}
+            />
+          </div>
         </div>
       </Card>
 
@@ -1970,14 +1969,10 @@ function CardAppearanceEditor({
 
 function ProductAdminCard({
   onEdit,
-  posPreview = false,
-  preview = false,
   product,
   settings,
 }: {
   onEdit?: () => void;
-  posPreview?: boolean;
-  preview?: boolean;
   product: Product;
   settings: ProductCardSettings;
 }) {
@@ -1999,14 +1994,12 @@ function ProductAdminCard({
     null;
   return (
     <ConfigurableProductCard
-      action={preview && posPreview ? <div className="flex items-center gap-0.5 rounded-full bg-coal p-0.5 text-white shadow-sm"><span className="grid h-7 w-7 place-items-center rounded-full text-white/80"><Minus className="h-3.5 w-3.5" /></span><span className="min-w-4 text-center text-xs font-black">2</span><span className="grid h-7 w-7 place-items-center rounded-full bg-white text-coal"><Plus className="h-3.5 w-3.5" /></span></div> : undefined}
       category={product.category?.name ?? product.product_type?.name}
       compareAtPrice={comparePrice}
       imageUrl={image}
       name={product.name}
-      onActivate={!preview ? onEdit : undefined}
+      onActivate={onEdit}
       price={minPrice}
-      selected={preview && posPreview}
       settings={settings}
       stock={stock}
       variantCount={active.length}
