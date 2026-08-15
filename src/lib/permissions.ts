@@ -154,6 +154,11 @@ export const permissionGroups = [
         description: "Cập nhật thông tin khách hàng.",
       },
       {
+        key: "customers.purchase-history.view",
+        label: "Xem lịch sử mua hàng",
+        description: "Xem các đơn và sản phẩm khách hàng đã từng mua.",
+      },
+      {
         key: "customers.delete",
         label: "Xóa khách hàng",
         description: "Xóa hồ sơ khách hàng.",
@@ -404,6 +409,13 @@ export const appPermissions = permissionGroups.map((permission) => ({
   label: permission.label,
   path: permission.path,
 }));
+
+export const appNavigationSections = [
+  { label: "Bán hàng", keys: ["pos", "orders", "customers", "promotions"] },
+  { label: "Hàng hóa", keys: ["products", "warehouse", "cloudinary-images"] },
+  { label: "Báo cáo & vận hành", keys: ["revenue", "attendance"] },
+  { label: "Hệ thống", keys: ["payment-settings", "users", "roles"] },
+] as const;
 
 export type AppPermissionKey = (typeof appPermissions)[number]["key"];
 

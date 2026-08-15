@@ -12,6 +12,7 @@ import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../lib/errors";
 import {
   allRolePermissionKeys,
+  appNavigationSections,
   getPermissionGroupKeys,
   normalizeRolePermissions,
   permissionGroups,
@@ -60,6 +61,13 @@ const permissionLabels = permissionGroups.flatMap((group) => [
   { key: group.key, label: group.label },
   ...group.actions.map((action) => ({ key: action.key, label: action.label })),
 ]);
+
+const orderedPermissionGroups = appNavigationSections.flatMap((section) =>
+  section.keys.flatMap((key) => {
+    const group = permissionGroups.find((item) => item.key === key);
+    return group ? [group] : [];
+  }),
+);
 
 function getPermissionLabel(permission: string) {
   return permissionLabels.find((item) => item.key === permission)?.label ?? permission;
@@ -270,7 +278,7 @@ function RoleEditorModal({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            {permissionGroups.map((group) => {
+            {orderedPermissionGroups.map((group) => {
               const groupKeys = getPermissionGroupKeys(group);
               const allSelected = groupKeys.every((permission) => form.permissions.includes(permission));
 

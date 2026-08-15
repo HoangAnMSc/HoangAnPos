@@ -4,7 +4,9 @@ import {
   Edit3,
   Mail,
   MapPin,
+  Package,
   Phone,
+  ReceiptText,
   Search,
   StickyNote,
   Trash2,
@@ -23,14 +25,16 @@ import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../lib/errors";
-import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
+import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { normalizeNullableText } from "../lib/text";
 import {
   createCustomer,
   deleteCustomer,
+  fetchCustomerPurchaseHistory,
   fetchCustomers,
   updateCustomer,
   type CustomerInput,
+  type CustomerPurchaseHistoryOrder,
 } from "../services/customers";
 import type { Customer } from "../types";
 
@@ -51,6 +55,15 @@ const emptyForm: CustomerFormState = {
   phone: "",
   points: "0",
 };
+
+function formatCustomerDate(value: string, includeTime = false) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Không rõ";
+  return new Intl.DateTimeFormat(
+    "vi-VN",
+    includeTime ? { dateStyle: "short", timeStyle: "short" } : undefined,
+  ).format(date);
+}
 
 function customerToForm(customer?: Customer | null): CustomerFormState {
   if (!customer) {
@@ -176,6 +189,10 @@ export function CustomersPage() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [errorNotice, setErrorNotice] = useState<ErrorNotice | null>(null);
   const [loading, setLoading] = useState(true);
+  const [purchaseHistory, setPurchaseHistory] = useState<CustomerPurchaseHistoryOrder[]>([]);
+  const [purchaseHistoryError, setPurchaseHistoryError] = useState("");
+  const [purchaseHistoryLoading, setPurchaseHistoryLoading] = useState(false);
+  const [selectedPurchaseOrder, setSelectedPurchaseOrder] = useState<CustomerPurchaseHistoryOrder | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [searchModalOpen, setSearchModalOpen] = useState(false);
@@ -184,6 +201,8 @@ export function CustomersPage() {
   const canCreateCustomer = canAccess("customers.create");
   const canEditCustomer = canAccess("customers.update");
   const canDeleteCustomer = canAccess("customers.delete");
+  const canViewPurchaseHistory =
+    canAccess("customers.purchase-history.view") || canAccess("orders");
 
   async function loadCustomers() {
     setLoading(true);
@@ -203,6 +222,42 @@ export function CustomersPage() {
   useEffect(() => {
     loadCustomers();
   }, []);
+
+  useEffect(() => {
+    setSelectedPurchaseOrder(null);
+  }, [viewingCustomer?.id]);
+
+  useEffect(() => {
+    if (!viewingCustomer || !canViewPurchaseHistory) {
+      setPurchaseHistory([]);
+      setPurchaseHistoryError("");
+      setPurchaseHistoryLoading(false);
+      return;
+    }
+
+    let active = true;
+    setPurchaseHistory([]);
+    setPurchaseHistoryError("");
+    setPurchaseHistoryLoading(true);
+    void fetchCustomerPurchaseHistory(viewingCustomer.id)
+      .then((history) => {
+        if (active) setPurchaseHistory(history);
+      })
+      .catch((requestError) => {
+        if (active) {
+          setPurchaseHistoryError(
+            getErrorMessage(requestError, "Không tải được lịch sử mua hàng."),
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setPurchaseHistoryLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canViewPurchaseHistory, viewingCustomer]);
 
   function openCreateModal() {
     if (!canCreateCustomer) {
@@ -291,6 +346,12 @@ export function CustomersPage() {
     ? `customer-form-${editingCustomer.id}`
     : "customer-form-create";
   const completeContactCount = customers.filter((customer) => customer.phone || customer.email).length;
+  const completedPurchases = purchaseHistory.filter((order) => order.status === "paid");
+  const customerTotalSpend = completedPurchases.reduce(
+    (sum, order) => sum + order.total,
+    0,
+  );
+  const lastPurchase = completedPurchases[0] ?? null;
 
   return (
     <PageContainer className="pb-28 sm:pb-6">
@@ -413,6 +474,122 @@ export function CustomersPage() {
 
       <Modal
         footer={
+          <Button
+            className="w-full sm:w-auto"
+            onClick={() => setSelectedPurchaseOrder(null)}
+            type="button"
+            variant="secondary"
+          >
+            Đóng
+          </Button>
+        }
+        onClose={() => setSelectedPurchaseOrder(null)}
+        open={Boolean(selectedPurchaseOrder)}
+        size="xl"
+        title={selectedPurchaseOrder ? `Hóa đơn ${selectedPurchaseOrder.code}` : "Chi tiết hóa đơn"}
+      >
+        {selectedPurchaseOrder ? (
+          <div className="space-y-4">
+            <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Thời gian</p>
+                <p className="mt-1 text-sm font-extrabold text-slate-900">
+                  {formatCustomerDate(selectedPurchaseOrder.createdAt, true)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Khách hàng</p>
+                <p className="mt-1 text-sm font-extrabold text-slate-900">
+                  {viewingCustomer?.name ?? "Khách lẻ"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Thanh toán</p>
+                <p className="mt-1 text-sm font-extrabold text-slate-900">
+                  {selectedPurchaseOrder.paymentMethod === "transfer" ? "Chuyển khoản" : "Tiền mặt"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Trạng thái</p>
+                <span className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${selectedPurchaseOrder.status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                  {selectedPurchaseOrder.status === "paid" ? "Đã thanh toán" : "Đã hủy"}
+                </span>
+              </div>
+            </div>
+
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+                <h3 className="text-sm font-black text-slate-900">
+                  Sản phẩm ({selectedPurchaseOrder.items.reduce((sum, item) => sum + item.quantity, 0)})
+                </h3>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {selectedPurchaseOrder.items.map((item) => (
+                  <div className="grid grid-cols-[56px_minmax(0,1fr)] gap-3 px-3 py-3 sm:grid-cols-[56px_minmax(0,1fr)_auto] sm:px-4" key={item.id}>
+                    <div className="h-14 w-14 overflow-hidden rounded-lg bg-slate-100 ring-1 ring-slate-200">
+                      {item.imageUrl ? (
+                        <img alt={item.productName} className="h-full w-full object-cover" src={item.imageUrl} />
+                      ) : (
+                        <div className="grid h-full place-items-center text-slate-300"><Package className="h-5 w-5" /></div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-slate-900">{item.productName}</p>
+                      <p className="mt-1 break-all text-xs font-bold text-slate-500">SKU: {item.sku || "Không có"}</p>
+                      {item.variantLabel ? <p className="mt-1 text-xs font-bold text-moss-700">{item.variantLabel}</p> : null}
+                      <p className="mt-1 text-xs font-semibold tabular-nums text-slate-500">
+                        {item.quantity} × {formatCurrency(item.unitPrice)}
+                      </p>
+                    </div>
+                    <p className="col-start-2 self-center text-left font-black tabular-nums text-slate-900 sm:col-start-auto sm:text-right">
+                      {formatCurrency(item.lineTotal)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <div className="rounded-xl bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3 text-sm font-bold text-slate-600">
+                <span>Tạm tính</span>
+                <span className="tabular-nums">{formatCurrency(selectedPurchaseOrder.subtotal)}</span>
+              </div>
+              {selectedPurchaseOrder.discount > 0 ? (
+                <div className="mt-2 flex items-center justify-between gap-3 text-sm font-bold text-emerald-700">
+                  <span>Giảm giá</span>
+                  <span className="tabular-nums">-{formatCurrency(selectedPurchaseOrder.discount)}</span>
+                </div>
+              ) : null}
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+                <span className="font-black text-slate-900">Tổng thanh toán</span>
+                <span className="text-lg font-black tabular-nums text-moss-800">{formatCurrency(selectedPurchaseOrder.total)}</span>
+              </div>
+              {selectedPurchaseOrder.paymentMethod === "cash" ? (
+                <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-200 pt-3 text-sm">
+                  <div><p className="font-semibold text-slate-500">Khách đưa</p><p className="mt-1 font-black tabular-nums text-slate-900">{formatCurrency(selectedPurchaseOrder.cashReceived)}</p></div>
+                  <div className="text-right"><p className="font-semibold text-slate-500">Tiền thừa</p><p className="mt-1 font-black tabular-nums text-slate-900">{formatCurrency(selectedPurchaseOrder.changeAmount)}</p></div>
+                </div>
+              ) : null}
+            </div>
+
+            {selectedPurchaseOrder.pointsRedeemed > 0 || selectedPurchaseOrder.pointsEarned > 0 ? (
+              <div className="grid gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm sm:grid-cols-2">
+                <p className="font-bold text-amber-900">Điểm đã dùng: {selectedPurchaseOrder.pointsRedeemed.toLocaleString("vi-VN")}</p>
+                <p className="font-bold text-emerald-800 sm:text-right">Điểm được cộng: {selectedPurchaseOrder.pointsEarned.toLocaleString("vi-VN")}</p>
+              </div>
+            ) : null}
+            {selectedPurchaseOrder.note ? (
+              <div className="rounded-xl border border-slate-200 px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Ghi chú hóa đơn</p>
+                <p className="mt-1 whitespace-pre-line text-sm font-semibold text-slate-700">{selectedPurchaseOrder.note}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button onClick={() => setViewingCustomer(null)} type="button" variant="secondary">
               Đóng
@@ -427,28 +604,53 @@ export function CustomersPage() {
         }
         onClose={() => setViewingCustomer(null)}
         open={Boolean(viewingCustomer)}
-        size="lg"
+        size="xl"
         title="Thông tin khách hàng"
       >
         {viewingCustomer ? (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div className="flex items-center gap-4 rounded-xl bg-slate-50 p-4">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-moss-100 text-lg font-black uppercase text-moss-800">
+                {viewingCustomer.name.trim().charAt(0) || "K"}
+              </span>
               <div className="min-w-0">
                 <h3 className="truncate text-xl font-extrabold text-slate-950">
                   {viewingCustomer.name}
                 </h3>
                 <p className="mt-1 text-sm font-semibold text-slate-500">
-                  Tạo ngày {new Intl.DateTimeFormat("vi-VN").format(new Date(viewingCustomer.created_at))}
+                  Tạo ngày {formatCustomerDate(viewingCustomer.created_at)}
                 </p>
-              </div>
-              <div className="ml-auto shrink-0 rounded-xl bg-amber-100 px-4 py-2 text-center text-amber-800">
-                <p className="text-xl font-extrabold tabular-nums">
-                  {(viewingCustomer.points ?? 0).toLocaleString("vi-VN")}
-                </p>
-                <p className="text-xs font-bold">điểm tích lũy</p>
               </div>
             </div>
-            <dl className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-xl bg-moss-50 px-3 py-3">
+                <p className="text-[10px] font-black uppercase tracking-wide text-moss-700">Đơn đã mua</p>
+                <p className="mt-1 text-lg font-black tabular-nums text-moss-900">{completedPurchases.length}</p>
+              </div>
+              <div className="rounded-xl bg-sky-50 px-3 py-3">
+                <p className="text-[10px] font-black uppercase tracking-wide text-sky-700">Tổng chi tiêu</p>
+                <p className="mt-1 truncate text-lg font-black tabular-nums text-sky-900" title={formatCurrency(customerTotalSpend)}>{formatCurrency(customerTotalSpend)}</p>
+              </div>
+              <div className="rounded-xl bg-amber-50 px-3 py-3">
+                <p className="text-[10px] font-black uppercase tracking-wide text-amber-700">Điểm hiện có</p>
+                <p className="mt-1 text-lg font-black tabular-nums text-amber-900">{(viewingCustomer.points ?? 0).toLocaleString("vi-VN")}</p>
+              </div>
+              <div className="rounded-xl bg-slate-100 px-3 py-3">
+                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Mua gần nhất</p>
+                <p className="mt-1 text-sm font-black text-slate-800">
+                  {lastPurchase?.createdAt
+                    ? formatCustomerDate(lastPurchase.createdAt)
+                    : "Chưa có"}
+                </p>
+              </div>
+            </div>
+
+            <section>
+              <div className="mb-2 flex items-center gap-2">
+                <h3 className="font-black text-slate-900">Thông tin liên hệ</h3>
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+              <dl className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
               <div className="grid gap-1 px-4 py-3 sm:grid-cols-[140px_1fr] sm:gap-4">
                 <dt className="text-xs font-extrabold uppercase tracking-wide text-slate-400">
                   Số điện thoại
@@ -481,7 +683,89 @@ export function CustomersPage() {
                   {viewingCustomer.note || "Chưa có"}
                 </dd>
               </div>
-            </dl>
+              </dl>
+            </section>
+
+            <section>
+              <div className="mb-2 flex items-center gap-2">
+                <ReceiptText className="h-4 w-4 text-moss-700" />
+                <h3 className="font-black text-slate-900">Lịch sử mua hàng</h3>
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+              {!canViewPurchaseHistory ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                  Tài khoản chưa có quyền xem lịch sử mua hàng của khách.
+                </div>
+              ) : purchaseHistoryLoading ? (
+                <div className="rounded-xl border border-slate-200 bg-white p-6">
+                  <Spinner label="Đang tải lịch sử mua hàng..." />
+                </div>
+              ) : purchaseHistoryError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                  {purchaseHistoryError}
+                </div>
+              ) : purchaseHistory.length === 0 ? (
+                <div className="grid min-h-36 place-items-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+                  <div>
+                    <Package className="mx-auto h-8 w-8 text-slate-300" />
+                    <p className="mt-2 text-sm font-extrabold text-slate-700">Khách chưa có đơn hàng</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">Các sản phẩm đã mua sẽ xuất hiện tại đây.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {purchaseHistory.map((order) => (
+                    <button
+                      className="block w-full overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:border-moss-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-500"
+                      key={order.id}
+                      onClick={() => setSelectedPurchaseOrder(order)}
+                      type="button"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2.5 sm:px-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-black text-slate-900">{order.code}</p>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${order.status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                              {order.status === "paid" ? "Đã thanh toán" : "Đã hủy"}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                            {formatCustomerDate(order.createdAt, true)}
+                            {" · "}{order.paymentMethod === "transfer" ? "Chuyển khoản" : "Tiền mặt"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-base font-black tabular-nums text-moss-800">{formatCurrency(order.total)}</p>
+                          <ChevronRight className="h-4 w-4 text-slate-400" />
+                        </div>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {order.items.map((item) => (
+                          <div className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:px-4" key={item.id}>
+                            <div className="h-[52px] w-[52px] overflow-hidden rounded-lg bg-slate-100 ring-1 ring-slate-200">
+                              {item.imageUrl ? (
+                                <img alt={item.productName} className="h-full w-full object-cover" src={item.imageUrl} />
+                              ) : (
+                                <div className="grid h-full place-items-center text-slate-300"><Package className="h-5 w-5" /></div>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-extrabold text-slate-900">{item.productName}</p>
+                              <p className="mt-0.5 truncate text-[11px] font-bold text-slate-500">SKU: {item.sku || "Không có"}</p>
+                              {item.variantLabel ? <p className="mt-0.5 truncate text-[11px] font-bold text-moss-700">{item.variantLabel}</p> : null}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-black tabular-nums text-slate-900">{formatCurrency(item.lineTotal)}</p>
+                              <p className="mt-0.5 text-[11px] font-bold tabular-nums text-slate-500">{item.quantity} × {formatCurrency(item.unitPrice)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         ) : null}
       </Modal>

@@ -156,19 +156,30 @@ export async function fetchOrders() {
           discount_amount: Number(redemption.discount_amount) || 0,
         })),
       customers: (customersResult.data ?? []).find((customer) => customer.id === order.customer_id) ?? null,
-      order_items: (itemsResult.data ?? []).filter((item) => item.order_id === order.id).map((item) => ({
-        ...item,
-        variant_key: item.variant_id ?? null,
-        variant_label: (() => {
+      order_items: (itemsResult.data ?? [])
+        .filter((item) => item.order_id === order.id)
+        .map((item) => {
           const product = productsById.get(String(item.product_id));
           const variant = product?.variants.find((candidate) => candidate.id === item.variant_id);
-          return product && variant
-            ? getVariantLabel(variant, product.variant_attributes)
-            : (item.variant_name ?? null);
-        })(),
-        variant_values: item.selected_values ?? null,
-        variant_source_values: null,
-      })),
+          const imageUrl =
+            product?.images.find((image) => image.variant_id === variant?.id)?.image_url ??
+            variant?.image_url ??
+            product?.images.find((image) => image.is_primary)?.image_url ??
+            product?.images[0]?.image_url ??
+            null;
+          return {
+            ...item,
+            image_url: imageUrl,
+            sku: String(item.sku ?? variant?.sku ?? "") || null,
+            variant_key: item.variant_id ?? null,
+            variant_label:
+              product && variant
+                ? getVariantLabel(variant, product.variant_attributes)
+                : (item.variant_name ?? null),
+            variant_values: item.selected_values ?? null,
+            variant_source_values: null,
+          };
+        }),
     })) as unknown as Awaited<ReturnType<typeof fetchLegacyOrders>>;
   } catch (engineError) {
     if (!(engineError instanceof Error) || !/selected_values|variant_name|schema cache|does not exist/i.test(engineError.message)) throw engineError;

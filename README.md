@@ -80,6 +80,8 @@ không chạy lại `schema.sql`. Hãy backup rồi chỉ chạy migration nâng
 trong `supabase/migrations`. Migration
 `202608140001_warehouse_product_audit.sql` bổ sung lịch sử tồn đầu kỳ, giữ tên/SKU
 sau khi ẩn sản phẩm và chặn ẩn sản phẩm vẫn còn tồn kho.
+Migration `20260815_customer_purchase_history.sql` bổ sung quyền đọc lịch sử mua hàng,
+ảnh sản phẩm và SKU trong hồ sơ khách hàng mà không làm mất dữ liệu hiện có.
 
 Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Staff.
 

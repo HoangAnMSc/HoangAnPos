@@ -40,11 +40,14 @@ import {
 
 type InvoiceItem = {
   id: string;
+  image_url?: string | null;
   product_id: string;
   batch_id: string | null;
   import_date: string | null;
   expiry_date: string | null;
   product_name: string;
+  reward_points_cost: number;
+  sku?: string | null;
   variant_key: string | null;
   variant_label: string | null;
   variant_values: Record<string, string | string[]> | null;
@@ -55,7 +58,7 @@ type InvoiceItem = {
   created_at: string;
 };
 
-type Invoice = OrderWithItems & {
+type Invoice = Omit<OrderWithItems, "order_items"> & {
   customers?: { address: string | null; name: string; phone: string | null } | null;
   order_items?: InvoiceItem[] | null;
   promotions?: ReceiptPromotion[];
@@ -713,7 +716,7 @@ export function OrdersPage() {
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-slate-100">
-              <div className="grid grid-cols-[minmax(0,1fr)_80px_120px] gap-3 bg-slate-50 px-4 py-3 text-sm font-extrabold text-slate-500">
+              <div className="grid grid-cols-[minmax(0,1fr)_52px_92px] gap-2 bg-slate-50 px-3 py-3 text-xs font-extrabold text-slate-500 sm:grid-cols-[minmax(0,1fr)_80px_120px] sm:gap-3 sm:px-4 sm:text-sm">
                 <span>Sản phẩm</span>
                 <span className="text-center">SL</span>
                 <span className="text-right">Thành tiền</span>
@@ -721,27 +724,39 @@ export function OrdersPage() {
               <div className="divide-y divide-slate-100">
                 {(selectedOrder.order_items ?? []).map((item) => (
                   <div
-                    className="grid grid-cols-[minmax(0,1fr)_80px_120px] gap-3 px-4 py-3"
+                    className="grid grid-cols-[minmax(0,1fr)_52px_92px] items-start gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_80px_120px] sm:gap-3 sm:px-4"
                     key={item.id}
                   >
-                    <div>
-                      <p className="font-bold text-slate-900">{item.product_name}</p>
-                      {item.variant_label ? (
-                        <p className="mt-1 text-xs font-extrabold text-moss-700">
-                          {item.variant_label}
+                    <div className="flex min-w-0 gap-3">
+                      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-100 ring-1 ring-slate-200">
+                        {item.image_url ? (
+                          <img alt={item.product_name} className="h-full w-full object-cover" src={item.image_url} />
+                        ) : (
+                          <div className="grid h-full place-items-center text-slate-300"><ImageIcon className="h-5 w-5" /></div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900">{item.product_name}</p>
+                        <p className="mt-1 break-all text-xs font-bold text-slate-500">
+                          SKU: {item.sku || item.variant_key || "Không có"}
                         </p>
-                      ) : null}
-                      <p className="mt-1 text-sm font-semibold text-slate-500">
-                        {item.reward_points_cost > 0
-                          ? `${item.reward_points_cost.toLocaleString("vi-VN")} điểm`
-                          : formatCurrency(item.unit_price)}
-                      </p>
-                      {item.import_date || item.expiry_date ? (
-                        <p className="mt-1 text-xs font-bold text-moss-600">
-                          Nhập {formatProductDate(item.import_date)} - HSD{" "}
-                          {formatProductDate(item.expiry_date)}
+                        {item.variant_label ? (
+                          <p className="mt-1 text-xs font-extrabold text-moss-700">
+                            {item.variant_label}
+                          </p>
+                        ) : null}
+                        <p className="mt-1 text-sm font-semibold text-slate-500">
+                          {item.reward_points_cost > 0
+                            ? `${item.reward_points_cost.toLocaleString("vi-VN")} điểm`
+                            : formatCurrency(item.unit_price)}
                         </p>
-                      ) : null}
+                        {item.import_date || item.expiry_date ? (
+                          <p className="mt-1 text-xs font-bold text-moss-600">
+                            Nhập {formatProductDate(item.import_date)} - HSD{" "}
+                            {formatProductDate(item.expiry_date)}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
                     <p className="text-center font-extrabold tabular-nums text-slate-900">
                       {item.quantity}

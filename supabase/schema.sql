@@ -4043,7 +4043,7 @@ CREATE POLICY "Managers can read order audit events" ON public.order_audit_event
 -- Name: orders Order viewers can read orders; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Order viewers can read orders" ON public.orders FOR SELECT USING ((public.has_permission('orders'::text) OR public.has_permission('revenue'::text)));
+CREATE POLICY "Order viewers can read orders" ON public.orders FOR SELECT USING ((public.has_permission('orders'::text) OR public.has_permission('revenue'::text) OR public.has_permission('customers.purchase-history.view'::text)));
 
 
 --
@@ -4229,7 +4229,7 @@ ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
 -- Name: order_items order_items_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY order_items_read ON public.order_items FOR SELECT TO authenticated USING ((public.has_permission('orders'::text) OR public.has_permission('revenue'::text) OR public.has_permission('pos'::text)));
+CREATE POLICY order_items_read ON public.order_items FOR SELECT TO authenticated USING ((public.has_permission('orders'::text) OR public.has_permission('revenue'::text) OR public.has_permission('pos'::text) OR public.has_permission('customers.purchase-history.view'::text)));
 
 
 --
@@ -4363,7 +4363,7 @@ CREATE POLICY product_images_insert ON public.product_images FOR INSERT TO authe
 -- Name: product_images product_images_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY product_images_read ON public.product_images FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_permission('products'::text) OR public.has_permission('pos'::text) OR public.has_permission('orders'::text) OR public.has_permission('warehouse'::text) OR public.has_permission('inventory'::text) OR public.has_permission('promotions'::text)));
+CREATE POLICY product_images_read ON public.product_images FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_permission('products'::text) OR public.has_permission('pos'::text) OR public.has_permission('orders'::text) OR public.has_permission('warehouse'::text) OR public.has_permission('inventory'::text) OR public.has_permission('promotions'::text) OR public.has_permission('customers.purchase-history.view'::text)));
 
 
 --
@@ -4594,7 +4594,7 @@ CREATE POLICY product_variants_insert ON public.product_variants FOR INSERT TO a
 -- Name: product_variants product_variants_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY product_variants_read ON public.product_variants FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_permission('products'::text) OR public.has_permission('pos'::text) OR public.has_permission('orders'::text) OR public.has_permission('warehouse'::text) OR public.has_permission('inventory'::text) OR public.has_permission('promotions'::text)));
+CREATE POLICY product_variants_read ON public.product_variants FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_permission('products'::text) OR public.has_permission('pos'::text) OR public.has_permission('orders'::text) OR public.has_permission('warehouse'::text) OR public.has_permission('inventory'::text) OR public.has_permission('promotions'::text) OR public.has_permission('customers.purchase-history.view'::text)));
 
 
 --
@@ -5557,6 +5557,7 @@ values
       'customers',
       'customers.create',
       'customers.update',
+      'customers.purchase-history.view',
       'customers.delete',
       'products',
       'products.create',
@@ -5621,6 +5622,7 @@ values
       'customers',
       'customers.create',
       'customers.update',
+      'customers.purchase-history.view',
       'products',
       'inventory',
       'inventory.count',

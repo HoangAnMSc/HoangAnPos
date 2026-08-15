@@ -2,7 +2,7 @@ import { Banknote, Bell, History, LogOut, Menu, PanelLeftClose, UserRound } from
 import { useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { appPermissions } from "../../lib/permissions";
+import { appNavigationSections, appPermissions } from "../../lib/permissions";
 import { formatCurrency } from "../../lib/format";
 import { Button } from "../ui/Button";
 
@@ -19,7 +19,6 @@ export function AdminLayout() {
   const page = appPermissions.find((item) => item.path === location.pathname) ?? appPermissions[0];
   const displayName = profile?.full_name || user?.email || "Admin";
   const isPosRoute = location.pathname === "/pos";
-  const visibleNavigation = appPermissions.filter((item) => canAccess(item.key));
   const currentPermission = appPermissions.find((item) => item.path === location.pathname);
   const isWarehouseRoute = location.pathname === "/warehouse";
   const isStatisticsRoute = location.pathname === "/revenue";
@@ -71,11 +70,11 @@ export function AdminLayout() {
   return (
     <div className="min-h-screen bg-[#f7f8f5] text-coal">
       <aside
-        className={`fixed inset-y-0 left-0 z-[90] flex h-dvh w-72 flex-col overflow-hidden border-r border-slate-200 bg-white p-5 text-coal shadow-[12px_0_35px_rgba(15,23,42,0.06)] transition-transform lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-[90] flex h-dvh w-72 flex-col overflow-hidden border-r border-slate-200 bg-white p-4 text-coal shadow-[12px_0_35px_rgba(15,23,42,0.06)] transition-transform lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="mb-6 flex shrink-0 items-center justify-between">
+        <div className="mb-4 flex shrink-0 items-center justify-between px-1">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.01em] text-moss-700">
               Sữa tả · Yến sào
@@ -91,24 +90,30 @@ export function AdminLayout() {
           </button>
         </div>
 
-        <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
-          {visibleNavigation.map((item) => (
-            <NavLink
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-extrabold transition ${
-                  isActive
-                    ? "bg-coal text-white shadow-lift"
-                    : "text-coal/68 hover:bg-slate-100 hover:text-coal"
-                }`
-              }
-              key={item.path}
-              onClick={() => setSidebarOpen(false)}
-              to={item.path}
-            >
-              <item.icon className="h-6 w-6" />
-              {item.label}
-            </NavLink>
-          ))}
+        <nav aria-label="Điều hướng chính" className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1">
+          {appNavigationSections
+            .flatMap((section) =>
+              section.keys
+                .map((key) => appPermissions.find((item) => item.key === key))
+                .filter((item): item is (typeof appPermissions)[number] => Boolean(item && canAccess(item.key))),
+            )
+            .map((item) => (
+              <NavLink
+                className={({ isActive }) =>
+                  `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-extrabold transition ${
+                    isActive
+                      ? "bg-coal text-white shadow-lift"
+                      : "text-coal/68 hover:bg-slate-100 hover:text-coal"
+                  }`
+                }
+                key={item.path}
+                onClick={() => setSidebarOpen(false)}
+                to={item.path}
+              >
+                <item.icon className="h-5 w-5 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </NavLink>
+            ))}
         </nav>
 
         <div className="mt-4 shrink-0 border-t border-slate-200 pt-4">
