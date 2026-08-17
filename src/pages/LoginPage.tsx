@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, KeyRound } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, KeyRound } from "lucide-react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -42,6 +42,7 @@ export function LoginPage() {
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [resetIdentifier, setResetIdentifier] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState("");
   const {
@@ -216,17 +217,31 @@ export function LoginPage() {
               required
               value={identifier}
             />
-            <Input
-              autoComplete="current-password"
-              label="Mật khẩu"
-              minLength={6}
-              name="password"
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="••••••••"
-              required
-              type="password"
-              value={password}
-            />
+            <div>
+              <span className="mb-2 block text-sm font-bold text-coal">Mật khẩu</span>
+              <div className="relative">
+                <Input
+                  aria-label="Mật khẩu"
+                  autoComplete="current-password"
+                  className="pr-12"
+                  minLength={6}
+                  name="password"
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="••••••••"
+                  required
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                />
+                <button
+                  aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                  className="absolute right-1.5 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-500"
+                  onClick={() => setShowPassword((current) => !current)}
+                  type="button"
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
 
             <button
               className="ml-auto block text-sm font-extrabold text-moss-700 transition hover:text-moss-900"

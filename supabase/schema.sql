@@ -5529,11 +5529,12 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES 
 -- Canonical application seed data
 -- ---------------------------------------------------------------------------
 
-insert into public.app_roles (name, code, description, permissions, is_active)
+insert into public.app_roles (name, code, color, description, permissions, is_active)
 values
   (
     'Admin',
     'admin',
+    '#d4a72c',
     'Toan quyen quan tri he thong.',
     array[
       'pos',
@@ -5606,8 +5607,9 @@ values
     true
   ),
   (
-    'Staff',
+    'Nhân viên bán hàng',
     'staff',
+    '#94a3b8',
     'Nhan vien ban hang mac dinh.',
     array[
       'pos',

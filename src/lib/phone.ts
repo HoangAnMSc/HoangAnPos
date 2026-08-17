@@ -22,7 +22,15 @@ export function formatPhoneNumber(value: string | null | undefined) {
     return "";
   }
 
-  return /^\+84\d+$/.test(value) ? `0${value.slice(3)}` : value;
+  const compact = value.trim().replace(/[\s().-]/g, "");
+  if (/^\+84\d+$/.test(compact)) {
+    return `0${compact.slice(3)}`;
+  }
+  if (/^84\d+$/.test(compact)) {
+    return `0${compact.slice(2)}`;
+  }
+
+  return compact;
 }
 
 export function isEmailIdentifier(value: string) {

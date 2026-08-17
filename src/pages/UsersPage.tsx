@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { ChevronRight, Edit3, Plus, Search, Trash2, UserCog } from "lucide-react";
+import { ChevronRight, Edit3, Eye, EyeOff, Plus, Search, Trash2, UserCog } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -114,11 +114,13 @@ function UserEditorModal({
 }: UserEditorModalProps) {
   const [error, setError] = useState("");
   const [form, setForm] = useState<UserFormState>(() => userToForm(user, roles));
+  const [showPassword, setShowPassword] = useState(false);
   const formId = user ? `user-form-${user.id}` : "user-form-create";
 
   useEffect(() => {
     setForm(userToForm(user, roles));
     setError("");
+    setShowPassword(false);
   }, [open, roles, user]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -177,7 +179,7 @@ function UserEditorModal({
             autoComplete="tel"
             label="Số điện thoại *"
             onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
-            placeholder="0901234567"
+            placeholder="0362123456"
             required
             type="tel"
             value={form.phone}
@@ -195,16 +197,32 @@ function UserEditorModal({
             onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))}
             value={form.full_name}
           />
-          <Input
-            autoComplete="new-password"
-            label={user ? "Mật khẩu mới (bỏ trống nếu không đổi)" : "Mật khẩu"}
-            minLength={6}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, password: event.target.value }))
-            }
-            type="password"
-            value={form.password}
-          />
+          <div>
+            <span className="mb-2 block text-sm font-bold text-coal">
+              {user ? "Mật khẩu mới (bỏ trống nếu không đổi)" : "Mật khẩu"}
+            </span>
+            <div className="relative">
+              <Input
+                aria-label={user ? "Mật khẩu mới" : "Mật khẩu"}
+                autoComplete="new-password"
+                className="pr-12"
+                minLength={6}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, password: event.target.value }))
+                }
+                type={showPassword ? "text" : "password"}
+                value={form.password}
+              />
+              <button
+                aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                className="absolute right-1.5 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-500"
+                onClick={() => setShowPassword((current) => !current)}
+                type="button"
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+          </div>
         </div>
 
         <label className="block">
@@ -436,7 +454,7 @@ export function UsersPage() {
                     className={`relative grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-l-4 px-4 py-4 text-left transition max-lg:overflow-hidden max-lg:rounded-2xl max-lg:border max-lg:border-l-4 max-lg:border-slate-200 max-lg:shadow-[0_4px_16px_rgba(15,23,42,0.05)] lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_32px] lg:px-5 ${user.is_active ? "bg-white hover:bg-slate-50" : "bg-white after:pointer-events-none after:absolute after:inset-0 after:bg-slate-300/50"}`}
                     key={user.id}
                     onClick={() => setViewingUser(user)}
-                    style={{ borderLeftColor: user.role?.code === "admin" ? "#d4a72c" : user.role?.code === "staff" ? "#94a3b8" : user.role?.color || "#8b5cf6" }}
+                    style={{ borderLeftColor: user.role?.color || "#8b5cf6" }}
                     type="button"
                   >
                     <div className="flex min-w-0 items-start gap-3">

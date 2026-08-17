@@ -46,7 +46,7 @@ function roleToForm(role?: AppRole | null): RoleFormState {
 
   return {
     code: role.code,
-    color: role.code === "admin" ? "#d4a72c" : role.code === "staff" ? "#94a3b8" : role.color || "#8b5cf6",
+    color: role.color || "#8b5cf6",
     description: role.description ?? "",
     is_active: role.is_active,
     name: role.name,
@@ -74,9 +74,13 @@ function getPermissionLabel(permission: string) {
 }
 
 const roleColorOptions = [
-  ["#d4a72c", "Gold"],
-  ["#8b5cf6", "Tím"], ["#0ea5e9", "Xanh dương"], ["#14b8a6", "Xanh ngọc"],
-  ["#f97316", "Cam"], ["#e11d48", "Đỏ hồng"], ["#64748b", "Xám"],
+  ["#d4a72c", "Vàng"],
+  ["#8b5cf6", "Tím"],
+  ["#0ea5e9", "Xanh dương"],
+  ["#14b8a6", "Xanh ngọc"],
+  ["#f97316", "Cam"],
+  ["#e11d48", "Đỏ hồng"],
+  ["#64748b", "Xám"],
 ] as const;
 
 type RoleEditorModalProps = {
@@ -239,16 +243,18 @@ function RoleEditorModal({
 
         <fieldset>
           <legend className="mb-2 text-sm font-extrabold text-slate-950">Màu nhận diện</legend>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          <div className="flex flex-wrap gap-3">
             {roleColorOptions.map(([color, label]) => (
-              <label className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border px-2 py-3 text-center text-xs font-bold transition ${form.color === color ? "border-slate-900 bg-slate-50" : "border-slate-200"}`} key={color}>
-                <input checked={form.color === color} className="sr-only" disabled={role?.code === "admin" || role?.code === "staff"} name="role-color" onChange={() => setForm((current) => ({ ...current, color }))} type="radio" value={color} />
-                <span className="h-5 w-5 rounded-full" style={{ backgroundColor: color }} />
-                <span className="truncate">{label}</span>
+              <label className="cursor-pointer rounded-full" key={color} title={label}>
+                <input checked={form.color === color} className="peer sr-only" name="role-color" onChange={() => setForm((current) => ({ ...current, color }))} type="radio" value={color} />
+                <span
+                  className="block h-9 w-9 rounded-full border-2 border-white shadow-sm ring-2 ring-transparent transition hover:scale-105 peer-checked:ring-slate-900 peer-focus-visible:ring-slate-900"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="sr-only">{label}</span>
               </label>
             ))}
           </div>
-          {role?.code === "admin" || role?.code === "staff" ? <p className="mt-2 text-xs font-semibold text-slate-500">Màu của vai trò hệ thống được cố định.</p> : null}
         </fieldset>
 
         <section>
@@ -553,7 +559,7 @@ export function RolesPage() {
                     className={`relative grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-l-4 px-4 py-4 text-left transition max-lg:overflow-hidden max-lg:rounded-2xl max-lg:border max-lg:border-l-4 max-lg:border-slate-200 max-lg:shadow-[0_4px_16px_rgba(15,23,42,0.05)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_32px] lg:px-5 ${role.is_active ? "bg-white hover:bg-slate-50" : "bg-white after:pointer-events-none after:absolute after:inset-0 after:bg-slate-300/50"}`}
                     key={role.id}
                     onClick={() => setViewingRole(role)}
-                    style={{ borderLeftColor: role.code === "admin" ? "#d4a72c" : role.code === "staff" ? "#94a3b8" : role.color || "#8b5cf6" }}
+                    style={{ borderLeftColor: role.color || "#8b5cf6" }}
                     type="button"
                   >
                     <div className="min-w-0">

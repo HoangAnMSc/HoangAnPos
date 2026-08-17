@@ -83,7 +83,7 @@ sau khi ẩn sản phẩm và chặn ẩn sản phẩm vẫn còn tồn kho.
 Migration `20260815_customer_purchase_history.sql` bổ sung quyền đọc lịch sử mua hàng,
 ảnh sản phẩm và SKU trong hồ sơ khách hàng mà không làm mất dữ liệu hiện có.
 
-Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Staff.
+Tài khoản trong **Authentication > Users** không bị xóa khi reset `public`. Schema luôn gán `hoanganmsc@gmail.com` làm Admin đang hoạt động; các tài khoản hiện có còn lại trở thành Nhân viên bán hàng.
 
 ### 5. Cấu hình email quên mật khẩu
 

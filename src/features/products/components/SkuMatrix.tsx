@@ -319,15 +319,20 @@ export function SkuMatrix({
                 {getVariantLabel(variant as never, attributes)}
               </p>
               <p className="truncate text-xs text-slate-500">
-                {variant.sku || "Chưa có SKU"} · Tồn {variant.stock_quantity}
+                {variant.sku || "Chưa có SKU"}
               </p>
             </div>
             <div className="shrink-0 text-right">
               <p className="text-sm font-black">
                 {formatIntegerInput(variant.base_price)} đ
               </p>
+              <p
+                className={`mt-0.5 text-[11px] font-extrabold tabular-nums ${variant.stock_quantity > 0 ? "text-moss-700" : "text-red-600"}`}
+              >
+                Tồn: {formatIntegerInput(variant.stock_quantity)}
+              </p>
               <span
-                className={`text-[11px] font-bold ${variant.is_active ? "text-emerald-700" : "text-slate-400"}`}
+                className={`block text-[11px] font-bold ${variant.is_active ? "text-emerald-700" : "text-slate-400"}`}
               >
                 {variant.is_active ? "Đang bán" : "Đã tắt"}
               </span>

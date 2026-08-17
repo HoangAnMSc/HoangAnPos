@@ -40,7 +40,7 @@ export async function createRole(input: RoleInput) {
   const payload = {
     ...input,
     code: normalizedCode,
-    color: normalizedCode === "admin" ? "#d4a72c" : normalizedCode === "staff" ? "#94a3b8" : input.color,
+    color: input.color,
     description: input.description?.trim() || null,
     name: input.name.trim(),
   };
@@ -65,7 +65,7 @@ export async function updateRole(id: string, input: RoleInput) {
   const payload = {
     ...input,
     code: normalizedCode,
-    color: normalizedCode === "admin" ? "#d4a72c" : normalizedCode === "staff" ? "#94a3b8" : input.color,
+    color: input.color,
     description: input.description?.trim() || null,
     name: input.name.trim(),
   };

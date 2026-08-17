@@ -250,6 +250,35 @@ type ProductEditorDraft = {
   hasVariants: boolean;
   dirtyDimensions: boolean;
 };
+
+function productUsesVariants(product: Product) {
+  return (
+    product.variant_attributes.length > 0 ||
+    product.variants.some(
+      (variant) => variant.is_active && variant.value_ids.length > 0,
+    )
+  );
+}
+
+function getSimpleProductVariant(product: Product) {
+  return (
+    product.variants.find(
+      (variant) =>
+        variant.is_active &&
+        variant.is_default &&
+        variant.value_ids.length === 0,
+    ) ??
+    product.variants.find(
+      (variant) => variant.is_active && variant.value_ids.length === 0,
+    ) ??
+    product.variants.find(
+      (variant) => variant.is_default && variant.value_ids.length === 0,
+    ) ??
+    product.variants.find((variant) => variant.value_ids.length === 0) ??
+    product.variants[0]
+  );
+}
+
 const editorGuides: Record<EditorTab, { title: string; description: string }> = {
   general: {
     title: "Thông tin & hình ảnh",
@@ -492,20 +521,24 @@ export function ProductPage() {
   );
   function edit(product: Product) {
     if (!canUpdateProduct && !canDeleteProduct) return;
+    const usesVariants = productUsesVariants(product);
+    const simpleVariant = getSimpleProductVariant(product);
     setViewingProduct(null);
     setForm({
       ...product,
       specifications: product.specifications,
       variant_attributes: product.variant_attributes,
-      variants: product.variants,
+      variants: usesVariants
+        ? product.variants
+        : simpleVariant
+          ? [{ ...simpleVariant, is_default: true, value_ids: [] }]
+          : emptyInput().variants,
       images: [...product.images].sort(
         (first, second) => Number(second.is_primary) - Number(first.is_primary),
       ),
     });
     setEditorTab("general");
-    setHasVariants(
-      product.variant_attributes.length > 0 || product.variants.length > 1,
-    );
+    setHasVariants(usesVariants);
     setDirtyDimensions(false);
     setOpen(true);
   }
@@ -2003,11 +2036,13 @@ function ProductDetailModal({
 }) {
   if (!product) return null;
 
-  const hasProductVariants =
-    product.variant_attributes.length > 0 || product.variants.length > 1;
+  const hasProductVariants = productUsesVariants(product);
+  const simpleVariant = getSimpleProductVariant(product);
   const displayedVariants = hasProductVariants
     ? product.variants.filter((variant) => variant.value_ids.length > 0)
-    : product.variants;
+    : simpleVariant
+      ? [simpleVariant]
+      : [];
   const activeVariants = displayedVariants.filter((variant) => variant.is_active);
   const totalStock = activeVariants.reduce(
     (sum, variant) => sum + variant.stock_quantity,
