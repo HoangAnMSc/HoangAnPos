@@ -2010,7 +2010,45 @@ export function PosPage() {
                       </div>
                     ) : null}
                   </section>
-                ) : null}
+                ) : (
+                  <section className="overflow-hidden rounded-2xl border border-dashed border-moss-200 bg-white shadow-[0_10px_28px_rgba(57,67,46,0.06)]">
+                    <div className="flex min-h-[300px] flex-col items-center justify-center px-6 py-10 text-center sm:min-h-[360px]">
+                      <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-moss-50 text-moss-600 ring-8 ring-moss-50/60">
+                        <PackageSearch className="h-10 w-10 stroke-[1.7]" />
+                      </div>
+                      <h2 className="mt-6 text-xl font-black text-slate-900">
+                        {activeProducts.length === 0
+                          ? "Chưa có sản phẩm đang bán"
+                          : availableProductCount === 0
+                            ? "Chưa có sản phẩm sẵn sàng bán"
+                            : "Danh mục này chưa có sản phẩm"}
+                      </h2>
+                      <p className="mt-2 max-w-md text-sm font-semibold leading-6 text-slate-500">
+                        {activeProducts.length === 0
+                          ? "Hãy đăng bán sản phẩm để chúng xuất hiện tại khu vực bán hàng POS."
+                          : availableProductCount === 0
+                            ? "Các sản phẩm đang bán hiện không còn tồn khả dụng. Hãy cập nhật tồn kho để tiếp tục bán hàng."
+                            : "Hãy chọn danh mục khác hoặc xem lại toàn bộ sản phẩm đang có hàng."}
+                      </p>
+                      {selectedProductCategory !== "all" && availableProductCount > 0 ? (
+                        <button
+                          className="mt-5 rounded-xl bg-moss-700 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-moss-800"
+                          onClick={() => setSelectedProductCategory("all")}
+                          type="button"
+                        >
+                          Xem tất cả sản phẩm
+                        </button>
+                      ) : activeProducts.length === 0 && canAccess("products") ? (
+                        <Link
+                          className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-moss-700 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-moss-800"
+                          to="/products"
+                        >
+                          Đi đến trang Sản phẩm
+                        </Link>
+                      ) : null}
+                    </div>
+                  </section>
+                )}
 
                 <section
                   className="hidden scroll-mt-32 overflow-hidden rounded-2xl bg-white shadow-[0_10px_28px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/80 xl:block"

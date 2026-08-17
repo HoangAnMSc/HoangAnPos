@@ -9,6 +9,7 @@ import type {
   ProductType,
   ProductTypeAttribute,
   ProductVariant,
+  ProductStatus,
   VariantAttribute,
   VariantValue,
 } from "../types";
@@ -396,6 +397,30 @@ export async function archiveProduct(productId: string) {
     product_id_input: productId,
   });
   throwIfError(error);
+}
+
+export async function updateProductStatus(
+  productId: string,
+  status: ProductStatus,
+) {
+  if (status === "active" || status === "inactive") {
+    const { data, error } = await productEngineClient.rpc("set_product_active", {
+      is_active_input: status === "active",
+      product_id_input: productId,
+    });
+    throwIfError(error);
+    return data;
+  }
+
+  const { data, error } = await productEngineClient
+    .from("products")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", productId)
+    .is("deleted_at", null)
+    .select("*")
+    .single();
+  throwIfError(error);
+  return data;
 }
 
 export async function adjustVariantStock(

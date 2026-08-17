@@ -43,6 +43,10 @@ type EngineDatabase = {
         Args: { product_id_input: string };
         Returns: BaseRow;
       };
+      set_product_active: {
+        Args: { product_id_input: string; is_active_input: boolean };
+        Returns: BaseRow;
+      };
       evaluate_promotions: {
         Args: {
           items_input: Json;

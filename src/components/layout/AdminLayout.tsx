@@ -1,4 +1,4 @@
-import { Banknote, Bell, History, LogOut, Menu, PanelLeftClose, UserRound } from "lucide-react";
+import { Banknote, Barcode, Bell, History, LogOut, Menu, PanelLeftClose, UserRound } from "lucide-react";
 import { useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -23,6 +23,7 @@ export function AdminLayout() {
   const isWarehouseRoute = location.pathname === "/warehouse";
   const isStatisticsRoute = location.pathname === "/revenue";
   const isOrdersRoute = location.pathname === "/orders";
+  const isProductsRoute = location.pathname === "/products";
   const canOpenPageHistory =
     isWarehouseRoute ||
     (isStatisticsRoute && (canAccess("cash-management.history.view") || canAccess("cash-management.reconciliation.update") || canAccess("cash-management.reconciliation.delete")));
@@ -33,6 +34,7 @@ export function AdminLayout() {
     new URLSearchParams(location.search).get("transfer-history") === "1" ||
     new URLSearchParams(location.search).get("transfer-images") === "1"
   );
+  const ean13LabelsOpen = isProductsRoute && new URLSearchParams(location.search).get("ean13-labels") === "1";
   const historyLabel = isWarehouseRoute
     ? "Mở lịch sử kho"
     : "Mở lịch sử đối soát két";
@@ -59,6 +61,12 @@ export function AdminLayout() {
     void navigate(`${location.pathname}?${nextParams.toString()}`);
   }
 
+  function openEan13Labels() {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.set("ean13-labels", "1");
+    void navigate(`${location.pathname}?${nextParams.toString()}`);
+  }
+
   if (profile?.is_active === false) {
     return <Navigate replace to="/unauthorized" />;
   }
@@ -70,11 +78,11 @@ export function AdminLayout() {
   return (
     <div className="min-h-screen bg-[#f7f8f5] text-coal">
       <aside
-        className={`fixed inset-y-0 left-0 z-[90] flex h-dvh w-72 flex-col overflow-hidden border-r border-slate-200 bg-white p-4 text-coal shadow-[12px_0_35px_rgba(15,23,42,0.06)] transition-transform lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-[90] flex h-dvh w-72 flex-col overflow-hidden border-r border-slate-200 bg-white p-5 text-coal shadow-[12px_0_35px_rgba(15,23,42,0.06)] transition-transform lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="mb-4 flex shrink-0 items-center justify-between px-1">
+        <div className="mb-6 flex shrink-0 items-center justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.01em] text-moss-700">
               Sữa tả · Yến sào
@@ -90,7 +98,7 @@ export function AdminLayout() {
           </button>
         </div>
 
-        <nav aria-label="Điều hướng chính" className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1">
+        <nav aria-label="Điều hướng chính" className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
           {appNavigationSections
             .flatMap((section) =>
               section.keys
@@ -100,7 +108,7 @@ export function AdminLayout() {
             .map((item) => (
               <NavLink
                 className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-extrabold transition ${
+                  `flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-extrabold transition ${
                     isActive
                       ? "bg-coal text-white shadow-lift"
                       : "text-coal/68 hover:bg-slate-100 hover:text-coal"
@@ -110,8 +118,8 @@ export function AdminLayout() {
                 onClick={() => setSidebarOpen(false)}
                 to={item.path}
               >
-                <item.icon className="h-5 w-5 shrink-0" />
-                <span className="truncate">{item.label}</span>
+                <item.icon className="h-6 w-6" />
+                {item.label}
               </NavLink>
             ))}
         </nav>
@@ -174,6 +182,23 @@ export function AdminLayout() {
                     {page.description}
                   </p>
                 </div>
+                {isProductsRoute && canAccess("products.ean13.print") ? (
+                  <button
+                    aria-expanded={ean13LabelsOpen}
+                    aria-haspopup="dialog"
+                    aria-label="In tem EAN-13"
+                    className={`ml-auto flex h-11 w-11 flex-none items-center justify-center rounded-xl ring-1 transition ${
+                      ean13LabelsOpen
+                        ? "bg-coal text-white ring-coal"
+                        : "bg-white text-coal shadow-soft ring-slate-200 hover:bg-slate-50"
+                    }`}
+                    onClick={openEan13Labels}
+                    title="In tem EAN-13"
+                    type="button"
+                  >
+                    <Barcode className="h-5 w-5" />
+                  </button>
+                ) : null}
                 {isOrdersRoute ? (
                   <button
                     aria-expanded={transferHistoryOpen}

@@ -17,9 +17,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { CloudinaryImageField } from "../components/media/CloudinaryImageField";
 import { Ean13LabelsModal } from "../components/products/Ean13LabelsModal";
 import { Ean13PickerModal } from "../components/products/Ean13PickerModal";
+import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { ConfigurableProductCard } from "../components/products/ConfigurableProductCard";
 import { productCardPreviewData } from "../components/products/productCardPreview";
 import { Button } from "../components/ui/Button";
@@ -52,6 +54,7 @@ import {
   saveProduct,
   saveProductType,
   saveProductTypeAttributes,
+  updateProductStatus,
 } from "../features/products/services/productEngine";
 import type {
   AttributeDataType,
@@ -190,19 +193,25 @@ function ProductSectionSelect({
 }
 
 function ProductSearchPopup({
+  children,
   onChange,
   onClose,
+  onScan,
   open,
   placeholder,
   title,
   value,
+  showInput = true,
 }: {
+  children?: React.ReactNode;
   onChange: (value: string) => void;
   onClose: () => void;
+  onScan?: () => void;
   open: boolean;
   placeholder: string;
   title: string;
   value: string;
+  showInput?: boolean;
 }) {
   return (
     <Modal
@@ -213,27 +222,98 @@ function ProductSearchPopup({
       title={title}
       zIndex={105}
     >
-      <label className="relative block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-        <input
-          autoFocus
-          className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-10 text-sm outline-none transition focus:border-moss-500 focus:bg-white focus:ring-2 focus:ring-moss-100"
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          value={value}
-        />
-        {value ? (
+      {showInput ? <div className="flex gap-2">
+        <label className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            autoFocus
+            className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-10 text-sm outline-none transition focus:border-moss-500 focus:bg-white focus:ring-2 focus:ring-moss-100"
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={placeholder}
+            value={value}
+          />
+          {value ? (
+            <button
+              aria-label="Xóa nội dung tìm kiếm"
+              className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"
+              onClick={() => onChange("")}
+              type="button"
+            >
+              ×
+            </button>
+          ) : null}
+        </label>
+        {onScan ? (
+          <Button aria-label="Quét EAN-13" className="h-12 min-h-12 shrink-0 px-3" onClick={onScan} title="Quét EAN-13" variant="secondary">
+            <Barcode className="h-4 w-4" />
+            <span className="hidden sm:inline">Quét</span>
+          </Button>
+        ) : null}
+      </div> : null}
+      {children}
+    </Modal>
+  );
+}
+
+function ProductSearchFilter({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: Array<{ label: string; value: string }>;
+  value: string;
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500">{label}</p>
+      <div className="scrollbar-none -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {options.map((option) => (
           <button
-            aria-label="Xóa nội dung tìm kiếm"
-            className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"
-            onClick={() => onChange("")}
+            aria-pressed={value === option.value}
+            className={`h-9 shrink-0 rounded-full px-3 text-xs font-extrabold transition ${value === option.value ? "bg-coal text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+            key={option.value}
+            onClick={() => onChange(option.value)}
             type="button"
           >
-            ×
+            {option.label}
           </button>
-        ) : null}
-      </label>
-    </Modal>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QuickStatusButton({
+  active,
+  disabled,
+  label,
+  onClick,
+  tone,
+}: {
+  active: boolean;
+  disabled: boolean;
+  label: string;
+  onClick: () => void;
+  tone: ProductStatus;
+}) {
+  const activeClass = tone === "active"
+    ? "border-emerald-600 bg-emerald-600 text-white"
+    : tone === "draft"
+      ? "border-amber-500 bg-amber-500 text-white"
+      : "border-slate-700 bg-slate-700 text-white";
+  return (
+    <button
+      aria-pressed={active}
+      className={`h-8 rounded-lg border px-2 text-[11px] font-extrabold transition disabled:cursor-wait disabled:opacity-50 ${active ? activeClass : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
   );
 }
 type EditorTab = "general" | "specifications" | "variants" | "images" | "seo";
@@ -390,10 +470,12 @@ const emptyInput = (ean13: string | null = null): ProductEditorInput => ({
 export function ProductPage() {
   const { alertAction, confirmAction, showSuccess } = useActionNotice();
   const { canAccess, user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const canCreateProduct = canAccess("products.create");
   const canUpdateProduct = canAccess("products.update");
+  const canToggleProductStatus = canAccess("products.toggle-active");
   const canDeleteProduct = canAccess("products.delete");
-  const canPrintEan13 = canAccess("products.ean13.print");
   const canManageProductTypes =
     canAccess("products.types.manage") || canUpdateProduct;
   const canManageProductAttributes =
@@ -412,6 +494,12 @@ export function ProductPage() {
     defaultProductSettings,
   );
   const [query, setQuery] = useState("");
+  const [productTypeFilter, setProductTypeFilter] = useState("all");
+  const [productStatusFilter, setProductStatusFilter] = useState<ProductStatus | "all">("all");
+  const [productScannerOpen, setProductScannerOpen] = useState(false);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [form, setForm] = useState<ProductEditorInput>(emptyInput());
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
@@ -459,6 +547,9 @@ export function ProductPage() {
     void load();
   }, [load]);
   useEffect(() => {
+    setEan13LabelsOpen(new URLSearchParams(location.search).get("ean13-labels") === "1");
+  }, [location.search]);
+  useEffect(() => {
     const saved = readLocalDraft<unknown>(guideKey, false);
     setGuideDismissed(
       saved === true || (Array.isArray(saved) && saved.length > 0),
@@ -483,15 +574,76 @@ export function ProductPage() {
       dirtyDimensions,
     } satisfies ProductEditorDraft);
   }, [dirtyDimensions, draftKey, editorTab, form, hasVariants, open, restoredDraftKey]);
-  const filtered = useMemo(
-    () =>
-      products.filter((product) =>
-        `${product.name} ${product.slug} ${product.variants.map((variant) => variant.sku).join(" ")}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      ),
-    [products, query],
-  );
+  const filtered = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase("vi");
+    return products.filter((product) => {
+      const searchableText = [
+        product.name,
+        product.slug,
+        product.product_type?.name,
+        ...product.variants.flatMap((variant) => [variant.sku, variant.barcode]),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("vi");
+      const matchesQuery = !normalizedQuery || searchableText.includes(normalizedQuery);
+      const matchesType = productTypeFilter === "all" ||
+        (productTypeFilter === "uncategorized"
+          ? !product.product_type_id
+          : product.product_type_id === productTypeFilter);
+      const matchesStatus = productStatusFilter === "all" || product.status === productStatusFilter;
+      return matchesQuery && matchesType && matchesStatus;
+    });
+  }, [productStatusFilter, productTypeFilter, products, query]);
+  const productTypeFilters = useMemo(() => {
+    const usedTypeIds = new Set(products.map((product) => product.product_type_id).filter(Boolean));
+    return types.filter((type) => usedTypeIds.has(type.id));
+  }, [products, types]);
+
+  function toggleProductSelection(productId: string) {
+    setSelectedProductIds((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+  }
+
+  function handleProductEanDetected(code: string) {
+    setQuery(code);
+    setProductTypeFilter("all");
+    setProductStatusFilter("all");
+    setProductScannerOpen(false);
+    setProductSearchOpen(true);
+  }
+
+  async function bulkUpdateStatus(status: ProductStatus) {
+    if (!selectedProductIds.size || updatingStatusId) return;
+    if (!canUpdateProduct && (!canToggleProductStatus || status === "draft")) return;
+    const selected = products.filter((product) => selectedProductIds.has(product.id));
+    setUpdatingStatusId("bulk");
+    try {
+      await Promise.all(selected.map((product) => updateProductStatus(product.id, status)));
+      const updatedAt = new Date().toISOString();
+      setProducts((current) => current.map((product) =>
+        selectedProductIds.has(product.id) ? { ...product, status, updated_at: updatedAt } : product,
+      ));
+      showSuccess(`Đã chuyển ${selected.length} sản phẩm sang ${formatProductStatus(status).toLocaleLowerCase("vi")}.`);
+      setSelectedProductIds(new Set());
+      setSelectionMode(false);
+    } catch (reason) {
+      setError(getErrorMessage(reason, "Không thể cập nhật trạng thái sản phẩm."));
+      await load();
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  }
+
+  function closeEan13Labels() {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.delete("ean13-labels");
+    void navigate(`${location.pathname}${nextParams.size ? `?${nextParams.toString()}` : ""}`, { replace: true });
+  }
   const guideVisible = !guideDismissed;
   function dismissCurrentGuide() {
     setGuideDismissed(true);
@@ -991,7 +1143,7 @@ export function ProductPage() {
   }
   const editorStepIndex = editorSteps.findIndex(([key]) => key === editorTab);
   return (
-    <div className="mx-auto max-w-[1500px] space-y-4 px-3 pb-28 sm:px-6 lg:px-8">
+    <div className={`mx-auto max-w-[1500px] space-y-4 px-3 sm:px-6 lg:px-8 ${selectionMode && selectedProductIds.size ? "pb-44" : "pb-28"}`}>
       {error ? (
         <div className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">
           {error}
@@ -1005,12 +1157,23 @@ export function ProductPage() {
           <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_32px_rgba(15,23,42,0.12)] backdrop-blur-xl lg:left-72">
             <div className="mx-auto flex max-w-4xl items-center gap-2">
             <ProductSectionSelect onChange={setPageTab} value={pageTab} />
-            {canPrintEan13 ? <Button aria-label="In tem EAN-13 toàn bộ sản phẩm" className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setEan13LabelsOpen(true)} title="In tem EAN-13" variant="secondary">
-              <Barcode className="h-4 w-4" />
-            </Button> : null}
-            <Button aria-label="Tìm sản phẩm" className="relative h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setProductSearchOpen(true)} variant="secondary">
+            {(canUpdateProduct || canToggleProductStatus) ? (
+              <Button
+                aria-pressed={selectionMode}
+                className="h-12 min-h-12 shrink-0 px-3 sm:min-w-[88px]"
+                onClick={() => {
+                  setSelectionMode((current) => !current);
+                  setSelectedProductIds(new Set());
+                }}
+                variant={selectionMode ? "primary" : "secondary"}
+              >
+                <CircleCheck className="h-4 w-4" />
+                <span>{selectionMode ? "Hủy" : "Chọn"}</span>
+              </Button>
+            ) : null}
+            <Button aria-label="Lọc sản phẩm" className="relative h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setProductSearchOpen(true)} title="Lọc sản phẩm" variant="secondary">
               <Search className="h-4 w-4" />
-              {query ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-moss-600" /> : null}
+              {query || productTypeFilter !== "all" || productStatusFilter !== "all" ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-moss-600" /> : null}
             </Button>
             {canCreateProduct ? <Button aria-label="Thêm sản phẩm" className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setEan13GateOpen(true)}>
               <Plus className="h-4 w-4" />
@@ -1129,12 +1292,28 @@ export function ProductPage() {
                 {filtered.map((product) => (
                   <ProductAdminCard
                     key={product.id}
-                    onView={() => setViewingProduct(product)}
+                    onView={() => selectionMode ? toggleProductSelection(product.id) : setViewingProduct(product)}
                     product={product}
+                    selected={selectedProductIds.has(product.id)}
                     settings={productSettings.card}
                   />
                 ))}
               </div>
+              {selectionMode && selectedProductIds.size ? (
+                <div className="pointer-events-none fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 px-3 lg:left-72">
+                  <div className="pointer-events-auto mx-auto flex max-w-4xl items-center gap-1.5 rounded-2xl border border-white/10 bg-coal p-2 shadow-[0_16px_40px_rgba(15,23,42,0.28)] sm:gap-2 sm:p-2.5">
+                    <div className="mr-auto flex min-w-0 items-center gap-2 pl-1.5 pr-1 text-white">
+                      <CircleCheck className="h-4 w-4 shrink-0 text-moss-200" />
+                      <p className="truncate text-xs font-extrabold sm:text-sm">
+                        <strong className="text-white">{selectedProductIds.size}</strong> sản phẩm
+                      </p>
+                    </div>
+                    <QuickStatusButton active={false} disabled={Boolean(updatingStatusId)} label="Bán" onClick={() => void bulkUpdateStatus("active")} tone="active" />
+                    {canUpdateProduct ? <QuickStatusButton active={false} disabled={Boolean(updatingStatusId)} label="Nháp" onClick={() => void bulkUpdateStatus("draft")} tone="draft" /> : null}
+                    <QuickStatusButton active={false} disabled={Boolean(updatingStatusId)} label="Ẩn" onClick={() => void bulkUpdateStatus("inactive")} tone="inactive" />
+                  </div>
+                </div>
+              ) : null}
               <div className="!hidden grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filtered.slice(0, 0).map((product) => {
                   const active = product.variants.filter(
@@ -1270,11 +1449,59 @@ export function ProductPage() {
       <ProductSearchPopup
         onChange={setQuery}
         onClose={() => setProductSearchOpen(false)}
+        onScan={() => {
+          setProductSearchOpen(false);
+          setProductScannerOpen(true);
+        }}
         open={productSearchOpen}
-        placeholder="Tìm theo tên, slug hoặc SKU..."
+        placeholder="Tên, SKU hoặc EAN-13..."
         title="Tìm sản phẩm"
         value={query}
-      />
+      >
+        <div className="mt-4 space-y-4">
+          <ProductSearchFilter
+            label="Danh mục"
+            onChange={setProductTypeFilter}
+            options={[
+              { label: "Tất cả", value: "all" },
+              ...productTypeFilters.map((type) => ({ label: type.name, value: type.id })),
+              ...(products.some((product) => !product.product_type_id)
+                ? [{ label: "Chưa phân loại", value: "uncategorized" }]
+                : []),
+            ]}
+            value={productTypeFilter}
+          />
+          <ProductSearchFilter
+            label="Trạng thái"
+            onChange={(value) => setProductStatusFilter(value as ProductStatus | "all")}
+            options={[
+              { label: "Tất cả", value: "all" },
+              { label: "Đang bán", value: "active" },
+              { label: "Bản nháp", value: "draft" },
+              { label: "Đã ẩn", value: "inactive" },
+            ]}
+            value={productStatusFilter}
+          />
+          <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+            <p className="text-xs font-bold text-slate-500">
+              <strong className="text-slate-950">{filtered.length}</strong> sản phẩm phù hợp
+            </p>
+            {query || productTypeFilter !== "all" || productStatusFilter !== "all" ? (
+              <button
+                className="text-xs font-extrabold text-moss-700 hover:text-moss-900"
+                onClick={() => {
+                  setQuery("");
+                  setProductTypeFilter("all");
+                  setProductStatusFilter("all");
+                }}
+                type="button"
+              >
+                Xóa bộ lọc
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </ProductSearchPopup>
       <Modal
         footer={
           <div className={`grid w-full gap-2 sm:flex sm:w-auto sm:items-center ${form.id ? "grid-cols-4" : "grid-cols-3"}`}>
@@ -1885,9 +2112,19 @@ export function ProductPage() {
         usedCodes={usedEan13Codes}
       />
       <Ean13LabelsModal
-        onClose={() => setEan13LabelsOpen(false)}
+        onClose={closeEan13Labels}
         open={ean13LabelsOpen}
         products={products}
+      />
+      <Ean13ScannerModal
+        description="Quét EAN-13 để tìm nhanh sản phẩm trong danh sách."
+        onClose={() => {
+          setProductScannerOpen(false);
+          setProductSearchOpen(true);
+        }}
+        onDetected={handleProductEanDetected}
+        open={productScannerOpen}
+        title="Quét EAN-13 sản phẩm"
       />
     </div>
   );
@@ -2229,10 +2466,12 @@ function ProductDetailMetric({ label, value }: { label: string; value: string })
 function ProductAdminCard({
   onView,
   product,
+  selected,
   settings,
 }: {
   onView: () => void;
   product: Product;
+  selected?: boolean;
   settings: ProductCardSettings;
 }) {
   const active = product.variants.filter((variant) => variant.is_active);
@@ -2260,6 +2499,7 @@ function ProductAdminCard({
       name={product.name}
       onActivate={onView}
       price={minPrice}
+      selected={selected}
       settings={settings}
       stock={stock}
       variantCount={active.length}
