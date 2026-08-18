@@ -287,31 +287,34 @@ function ProductSearchFilter({
 }
 
 function QuickStatusButton({
-  active,
   disabled,
   label,
   onClick,
   tone,
 }: {
-  active: boolean;
   disabled: boolean;
   label: string;
   onClick: () => void;
   tone: ProductStatus;
 }) {
-  const activeClass = tone === "active"
-    ? "border-emerald-600 bg-emerald-600 text-white"
+  const toneClass = tone === "active"
+    ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
     : tone === "draft"
-      ? "border-amber-500 bg-amber-500 text-white"
-      : "border-slate-700 bg-slate-700 text-white";
+      ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
+      : "bg-red-50 text-red-700 hover:bg-red-100";
+  const dotClass = tone === "active"
+    ? "bg-emerald-500"
+    : tone === "draft"
+      ? "bg-amber-500"
+      : "bg-red-500";
   return (
     <button
-      aria-pressed={active}
-      className={`h-8 rounded-lg border px-2 text-[11px] font-extrabold transition disabled:cursor-wait disabled:opacity-50 ${active ? activeClass : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+      className={`flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-extrabold transition disabled:cursor-wait disabled:opacity-50 ${toneClass}`}
       disabled={disabled}
       onClick={onClick}
       type="button"
     >
+      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
       {label}
     </button>
   );
@@ -599,12 +602,26 @@ export function ProductPage() {
     const usedTypeIds = new Set(products.map((product) => product.product_type_id).filter(Boolean));
     return types.filter((type) => usedTypeIds.has(type.id));
   }, [products, types]);
+  const allFilteredProductsSelected = filtered.length > 0 &&
+    filtered.every((product) => selectedProductIds.has(product.id));
 
   function toggleProductSelection(productId: string) {
     setSelectedProductIds((current) => {
       const next = new Set(current);
       if (next.has(productId)) next.delete(productId);
       else next.add(productId);
+      return next;
+    });
+  }
+
+  function toggleAllFilteredProducts() {
+    setSelectedProductIds((current) => {
+      const next = new Set(current);
+      if (allFilteredProductsSelected) {
+        filtered.forEach((product) => next.delete(product.id));
+      } else {
+        filtered.forEach((product) => next.add(product.id));
+      }
       return next;
     });
   }
@@ -621,6 +638,15 @@ export function ProductPage() {
     if (!selectedProductIds.size || updatingStatusId) return;
     if (!canUpdateProduct && (!canToggleProductStatus || status === "draft")) return;
     const selected = products.filter((product) => selectedProductIds.has(product.id));
+    const statusLabel = formatProductStatus(status);
+    const confirmed = await confirmAction({
+      cancelLabel: "Hủy",
+      confirmLabel: `Chuyển sang ${statusLabel}`,
+      message: `Bạn sắp chuyển ${selected.length} sản phẩm sang trạng thái “${statusLabel}”.`,
+      title: "Xác nhận đổi trạng thái",
+      tone: status === "inactive" ? "danger" : status === "active" ? "success" : "default",
+    });
+    if (!confirmed) return;
     setUpdatingStatusId("bulk");
     try {
       await Promise.all(selected.map((product) => updateProductStatus(product.id, status)));
@@ -1143,7 +1169,7 @@ export function ProductPage() {
   }
   const editorStepIndex = editorSteps.findIndex(([key]) => key === editorTab);
   return (
-    <div className={`mx-auto max-w-[1500px] space-y-4 px-3 sm:px-6 lg:px-8 ${selectionMode && selectedProductIds.size ? "pb-44" : "pb-28"}`}>
+    <div className={`mx-auto w-full max-w-none space-y-4 px-3 sm:px-6 lg:px-8 ${selectionMode && selectedProductIds.size ? "pb-52 sm:pb-44" : "pb-28"}`}>
       {error ? (
         <div className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">
           {error}
@@ -1300,17 +1326,33 @@ export function ProductPage() {
                 ))}
               </div>
               {selectionMode && selectedProductIds.size ? (
-                <div className="pointer-events-none fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 px-3 lg:left-72">
-                  <div className="pointer-events-auto mx-auto flex max-w-4xl items-center gap-1.5 rounded-2xl border border-white/10 bg-coal p-2 shadow-[0_16px_40px_rgba(15,23,42,0.28)] sm:gap-2 sm:p-2.5">
-                    <div className="mr-auto flex min-w-0 items-center gap-2 pl-1.5 pr-1 text-white">
-                      <CircleCheck className="h-4 w-4 shrink-0 text-moss-200" />
-                      <p className="truncate text-xs font-extrabold sm:text-sm">
-                        <strong className="text-white">{selectedProductIds.size}</strong> sản phẩm
-                      </p>
+                <div className="pointer-events-none fixed bottom-[calc(4.375rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 px-3 lg:left-72">
+                  <div className="pointer-events-auto mx-auto max-w-4xl rounded-2xl border border-slate-200 bg-white/95 p-2.5 shadow-[0_18px_48px_rgba(15,23,42,0.22)] backdrop-blur-xl sm:flex sm:items-center sm:gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-moss-100 text-moss-700">
+                        <CircleCheck className="h-4 w-4" />
+                      </span>
+                      <div className="mr-auto min-w-0">
+                        <p className="truncate text-sm font-black text-slate-950">
+                          {updatingStatusId ? "Đang cập nhật..." : `${selectedProductIds.size} sản phẩm đã chọn`}
+                        </p>
+                        <p className="hidden text-[11px] font-semibold text-slate-500 sm:block">Thao tác đồng loạt trên danh sách</p>
+                      </div>
+                      <button
+                        aria-pressed={allFilteredProductsSelected}
+                        className={`h-9 shrink-0 rounded-lg border px-2.5 text-xs font-extrabold transition disabled:cursor-wait disabled:opacity-50 sm:px-3 ${allFilteredProductsSelected ? "border-moss-200 bg-moss-50 text-moss-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+                        disabled={Boolean(updatingStatusId)}
+                        onClick={toggleAllFilteredProducts}
+                        type="button"
+                      >
+                        {allFilteredProductsSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                      </button>
                     </div>
-                    <QuickStatusButton active={false} disabled={Boolean(updatingStatusId)} label="Bán" onClick={() => void bulkUpdateStatus("active")} tone="active" />
-                    {canUpdateProduct ? <QuickStatusButton active={false} disabled={Boolean(updatingStatusId)} label="Nháp" onClick={() => void bulkUpdateStatus("draft")} tone="draft" /> : null}
-                    <QuickStatusButton active={false} disabled={Boolean(updatingStatusId)} label="Ẩn" onClick={() => void bulkUpdateStatus("inactive")} tone="inactive" />
+                    <div className={`mt-2 grid gap-1 rounded-xl bg-slate-100 p-1 sm:ml-auto sm:mt-0 sm:w-auto ${canUpdateProduct ? "grid-cols-3 sm:min-w-[250px]" : "grid-cols-2 sm:min-w-[170px]"}`}>
+                      <QuickStatusButton disabled={Boolean(updatingStatusId)} label="Bán" onClick={() => void bulkUpdateStatus("active")} tone="active" />
+                      {canUpdateProduct ? <QuickStatusButton disabled={Boolean(updatingStatusId)} label="Nháp" onClick={() => void bulkUpdateStatus("draft")} tone="draft" /> : null}
+                      <QuickStatusButton disabled={Boolean(updatingStatusId)} label="Ẩn" onClick={() => void bulkUpdateStatus("inactive")} tone="inactive" />
+                    </div>
                   </div>
                 </div>
               ) : null}
@@ -2138,6 +2180,7 @@ const cardFieldOptions = [
   ["compare_price", "Giá so sánh"],
   ["stock", "Tồn kho"],
   ["variant_count", "Số lượng SKU"],
+  ["is_active", "Trạng thái sản phẩm"],
 ] as const;
 
 function CardAppearanceEditor({
@@ -2501,6 +2544,7 @@ function ProductAdminCard({
       price={minPrice}
       selected={selected}
       settings={settings}
+      status={product.status}
       stock={stock}
       variantCount={active.length}
     />

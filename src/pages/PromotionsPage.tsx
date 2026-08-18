@@ -161,7 +161,7 @@ export function PromotionsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-3 px-3 pb-32 sm:px-6 sm:pb-28 lg:px-8">
+    <div className="mx-auto w-full max-w-none space-y-3 px-3 pb-32 sm:px-6 sm:pb-28 lg:px-8">
       {error && !open ? <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
       <Card className="p-3.5 sm:p-4">
         <div className="flex items-center justify-between gap-3">
@@ -178,21 +178,45 @@ export function PromotionsPage() {
 
       {loading ? (
         <Card className="grid min-h-40 place-items-center p-4"><Spinner label="Đang tải chương trình ưu đãi..." /></Card>
-      ) : <Card className="hidden overflow-x-auto p-0 md:block">
-        <table className="w-full min-w-[880px] text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr>
-            <th className="p-4">Chương trình</th><th>Hình thức</th><th>Ưu đãi</th><th>Thời gian</th><th>Lượt dùng</th><th className="pr-4">Trạng thái</th>
-          </tr></thead>
-          <tbody>{filtered.map((item) => <tr className={`border-t border-slate-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-moss-400 ${canUpdatePromotion || canDeletePromotion ? "cursor-pointer hover:bg-slate-50 focus-visible:bg-slate-50" : ""}`} key={item.id} onClick={() => edit(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); edit(item); } }} tabIndex={canUpdatePromotion || canDeletePromotion ? 0 : -1}>
-            <td className="p-4"><p className="font-extrabold">{item.name}</p><p className="mt-0.5 font-mono text-xs text-slate-500">{item.code ?? "Không cần mã"}</p></td>
-            <td>{triggerLabel(item.trigger_type)}</td><td className="font-bold text-moss-700">{discountLabel(item)}</td>
-            <td className="text-xs text-slate-600">{item.start_at ? vietnamDateTimeLabel(item.start_at) : "Áp dụng ngay"} → {item.end_at ? vietnamDateTimeLabel(item.end_at) : "∞"}</td>
-            <td>{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</td><td className="pr-4"><div className="flex items-center justify-between gap-2"><Status status={promotionLifecycle(item, now)} /><ChevronRight className="h-4 w-4 text-slate-300" /></div></td>
-          </tr>)}</tbody>
-        </table>
-      </Card>}
+      ) : filtered.length ? (
+        <section className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft xl:block">
+          <div className="grid grid-cols-[minmax(180px,1.4fr)_minmax(110px,.8fr)_minmax(100px,.65fr)_minmax(180px,1.25fr)_minmax(80px,.55fr)_minmax(140px,.85fr)_24px] items-center gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500">
+            <span>Chương trình</span>
+            <span>Hình thức</span>
+            <span>Ưu đãi</span>
+            <span>Thời gian</span>
+            <span>Lượt dùng</span>
+            <span>Trạng thái</span>
+            <span />
+          </div>
+          <div className="divide-y divide-coal/5">
+            {filtered.map((item) => (
+              <button
+                className={`grid w-full grid-cols-[minmax(180px,1.4fr)_minmax(110px,.8fr)_minmax(100px,.65fr)_minmax(180px,1.25fr)_minmax(80px,.55fr)_minmax(140px,.85fr)_24px] items-center gap-3 px-5 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-moss-400 ${canUpdatePromotion || canDeletePromotion ? "hover:bg-slate-50 focus-visible:bg-slate-50" : "cursor-default"}`}
+                key={item.id}
+                onClick={() => edit(item)}
+                type="button"
+              >
+                <span className="min-w-0">
+                  <strong className="block truncate text-sm font-extrabold text-slate-950">{item.name}</strong>
+                  <span className="mt-1 block truncate font-mono text-xs font-semibold uppercase text-slate-500">{item.code ?? "Không cần mã"}</span>
+                </span>
+                <span className="truncate text-sm font-semibold text-slate-700">{triggerLabel(item.trigger_type)}</span>
+                <strong className="truncate text-sm text-moss-700">{discountLabel(item)}</strong>
+                <span className="min-w-0 text-xs font-semibold leading-5 text-slate-600">
+                  <span className="block truncate">{item.start_at ? vietnamDateTimeLabel(item.start_at) : "Áp dụng ngay"}</span>
+                  <span className="block truncate text-slate-400">đến {item.end_at ? vietnamDateTimeLabel(item.end_at) : "Không giới hạn"}</span>
+                </span>
+                <span className="text-sm font-bold tabular-nums text-slate-700">{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</span>
+                <Status status={promotionLifecycle(item, now)} />
+                <ChevronRight className="h-5 w-5 text-slate-400" />
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
-      {!loading ? <div className="grid gap-2.5 md:hidden">{filtered.map((item) => <button className={`w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 ${canUpdatePromotion || canDeletePromotion ? "active:scale-[0.99] active:bg-slate-50" : "cursor-default"}`} key={item.id} onClick={() => edit(item)} type="button">
+      {!loading ? <div className="grid gap-2.5 xl:hidden">{filtered.map((item) => <button className={`w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 ${canUpdatePromotion || canDeletePromotion ? "active:scale-[0.99] active:bg-slate-50" : "cursor-default"}`} key={item.id} onClick={() => edit(item)} type="button">
         <div className="flex items-start gap-3 p-3.5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-moss-50 text-moss-700"><TicketPercent className="h-5 w-5" /></span>
           <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><h3 className="truncate font-black text-slate-950">{item.name}</h3><Status status={promotionLifecycle(item, now)} /></div><p className="mt-0.5 font-mono text-[11px] font-semibold uppercase text-slate-500">{item.code ?? "Tự động"}</p></div></div>
         <div className="mx-3.5 grid grid-cols-2 divide-x divide-slate-200 rounded-xl bg-slate-50 px-3 py-2.5 text-sm"><div className="pr-3"><p className="text-[11px] font-semibold text-slate-500">Ưu đãi</p><strong className="mt-0.5 block text-moss-800">{discountLabel(item)}</strong></div><div className="pl-3"><p className="text-[11px] font-semibold text-slate-500">Lượt dùng</p><strong className="mt-0.5 block">{item.usage_count ?? 0} / {item.total_usage_limit ?? "∞"}</strong></div></div>
@@ -276,7 +300,7 @@ const statusPresentation: Record<PromotionLifecycle, { className: string; label:
 };
 function Status({ status }: { status: PromotionLifecycle }) {
   const presentation = statusPresentation[status];
-  return <span className={`inline-flex shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${presentation.className}`}>{presentation.label}</span>;
+  return <span className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-bold ${presentation.className}`}>{presentation.label}</span>;
 }
 function FormSection({ children, description, title }: { children: React.ReactNode; description: string; title: string }) { return <section className="rounded-2xl border border-slate-200 p-3 sm:p-4"><div className="mb-3"><h3 className="font-extrabold">{title}</h3><p className="text-xs text-slate-500">{description}</p></div>{children}</section>; }
 function Toggle({ checked, label, onChange }: { checked: boolean; label: string; onChange: (value: boolean) => void }) { return <label className="flex min-h-11 cursor-pointer items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-bold"><span>{label}</span><input checked={checked} className="h-4 w-4 accent-moss-700" onChange={(event) => onChange(event.target.checked)} type="checkbox" /></label>; }

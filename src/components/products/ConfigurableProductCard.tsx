@@ -8,9 +8,28 @@ export type ProductCardData = {
   imageUrl?: string | null;
   name: string;
   price: number;
+  status: "active" | "draft" | "inactive";
   stock: number;
   variantCount: number;
 };
+
+const statusPresentation = {
+  active: {
+    className: "bg-emerald-50/95 text-emerald-700 ring-emerald-200",
+    dotClassName: "bg-emerald-500",
+    label: "Đang bán",
+  },
+  draft: {
+    className: "bg-amber-50/95 text-amber-700 ring-amber-200",
+    dotClassName: "bg-amber-500",
+    label: "Bản nháp",
+  },
+  inactive: {
+    className: "bg-slate-100/95 text-slate-600 ring-slate-200",
+    dotClassName: "bg-slate-400",
+    label: "Ngừng bán",
+  },
+} as const;
 
 type Props = ProductCardData & {
   ariaLabel?: string;
@@ -35,6 +54,7 @@ export function ConfigurableProductCard({
   quantity = 0,
   selected = false,
   settings,
+  status,
   stock,
   variantCount,
 }: Props) {
@@ -42,12 +62,21 @@ export function ConfigurableProductCard({
   const imageVisible = visible("image");
   const isSelected = selected || (presentation === "pos" && quantity > 0);
   const hasMainInformation =
-    (visible("category") && Boolean(category)) || visible("name");
+    (!imageVisible && visible("is_active")) ||
+    (visible("category") && Boolean(category)) ||
+    visible("name");
   const footerVisible =
     visible("price") ||
     visible("compare_price") ||
     (!imageVisible && visible("stock"));
   const canActivate = Boolean(onActivate) && !disabled;
+  const productStatus = statusPresentation[status];
+  const statusBadge = (
+    <span className={`inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-extrabold shadow-sm ring-1 backdrop-blur ${productStatus.className}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${productStatus.dotClassName}`} />
+      {productStatus.label}
+    </span>
+  );
   return (
     <div
       aria-disabled={disabled || undefined}
@@ -74,6 +103,9 @@ export function ConfigurableProductCard({
           ) : (
             <div className="grid h-full place-items-center text-slate-300"><Package className="h-9 w-9" /></div>
           )}
+          {visible("is_active") ? (
+            <span className="absolute left-2 top-2">{statusBadge}</span>
+          ) : null}
           {visible("stock") ? (
             <span className={`absolute bottom-2 left-2 max-w-[calc(100%-3rem)] truncate rounded-full px-2 py-1 text-[10px] font-extrabold shadow-sm backdrop-blur ${stock > 0 ? "bg-white/90 text-slate-700" : "bg-red-600/95 text-white"}`}>
               {stock > 0 ? `Còn ${stock}` : "Hết hàng"}
@@ -93,6 +125,9 @@ export function ConfigurableProductCard({
       ) : null}
 
       <div className="flex min-h-0 flex-1 flex-col px-3 pb-2.5 pt-2">
+        {!imageVisible && visible("is_active") ? (
+          <div className="mb-1.5">{statusBadge}</div>
+        ) : null}
         {visible("category") && category ? (
           <p className="mb-1 flex min-h-4 shrink-0 items-center gap-1 text-[10px] font-extrabold leading-4 text-moss-700" title={category}>
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-moss-500" />

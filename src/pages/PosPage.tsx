@@ -2001,6 +2001,7 @@ export function PosPage() {
                                 quantity={quantityInCart}
                                 selected={quantityInCart > 0}
                                 settings={effectivePosCardSettings}
+                                status={product.is_active ? "active" : "inactive"}
                                 stock={Math.max(getSellableStock(product) - quantityInCart, 0)}
                                 variantCount={variantCount}
                               />

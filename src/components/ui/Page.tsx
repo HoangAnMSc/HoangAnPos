@@ -17,7 +17,7 @@ const maxWidthClassNames = {
 export function PageContainer({
   children,
   className,
-  maxWidth = "7xl",
+  maxWidth = "none",
   ...props
 }: PageContainerProps) {
   return (

@@ -79,23 +79,23 @@ export function WarehouseHubPage() {
     <div className="space-y-3">
       <PageContainer maxWidth="none">
         <section aria-label="Chức năng kho" className="mx-auto w-full max-w-5xl">
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
             {actions.map((action) => {
               const selected = active === action.key;
               return (
                 <button
                   aria-pressed={selected}
-                  className={`group relative isolate flex h-[96px] min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-[1.2rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.86)_0%,rgba(255,255,255,0.54)_55%,rgba(241,245,249,0.68)_100%)] p-3 text-center text-slate-900 shadow-[0_10px_26px_rgba(15,23,42,0.10),inset_0_1px_0_rgba(255,255,255,0.95)] backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-white hover:bg-white/80 hover:shadow-[0_15px_32px_rgba(15,23,42,0.14)] sm:h-[106px] sm:p-4 ${selected ? "ring-4 ring-slate-200" : ""}`}
+                  className={`group relative isolate flex h-[80px] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.86)_0%,rgba(255,255,255,0.54)_55%,rgba(241,245,249,0.68)_100%)] p-2.5 text-center text-slate-900 shadow-[0_8px_20px_rgba(15,23,42,0.09),inset_0_1px_0_rgba(255,255,255,0.95)] backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-white hover:bg-white/80 hover:shadow-[0_12px_26px_rgba(15,23,42,0.13)] sm:h-[86px] sm:p-3 ${selected ? "ring-2 ring-slate-200" : ""}`}
                   key={action.key}
                   onClick={() => selectAction(action.key)}
                   type="button"
                 >
                   <span aria-hidden="true" className={`pointer-events-none absolute -right-7 -top-8 -z-10 h-20 w-20 rounded-full blur-2xl transition group-hover:scale-125 ${action.glowTone}`} />
                   <span aria-hidden="true" className="pointer-events-none absolute -bottom-10 -left-5 -z-10 h-20 w-20 rounded-full bg-white/80 blur-2xl" />
-                  <span className={`grid h-10 w-10 place-items-center rounded-xl border border-white/40 shadow-[0_7px_16px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md ${action.iconTone}`}>
-                    <action.icon className="h-[18px] w-[18px]" strokeWidth={2.25} />
+                  <span className={`grid h-8 w-8 place-items-center rounded-lg border border-white/40 shadow-[0_5px_12px_rgba(15,23,42,0.13),inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md ${action.iconTone}`}>
+                    <action.icon className="h-4 w-4" strokeWidth={2.25} />
                   </span>
-                  <strong className="block w-full truncate text-sm font-black leading-5 sm:text-base">{action.label}</strong>
+                  <strong className="block w-full truncate text-xs font-black leading-4 sm:text-sm">{action.label}</strong>
                 </button>
               );
             })}
