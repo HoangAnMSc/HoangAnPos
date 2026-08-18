@@ -2295,6 +2295,33 @@ function formatProductStatus(status: ProductStatus) {
   return "Bản nháp";
 }
 
+function formatAttributeDataType(value: AttributeDataType) {
+  if (value === "text") return "Văn bản";
+  if (value === "number") return "Số";
+  if (value === "boolean") return "Có / Không";
+  if (value === "date") return "Ngày";
+  if (value === "option") return "Lựa chọn";
+  return "Dữ liệu JSON";
+}
+
+function formatAttributeInputType(value: AttributeInputType) {
+  const labels: Record<AttributeInputType, string> = {
+    checkbox: "Ô chọn",
+    color: "Màu sắc",
+    date: "Ngày",
+    image: "Hình ảnh",
+    image_text: "Ảnh và chữ",
+    multi_select: "Chọn nhiều",
+    number: "Nhập số",
+    radio: "Nút chọn",
+    select: "Danh sách chọn",
+    switch: "Công tắc",
+    text: "Nhập văn bản",
+    textarea: "Văn bản dài",
+  };
+  return labels[value];
+}
+
 function formatSpecificationValue(value: Product["specifications"][number]["value"]) {
   if (value === null || value === "") return "Chưa cập nhật";
   if (typeof value === "boolean") return value ? "Có" : "Không";
@@ -2339,6 +2366,22 @@ function ProductDetailModal({
     sortedImages[0]?.image_url ??
     activeVariants.find((variant) => variant.image_url)?.image_url ??
     null;
+  const activePrices = activeVariants.map((variant) => variant.base_price);
+  const minPrice = activePrices.length ? Math.min(...activePrices) : 0;
+  const maxPrice = activePrices.length ? Math.max(...activePrices) : 0;
+  const priceLabel = minPrice === maxPrice
+    ? formatCurrency(minPrice)
+    : `${formatCurrency(minPrice)} – ${formatCurrency(maxPrice)}`;
+  const statusClassName = product.status === "active"
+    ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+    : product.status === "draft"
+      ? "bg-amber-50 text-amber-700 ring-amber-200"
+      : "bg-slate-100 text-slate-600 ring-slate-200";
+  const statusDotClassName = product.status === "active"
+    ? "bg-emerald-500"
+    : product.status === "draft"
+      ? "bg-amber-500"
+      : "bg-slate-400";
 
   return (
     <Modal
@@ -2356,76 +2399,85 @@ function ProductDetailModal({
       open
       size="wide"
       title="Chi tiết sản phẩm"
+      bodyClassName="bg-slate-50/70"
     >
-      <div className="space-y-5">
-        <section className="grid gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-            {primaryImage ? (
-              <img
-                alt={product.name}
-                className="aspect-square h-full w-full object-cover"
-                src={primaryImage}
-              />
-            ) : (
-              <div className="grid aspect-square place-items-center text-slate-300">
-                <Boxes className="h-14 w-14" />
+      <div className="space-y-4">
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_10px_32px_rgba(15,23,42,0.06)]">
+          <div className="grid gap-5 p-4 md:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] md:p-5">
+            <div className="min-w-0">
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                {primaryImage ? (
+                  <img alt={product.name} className="aspect-[4/3] h-full w-full object-contain p-2 md:aspect-square" src={primaryImage} />
+                ) : (
+                  <div className="grid aspect-[4/3] place-items-center text-slate-300 md:aspect-square">
+                    <Boxes className="h-14 w-14" />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-extrabold uppercase tracking-wide text-moss-700">
-                  {product.category?.name ?? product.product_type?.name ?? "Chưa phân loại"}
-                </p>
-                <h3 className="mt-1 break-words text-2xl font-black text-slate-950">
-                  {product.name}
-                </h3>
-                <p className="mt-1 break-all text-sm font-semibold text-slate-500">/{product.slug}</p>
-              </div>
-              <StatusPill
-                active={product.status === "active"}
-                label={formatProductStatus(product.status)}
-              />
+              {sortedImages.length > 1 ? (
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1" aria-label="Ảnh sản phẩm">
+                  {sortedImages.map((image, index) => (
+                    <span className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border bg-white ${index === 0 ? "border-moss-400 ring-2 ring-moss-100" : "border-slate-200"}`} key={image.id}>
+                      <img alt={image.alt_text || `${product.name} ${index + 1}`} className="h-full w-full object-cover" src={image.image_url} />
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-              {product.description?.trim() || "Sản phẩm chưa có mô tả."}
-            </p>
-            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <ProductDetailMetric label="SKU" value={String(displayedVariants.length)} />
-              <ProductDetailMetric label="Đang bán" value={String(activeVariants.length)} />
-              <ProductDetailMetric label="Tồn kho" value={String(totalStock)} />
-              <ProductDetailMetric label="Tại quầy" value={String(totalShelfStock)} />
-            </dl>
+
+            <div className="flex min-w-0 flex-col">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-moss-50 px-2.5 py-1 text-[11px] font-extrabold text-moss-700">
+                      {product.category?.name ?? product.product_type?.name ?? "Chưa phân loại"}
+                    </span>
+                    {product.product_type?.name && product.category?.name ? (
+                      <span className="text-xs font-semibold text-slate-400">{product.product_type.name}</span>
+                    ) : null}
+                  </div>
+                  <h3 className="mt-2 break-words text-2xl font-black leading-tight text-slate-950 md:text-3xl">{product.name}</h3>
+                  <p className="mt-1 break-all font-mono text-xs font-semibold text-slate-400">/{product.slug}</p>
+                </div>
+                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-extrabold ring-1 ${statusClassName}`}>
+                  <span className={`h-2 w-2 rounded-full ${statusDotClassName}`} />
+                  {formatProductStatus(product.status)}
+                </span>
+              </div>
+
+              <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Mô tả sản phẩm</p>
+                <p className={`mt-1 whitespace-pre-wrap text-sm leading-6 ${product.description?.trim() ? "text-slate-700" : "italic text-slate-400"}`}>
+                  {product.description?.trim() || "Sản phẩm chưa có mô tả."}
+                </p>
+              </div>
+
+              <dl className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
+                <ProductDetailMetric emphasis label="Giá bán" value={priceLabel} />
+                <ProductDetailMetric label="Tổng SKU" value={String(displayedVariants.length)} />
+                <ProductDetailMetric label="Tồn trong kho" value={String(totalStock)} />
+                <ProductDetailMetric label="Tại quầy" value={String(totalShelfStock)} />
+              </dl>
+              <p className="mt-3 text-xs font-semibold text-slate-500">
+                <strong className="text-emerald-700">{activeVariants.length}</strong>/{displayedVariants.length} SKU đang được bán
+              </p>
+            </div>
           </div>
         </section>
 
-        {sortedImages.length > 1 ? (
-          <section>
-            <h4 className="mb-2 text-sm font-black text-slate-950">Hình ảnh ({sortedImages.length})</h4>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {sortedImages.map((image) => (
-                <img
-                  alt={image.alt_text || product.name}
-                  className="h-20 w-20 shrink-0 rounded-xl border border-slate-200 object-cover"
-                  key={image.id}
-                  src={image.image_url}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <section>
-          <h4 className="mb-2 text-sm font-black text-slate-950">Danh sách SKU</h4>
-          <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <div className="hidden grid-cols-[minmax(150px,1fr)_minmax(120px,0.8fr)_110px_90px_100px] gap-3 bg-slate-50 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 sm:grid">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_6px_22px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5">
+            <div><h4 className="text-sm font-black text-slate-950">Danh sách SKU</h4><p className="mt-0.5 text-xs font-semibold text-slate-500">Giá bán, tồn kho và mã nhận diện của từng phiên bản.</p></div>
+            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-extrabold text-slate-600">{displayedVariants.length} SKU</span>
+          </div>
+          {displayedVariants.length ? <>
+            <div className="hidden grid-cols-[minmax(190px,1.2fr)_minmax(140px,.9fr)_120px_90px_110px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
               <span>Phiên bản</span><span>Mã SKU / EAN-13</span><span>Giá bán</span><span>Tồn kho</span><span>Trạng thái</span>
             </div>
             <div className="divide-y divide-slate-100">
               {displayedVariants.map((variant) => (
                 <div
-                  className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(150px,1fr)_minmax(120px,0.8fr)_110px_90px_100px] sm:items-center sm:gap-3"
+                  className="grid gap-2.5 px-4 py-3.5 text-sm md:grid-cols-[minmax(190px,1.2fr)_minmax(140px,.9fr)_120px_90px_110px] md:items-center md:gap-3"
                   key={variant.id}
                 >
                   <div className="flex min-w-0 items-center gap-3">
@@ -2458,29 +2510,32 @@ function ProductDetailModal({
                       ) : null}
                     </div>
                   </div>
-                  <div className="min-w-0 text-xs font-semibold text-slate-600">
+                  <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] items-start gap-2 text-xs font-semibold text-slate-600 md:block">
+                    <span className="font-extrabold text-slate-400 md:hidden">Mã SKU</span>
+                    <span className="min-w-0">
                     <p className="truncate" title={variant.sku}>{variant.sku}</p>
                     <p className="truncate text-slate-400" title={variant.barcode ?? undefined}>{variant.barcode || "Chưa có EAN-13"}</p>
+                    </span>
                   </div>
-                  <p className="font-black tabular-nums text-slate-950">{formatCurrency(variant.base_price)}</p>
-                  <p className="font-extrabold tabular-nums text-slate-800">{variant.stock_quantity}</p>
-                  <StatusPill active={variant.is_active} label={variant.is_active ? "Đang bán" : "Đã tắt"} />
+                  <p className="grid grid-cols-[88px_minmax(0,1fr)] gap-2 font-black tabular-nums text-slate-950 md:block"><span className="text-xs font-extrabold text-slate-400 md:hidden">Giá bán</span>{formatCurrency(variant.base_price)}</p>
+                  <p className="grid grid-cols-[88px_minmax(0,1fr)] gap-2 font-extrabold tabular-nums text-slate-800 md:block"><span className="text-xs font-extrabold text-slate-400 md:hidden">Tồn kho</span>{variant.stock_quantity}</p>
+                  <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 md:block"><span className="text-xs font-extrabold text-slate-400 md:hidden">Trạng thái</span><StatusPill active={variant.is_active} label={variant.is_active ? "Đang bán" : "Đã tắt"} /></div>
                 </div>
               ))}
             </div>
-          </div>
+          </> : <div className="p-8 text-center text-sm font-semibold text-slate-500">Sản phẩm chưa có SKU để hiển thị.</div>}
         </section>
 
         {product.specifications.length ? (
-          <section>
-            <h4 className="mb-2 text-sm font-black text-slate-950">Thông số sản phẩm</h4>
-            <dl className="overflow-hidden rounded-2xl border border-slate-200 divide-y divide-slate-100">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_22px_rgba(15,23,42,0.04)]">
+            <div className="mb-3"><h4 className="text-sm font-black text-slate-950">Thông số sản phẩm</h4><p className="mt-0.5 text-xs font-semibold text-slate-500">Thông tin kỹ thuật và thuộc tính bổ sung.</p></div>
+            <dl className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {[...product.specifications]
                 .sort((first, second) => first.sort_order - second.sort_order)
                 .map((specification) => (
-                  <div className="grid gap-1 px-4 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4" key={specification.id}>
-                    <dt className="text-xs font-extrabold text-slate-500">{specification.name}</dt>
-                    <dd className="break-words text-sm font-bold text-slate-900">
+                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5" key={specification.id}>
+                    <dt className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">{specification.name}</dt>
+                    <dd className="mt-1 break-words text-sm font-bold text-slate-900">
                       {formatSpecificationValue(specification.value)}{specification.unit ? ` ${specification.unit}` : ""}
                     </dd>
                   </div>
@@ -2489,19 +2544,20 @@ function ProductDetailModal({
           </section>
         ) : null}
 
-        <p className="text-xs font-semibold text-slate-400">
-          Tạo {formatDateTime(product.created_at)} · Cập nhật {formatDateTime(product.updated_at)}
-        </p>
+        <div className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <span>Tạo lúc <strong className="text-slate-700">{formatDateTime(product.created_at)}</strong></span>
+          <span>Cập nhật gần nhất <strong className="text-slate-700">{formatDateTime(product.updated_at)}</strong></span>
+        </div>
       </div>
     </Modal>
   );
 }
 
-function ProductDetailMetric({ label, value }: { label: string; value: string }) {
+function ProductDetailMetric({ emphasis = false, label, value }: { emphasis?: boolean; label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-      <dt className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">{label}</dt>
-      <dd className="mt-0.5 text-lg font-black tabular-nums text-slate-950">{value}</dd>
+    <div className={`min-w-0 rounded-xl border px-3 py-2.5 ${emphasis ? "border-moss-100 bg-moss-50" : "border-slate-100 bg-slate-50"}`}>
+      <dt className={`text-[10px] font-extrabold uppercase tracking-wide ${emphasis ? "text-moss-600" : "text-slate-400"}`}>{label}</dt>
+      <dd className={`mt-0.5 truncate text-base font-black tabular-nums ${emphasis ? "text-moss-800" : "text-slate-950"}`} title={value}>{value}</dd>
     </div>
   );
 }
@@ -3040,83 +3096,54 @@ function DefinitionManager({
           </Button> : null}
         </div>
       </div>
-      <Card className="hidden overflow-hidden p-0 md:block">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="p-4">Tên</th>
-              <th>Mã</th>
-              {kind === "attribute" ? (
-                <>
-                  <th>Kiểu dữ liệu</th>
-                  <th>Kiểu nhập</th>
-                </>
-              ) : (
-                <th>Mô tả</th>
-              )}
-              <th>Trạng thái</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredRecords.map((record) => (
-              <tr
-                className={`border-t border-slate-100 transition ${canManage ? "cursor-pointer hover:bg-slate-50" : ""}`}
-                key={record.id}
-                onClick={() => editDefinition(record)}
-              >
-                <td className="p-4 font-extrabold">{record.name}</td>
-                <td>
-                  <code className="rounded bg-slate-100 px-2 py-1 text-xs">
-                    {record.code}
-                  </code>
-                </td>
-                {"data_type" in record ? (
-                  <>
-                    <td>{record.data_type}</td>
-                    <td>{record.input_type}</td>
-                  </>
-                ) : (
-                  <td className="max-w-xs truncate text-slate-500">
-                    {record.description || "—"}
-                  </td>
-                )}
-                <td>
-                  <StatusPill
-                    active={record.is_active}
-                    label={record.is_active ? "Hiển thị" : "Đã ẩn"}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-      <div className="grid gap-3 md:hidden">
-        {filteredRecords.map((record) => (
-          <button
-            className={`w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-soft ${canManage ? "" : "cursor-default"}`}
-            key={record.id}
-            onClick={() => editDefinition(record)}
-            type="button"
-          >
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <strong>{record.name}</strong>
-                <p className="truncate text-xs text-slate-500">
-                  {record.code}
-                  {"data_type" in record
-                    ? ` · ${record.data_type} / ${record.input_type}`
-                    : ""}
-                </p>
-              </div>
-              <StatusPill
-                active={record.is_active}
-                label={record.is_active ? "Hiện" : "Ẩn"}
-              />
-            </div>
-          </button>
-        ))}
-      </div>
+      {filteredRecords.length ? (
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none">
+          <div className={`hidden items-center gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-500 lg:grid ${kind === "attribute" ? "grid-cols-[minmax(0,1.2fr)_minmax(120px,.7fr)_minmax(110px,.7fr)_minmax(130px,.9fr)_minmax(120px,.65fr)_24px]" : "grid-cols-[minmax(0,1.1fr)_minmax(120px,.7fr)_minmax(0,1.6fr)_minmax(120px,.65fr)_24px]"}`}>
+            <span>Tên</span>
+            <span>Mã</span>
+            {kind === "attribute" ? (
+              <><span>Kiểu dữ liệu</span><span>Kiểu nhập</span></>
+            ) : <span>Mô tả</span>}
+            <span>Trạng thái</span>
+            <span />
+          </div>
+          <div className="divide-y divide-coal/5 max-lg:grid max-lg:gap-3 max-lg:divide-y-0">
+            {filteredRecords.map((record) => {
+              const isAttribute = "data_type" in record;
+              return (
+                <button
+                  className={`grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-moss-400 max-lg:overflow-hidden max-lg:rounded-2xl max-lg:border max-lg:border-slate-200 max-lg:bg-white max-lg:shadow-[0_4px_16px_rgba(15,23,42,0.05)] lg:px-5 ${kind === "attribute" ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(120px,.7fr)_minmax(110px,.7fr)_minmax(130px,.9fr)_minmax(120px,.65fr)_24px]" : "lg:grid-cols-[minmax(0,1.1fr)_minmax(120px,.7fr)_minmax(0,1.6fr)_minmax(120px,.65fr)_24px]"} ${canManage ? "hover:bg-slate-50" : "cursor-default"}`}
+                  key={record.id}
+                  onClick={() => editDefinition(record)}
+                  type="button"
+                >
+                  <span className="min-w-0">
+                    <strong className="block truncate text-base font-extrabold text-slate-950">{record.name}</strong>
+                    <span className="mt-1 block truncate text-xs font-semibold text-slate-500 lg:hidden">
+                      {record.code}{isAttribute ? ` · ${formatAttributeDataType(record.data_type)} · ${formatAttributeInputType(record.input_type)}` : record.description ? ` · ${record.description}` : ""}
+                    </span>
+                  </span>
+                  <code className="hidden w-fit max-w-full truncate rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 lg:block">{record.code}</code>
+                  {isAttribute ? (
+                    <>
+                      <span className="hidden truncate text-sm font-bold text-slate-700 lg:block">{formatAttributeDataType(record.data_type)}</span>
+                      <span className="hidden truncate text-sm font-semibold text-slate-600 lg:block">{formatAttributeInputType(record.input_type)}</span>
+                    </>
+                  ) : (
+                    <span className="hidden truncate text-sm font-semibold text-slate-500 lg:block">{record.description || "Chưa có mô tả"}</span>
+                  )}
+                  <span className="hidden lg:block"><StatusPill active={record.is_active} label={record.is_active ? "Hiển thị" : "Đã ẩn"} /></span>
+                  <span className="flex items-center gap-2 lg:hidden">
+                    <StatusPill active={record.is_active} label={record.is_active ? "Hiện" : "Ẩn"} />
+                    <ChevronRight className="h-5 w-5 text-slate-400" />
+                  </span>
+                  <ChevronRight className="hidden h-5 w-5 text-slate-400 lg:block" />
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
       {!filteredRecords.length ? (
         <Card className="p-8 text-center text-sm text-slate-500">
           Không tìm thấy dữ liệu phù hợp.
