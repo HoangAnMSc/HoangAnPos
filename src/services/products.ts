@@ -2,7 +2,10 @@ import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { Product, ProductBatch } from "../types";
 import type { Json } from "../types/database";
 import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
-import { getVariantLabel } from "../features/products/utils/variants";
+import {
+  getActiveProductModeVariants,
+  getVariantLabel,
+} from "../features/products/utils/variants";
 import { productEngineClient } from "../features/products/services/client";
 
 const missingCategoryTableMessage =
@@ -142,8 +145,7 @@ export async function fetchProducts() {
   try {
     const engineProducts = await fetchEngineProducts();
     return engineProducts.map((product): Product => {
-      const activeVariants = product.variants.filter((variant) => variant.is_active);
-      const variants = activeVariants.length ? activeVariants : product.variants;
+      const variants = getActiveProductModeVariants(product);
       const defaultVariant = [...variants].sort(
         (first, second) =>
           first.base_price - second.base_price ||
@@ -230,7 +232,7 @@ export async function fetchInventoryCountProducts(): Promise<InventoryCountProdu
       const primaryImage = product.images.find((image) => image.is_primary)?.image_url
         ?? product.images[0]?.image_url
         ?? null;
-      return product.variants.filter((variant) => variant.is_active).map((variant) => {
+      return getActiveProductModeVariants(product).map((variant) => {
         const selectedValues = getVariantLabel(variant, product.variant_attributes);
         const variantSuffix = selectedValues === "Mặc định" ? "" : selectedValues;
         return {

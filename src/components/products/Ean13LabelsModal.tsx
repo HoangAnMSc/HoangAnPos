@@ -1,7 +1,10 @@
 import { Barcode, CheckSquare, Printer, Search, Square } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { Product } from "../../features/products/types";
-import { formatVariantValueLabel } from "../../features/products/utils/variants";
+import type { Product, ProductStatus } from "../../features/products/types";
+import {
+  formatVariantValueLabel,
+  getActiveProductModeVariants,
+} from "../../features/products/utils/variants";
 import {
   createEan13SvgMarkup,
   escapeHtml,
@@ -23,8 +26,18 @@ type LabelRow = {
   id: string;
   productName: string;
   sku: string;
+  status: ProductStatus;
   variantName: string;
 };
+
+type StatusFilter = "all" | ProductStatus;
+
+const statusFilters: Array<{ label: string; value: StatusFilter }> = [
+  { label: "Tất cả", value: "all" },
+  { label: "Đang bán", value: "active" },
+  { label: "Nháp", value: "draft" },
+  { label: "Ẩn", value: "inactive" },
+];
 
 function buildLabelRows(products: Product[]) {
   return products.flatMap((product) => {
@@ -37,7 +50,7 @@ function buildLabelRows(products: Product[]) {
       ),
     );
 
-    return product.variants.flatMap((variant): LabelRow[] => {
+    return getActiveProductModeVariants(product).flatMap((variant): LabelRow[] => {
       const barcode = normalizeEan13Input(variant.barcode);
       if (!isValidEan13(barcode)) return [];
       const variantName = variant.value_ids
@@ -49,6 +62,7 @@ function buildLabelRows(products: Product[]) {
         id: variant.id,
         productName: product.name,
         sku: variant.sku,
+        status: product.status,
         variantName,
       }];
     });
@@ -102,31 +116,43 @@ function printLabels(rows: LabelRow[], copies: number) {
 
 export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalProps) {
   const rows = useMemo(() => buildLabelRows(products), [products]);
-  const totalVariants = useMemo(
-    () => products.reduce((total, product) => total + product.variants.length, 0),
-    [products],
-  );
   const [query, setQuery] = useState("");
   const [copies, setCopies] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
     setCopies(1);
+    setStatusFilter("all");
     setSelectedIds(new Set(rows.map((row) => row.id)));
   }, [open, rows]);
 
+  const statusRows = useMemo(
+    () => rows.filter((row) => statusFilter === "all" || row.status === statusFilter),
+    [rows, statusFilter],
+  );
+  const filteredTotalVariants = useMemo(
+    () => products.reduce(
+      (total, product) =>
+        statusFilter === "all" || product.status === statusFilter
+          ? total + getActiveProductModeVariants(product).length
+          : total,
+      0,
+    ),
+    [products, statusFilter],
+  );
   const filteredRows = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase("vi");
-    if (!keyword) return rows;
-    return rows.filter((row) =>
+    if (!keyword) return statusRows;
+    return statusRows.filter((row) =>
       `${row.productName} ${row.variantName} ${row.sku} ${row.barcode}`
         .toLocaleLowerCase("vi")
         .includes(keyword),
     );
-  }, [query, rows]);
-  const selectedRows = rows.filter((row) => selectedIds.has(row.id));
+  }, [query, statusRows]);
+  const selectedRows = statusRows.filter((row) => selectedIds.has(row.id));
   const allFilteredSelected =
     filteredRows.length > 0 && filteredRows.every((row) => selectedIds.has(row.id));
 
@@ -159,7 +185,7 @@ export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalPr
         <section className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-3 sm:flex sm:items-center">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Có thể in</p>
-            <p className="mt-0.5 text-lg font-black text-coal">{rows.length} SKU</p>
+            <p className="mt-0.5 text-lg font-black text-coal">{statusRows.length} SKU</p>
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Đã chọn</p>
@@ -178,11 +204,25 @@ export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalPr
           </label>
         </section>
 
-        {totalVariants > rows.length ? (
+        {filteredTotalVariants > statusRows.length ? (
           <div className="rounded-xl bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-800">
-            {totalVariants - rows.length} SKU chưa có EAN-13 hợp lệ nên chưa thể in.
+            {filteredTotalVariants - statusRows.length} SKU chưa có EAN-13 hợp lệ nên chưa thể in.
           </div>
         ) : null}
+
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5" aria-label="Lọc theo trạng thái sản phẩm">
+          {statusFilters.map((filter) => (
+            <button
+              aria-pressed={statusFilter === filter.value}
+              className={`shrink-0 rounded-full px-3 py-2 text-xs font-extrabold transition ${statusFilter === filter.value ? "bg-slate-900 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+              key={filter.value}
+              onClick={() => setStatusFilter(filter.value)}
+              type="button"
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
 
         <div className="flex gap-2">
           <div className="relative min-w-0 flex-1">

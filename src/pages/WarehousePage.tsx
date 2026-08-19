@@ -54,8 +54,10 @@ export function WarehousePage({ mode }: WarehousePageProps) {
 
   const inventoryRows = useMemo(() => products.flatMap((product) => {
     const attributes = product.attributes && typeof product.attributes === "object" && !Array.isArray(product.attributes) ? product.attributes as Record<string, unknown> : {};
-    const variants = Array.isArray(attributes._variants) ? attributes._variants as Array<{ display_label?: string; image_url?: string; linked_values?: { _variant_id?: string; sku?: string }; stock?: number; values?: Record<string, string | string[]> }> : [];
-    if (!variants.length) return [product];
+    const hasEngineVariants = Array.isArray(attributes._variants);
+    const variants = hasEngineVariants ? attributes._variants as Array<{ display_label?: string; image_url?: string; linked_values?: { _variant_id?: string; sku?: string }; stock?: number; values?: Record<string, string | string[]> }> : [];
+    if (!hasEngineVariants) return [product];
+    if (!variants.length) return [];
     return variants.map((variant, index) => {
       const rawValues = Object.values(variant.values ?? {}).flat().filter(Boolean).join(" / ");
       const values = variant.display_label && variant.display_label !== "Mặc định" ? variant.display_label : rawValues;

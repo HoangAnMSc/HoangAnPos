@@ -4,6 +4,7 @@ import {
   countVariantCombinations,
   createSkuPrefix,
   generateVariantCombinations,
+  getActiveProductModeVariants,
   isVariantValueAvailable,
   mergeGeneratedVariants,
 } from "../src/features/products/utils/variants";
@@ -100,6 +101,43 @@ const inventory = drafts.map((variant): ProductVariant => ({
   cloudinary_public_id: null,
   stock_quantity: variant === blueM ? 0 : 10,
 }));
+
+const retiredDefault: ProductVariant = {
+  ...inventory[0],
+  id: crypto.randomUUID(),
+  sku: "DEFAULT-RETIRED",
+  is_active: false,
+  is_default: true,
+  value_ids: [],
+};
+const inactiveCombination: ProductVariant = {
+  ...inventory[0],
+  is_active: false,
+};
+const printableVariants = getActiveProductModeVariants({
+  variant_attributes: [color, size],
+  variants: [retiredDefault, inactiveCombination, ...inventory.slice(1)],
+});
+assert.equal(
+  printableVariants.length,
+  inventory.length - 1,
+  "Product SKU lists must include active combinations only",
+);
+assert.equal(
+  printableVariants.some((variant) => variant.is_default),
+  false,
+  "A varianted product must never include its retired default SKU",
+);
+
+const activeDefault = { ...retiredDefault, is_active: true };
+assert.deepEqual(
+  getActiveProductModeVariants({
+    variant_attributes: [],
+    variants: [activeDefault],
+  }),
+  [activeDefault],
+  "A simple product must keep its one active default SKU",
+);
 assert.equal(
   isVariantValueAvailable(
     inventory,

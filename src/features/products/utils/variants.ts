@@ -1,4 +1,5 @@
 import type {
+  Product,
   ProductVariant,
   VariantAttribute,
   VariantDraft,
@@ -87,6 +88,57 @@ export function sortVariantsByAttributeOrder<
     }
     return 0;
   });
+}
+
+export function productUsesVariants(
+  product: Pick<Product, "variant_attributes" | "variants">,
+) {
+  return (
+    product.variant_attributes.length > 0 ||
+    product.variants.some(
+      (variant) => variant.is_active && variant.value_ids.length > 0,
+    )
+  );
+}
+
+export function getSimpleProductVariant(
+  product: Pick<Product, "variants">,
+) {
+  return (
+    product.variants.find(
+      (variant) =>
+        variant.is_active &&
+        variant.is_default &&
+        variant.value_ids.length === 0,
+    ) ??
+    product.variants.find(
+      (variant) => variant.is_active && variant.value_ids.length === 0,
+    ) ??
+    product.variants.find(
+      (variant) => variant.is_default && variant.value_ids.length === 0,
+    ) ??
+    product.variants.find((variant) => variant.value_ids.length === 0) ??
+    product.variants[0]
+  );
+}
+
+export function getProductModeVariants(
+  product: Pick<Product, "variant_attributes" | "variants">,
+) {
+  if (productUsesVariants(product)) {
+    return product.variants.filter(
+      (variant) => !variant.is_default && variant.value_ids.length > 0,
+    );
+  }
+
+  const simpleVariant = getSimpleProductVariant(product);
+  return simpleVariant ? [simpleVariant] : [];
+}
+
+export function getActiveProductModeVariants(
+  product: Pick<Product, "variant_attributes" | "variants">,
+) {
+  return getProductModeVariants(product).filter((variant) => variant.is_active);
 }
 
 export function mergeGeneratedVariants(

@@ -73,8 +73,11 @@ import {
   countVariantCombinations,
   createSkuPrefix,
   formatVariantValueLabel,
+  getActiveProductModeVariants,
+  getProductModeVariants,
   getVariantLabel,
   mergeGeneratedVariants,
+  productUsesVariants,
   variantCombinationKey,
 } from "../features/products/utils/variants";
 import { formatCurrency, formatDateTime } from "../lib/format";
@@ -334,34 +337,6 @@ type ProductEditorDraft = {
   dirtyDimensions: boolean;
 };
 
-function productUsesVariants(product: Product) {
-  return (
-    product.variant_attributes.length > 0 ||
-    product.variants.some(
-      (variant) => variant.is_active && variant.value_ids.length > 0,
-    )
-  );
-}
-
-function getSimpleProductVariant(product: Product) {
-  return (
-    product.variants.find(
-      (variant) =>
-        variant.is_active &&
-        variant.is_default &&
-        variant.value_ids.length === 0,
-    ) ??
-    product.variants.find(
-      (variant) => variant.is_active && variant.value_ids.length === 0,
-    ) ??
-    product.variants.find(
-      (variant) => variant.is_default && variant.value_ids.length === 0,
-    ) ??
-    product.variants.find((variant) => variant.value_ids.length === 0) ??
-    product.variants[0]
-  );
-}
-
 const editorGuides: Record<EditorTab, { title: string; description: string }> = {
   general: {
     title: "Thông tin & hình ảnh",
@@ -584,7 +559,10 @@ export function ProductPage() {
         product.name,
         product.slug,
         product.product_type?.name,
-        ...product.variants.flatMap((variant) => [variant.sku, variant.barcode]),
+        ...getProductModeVariants(product).flatMap((variant) => [
+          variant.sku,
+          variant.barcode,
+        ]),
       ]
         .filter(Boolean)
         .join(" ")
@@ -700,16 +678,16 @@ export function ProductPage() {
   function edit(product: Product) {
     if (!canUpdateProduct && !canDeleteProduct) return;
     const usesVariants = productUsesVariants(product);
-    const simpleVariant = getSimpleProductVariant(product);
+    const modeVariants = getProductModeVariants(product);
     setViewingProduct(null);
     setForm({
       ...product,
       specifications: product.specifications,
       variant_attributes: product.variant_attributes,
       variants: usesVariants
-        ? product.variants
-        : simpleVariant
-          ? [{ ...simpleVariant, is_default: true, value_ids: [] }]
+        ? modeVariants.map((variant) => ({ ...variant, is_default: false }))
+        : modeVariants[0]
+          ? [{ ...modeVariants[0], is_default: true, value_ids: [] }]
           : emptyInput().variants,
       images: [...product.images].sort(
         (first, second) => Number(second.is_primary) - Number(first.is_primary),
@@ -789,7 +767,14 @@ export function ProductPage() {
       setEditorTab("images");
       return;
     }
-    if (!form.variants.length) {
+    const variantsToSave = hasVariants
+      ? form.variants
+          .filter((variant) => variant.value_ids.length > 0)
+          .map((variant) => ({ ...variant, is_default: false }))
+      : form.variants[0]
+        ? [{ ...form.variants[0], is_default: true, value_ids: [] }]
+        : [];
+    if (!variantsToSave.length) {
       showProductSaveError(
         hasVariants
           ? "Hãy tạo tổ hợp SKU trước khi lưu sản phẩm."
@@ -798,8 +783,12 @@ export function ProductPage() {
       if (hasVariants) setEditorTab("images");
       return;
     }
-    let formToSave = form;
-    const missingEan13Count = form.variants.filter(
+    let formToSave = {
+      ...form,
+      variant_attributes: hasVariants ? form.variant_attributes : [],
+      variants: variantsToSave,
+    };
+    const missingEan13Count = variantsToSave.filter(
       (variant) => !normalizeEan13Input(variant.barcode),
     ).length;
     if (missingEan13Count > 0) {
@@ -812,13 +801,13 @@ export function ProductPage() {
 
       const usedCodes = new Set([
         ...usedEan13Codes.map(normalizeEan13Input),
-        ...form.variants
+        ...variantsToSave
           .map((variant) => normalizeEan13Input(variant.barcode))
           .filter(Boolean),
       ]);
       const generatedAt = Date.now();
       let generationFailed = false;
-      const variants = form.variants.map((variant, index) => {
+      const variants = variantsToSave.map((variant, index) => {
         if (normalizeEan13Input(variant.barcode)) return variant;
         for (let attempt = 0; attempt < 100; attempt += 1) {
           const code = createVietnamEan13FromSeed(
@@ -2344,13 +2333,8 @@ function ProductDetailModal({
   if (!product) return null;
 
   const hasProductVariants = productUsesVariants(product);
-  const simpleVariant = getSimpleProductVariant(product);
-  const displayedVariants = hasProductVariants
-    ? product.variants.filter((variant) => variant.value_ids.length > 0)
-    : simpleVariant
-      ? [simpleVariant]
-      : [];
-  const activeVariants = displayedVariants.filter((variant) => variant.is_active);
+  const displayedVariants = getActiveProductModeVariants(product);
+  const activeVariants = displayedVariants;
   const totalStock = activeVariants.reduce(
     (sum, variant) => sum + variant.stock_quantity,
     0,
@@ -2573,7 +2557,7 @@ function ProductAdminCard({
   selected?: boolean;
   settings: ProductCardSettings;
 }) {
-  const active = product.variants.filter((variant) => variant.is_active);
+  const active = getActiveProductModeVariants(product);
   const prices = active.map((variant) => variant.base_price);
   const minPrice = prices.length ? Math.min(...prices) : 0;
   const lowestVariant = active.find((variant) => variant.base_price === minPrice);
