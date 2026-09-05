@@ -25,6 +25,24 @@ function normalizePhoneNumber(value) {
   return normalized;
 }
 
+function validateUserInput({ email, fullName, password, requirePassword, roleId }) {
+  if (!fullName) {
+    throw httpError(400, "Tên nhân viên là bắt buộc.");
+  }
+  if (fullName.length > 100) {
+    throw httpError(400, "Tên nhân viên không được vượt quá 100 ký tự.");
+  }
+  if (email.length > 254 || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+    throw httpError(400, "Email không hợp lệ.");
+  }
+  if (!roleId) {
+    throw httpError(400, "Vui lòng chọn vai trò.");
+  }
+  if ((requirePassword || password) && password.length < 6) {
+    throw httpError(400, "Mật khẩu phải có ít nhất 6 ký tự.");
+  }
+}
+
 function sendJson(response, statusCode, body) {
   response.statusCode = statusCode;
   response.setHeader("Cache-Control", "no-store");
@@ -174,17 +192,14 @@ async function listUsers(admin, response) {
 
 async function createUser(admin, request, response, actor) {
   const body = await readJsonBody(request);
-  const email = String(body.email ?? "").trim();
+  const email = String(body.email ?? "").trim().toLowerCase();
   const phone = normalizePhoneNumber(body.phone);
   const password = String(body.password ?? "");
   const fullName = String(body.full_name ?? "").trim();
   const roleId = String(body.role_id ?? "").trim();
   const isActive = Boolean(body.is_active);
 
-  if (!password || !roleId) {
-    sendJson(response, 400, { message: "So dien thoai, mat khau va role la bat buoc." });
-    return;
-  }
+  validateUserInput({ email, fullName, password, requirePassword: true, roleId });
 
   const role = await getRoleById(admin, roleId);
   if (role.code === "admin" && !(await userIsSuperAdmin(admin, actor))) {
@@ -239,7 +254,7 @@ async function updateUser(admin, request, response, actor) {
   }
 
   const body = await readJsonBody(request);
-  let email = String(body.email ?? "").trim();
+  let email = String(body.email ?? "").trim().toLowerCase();
   let phone = String(body.phone ?? "").trim();
   let password = String(body.password ?? "");
   let fullName = String(body.full_name ?? "").trim();
@@ -267,6 +282,7 @@ async function updateUser(admin, request, response, actor) {
   }
 
   phone = normalizePhoneNumber(phone);
+  validateUserInput({ email, fullName, password, requirePassword: false, roleId });
 
   const role = await getRoleById(admin, roleId);
   const actorIsSuperAdmin = await userIsSuperAdmin(admin, actor);

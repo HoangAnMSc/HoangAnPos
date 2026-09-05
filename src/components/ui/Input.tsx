@@ -21,6 +21,7 @@ export function Input({ className, error, id, label, ...props }: InputProps) {
         )}
         id={inputId}
         {...props}
+        aria-invalid={error ? true : props["aria-invalid"]}
       />
       {error ? <span className="mt-1 block text-xs font-semibold text-red-600">{error}</span> : null}
     </label>

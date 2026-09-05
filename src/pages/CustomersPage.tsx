@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronRight,
   Edit3,
@@ -14,6 +14,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
+import { CustomerForm } from "../components/customers/CustomerForm";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
@@ -21,12 +22,10 @@ import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
-import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../lib/errors";
-import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../lib/format";
-import { normalizeNullableText } from "../lib/text";
+import { formatCurrency } from "../lib/format";
 import {
   createCustomer,
   deleteCustomer,
@@ -38,24 +37,6 @@ import {
 } from "../services/customers";
 import type { Customer } from "../types";
 
-type CustomerFormState = {
-  name: string;
-  phone: string;
-  email: string;
-  address: string;
-  note: string;
-  points: string;
-};
-
-const emptyForm: CustomerFormState = {
-  address: "",
-  email: "",
-  name: "",
-  note: "",
-  phone: "",
-  points: "0",
-};
-
 function formatCustomerDate(value: string, includeTime = false) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Không rõ";
@@ -63,123 +44,6 @@ function formatCustomerDate(value: string, includeTime = false) {
     "vi-VN",
     includeTime ? { dateStyle: "short", timeStyle: "short" } : undefined,
   ).format(date);
-}
-
-function customerToForm(customer?: Customer | null): CustomerFormState {
-  if (!customer) {
-    return emptyForm;
-  }
-
-  return {
-    address: customer.address ?? "",
-    email: customer.email ?? "",
-    name: customer.name,
-    note: customer.note ?? "",
-    phone: customer.phone ?? "",
-    points: String(customer.points ?? 0),
-  };
-}
-
-type CustomerFormProps = {
-  customer?: Customer | null;
-  formId: string;
-  onSubmit: (input: CustomerInput) => Promise<void>;
-};
-
-function CustomerForm({ customer, formId, onSubmit }: CustomerFormProps) {
-  const [form, setForm] = useState<CustomerFormState>(() => customerToForm(customer));
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setForm(customerToForm(customer));
-    setError("");
-  }, [customer]);
-
-  function updateField(field: keyof CustomerFormState, value: string) {
-    setForm((current) => ({ ...current, [field]: value }));
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-
-    const name = form.name.trim();
-    const points = Number(form.points);
-    if (!name) {
-      setError("Tên khách hàng là bắt buộc.");
-      return;
-    }
-
-    if (!Number.isInteger(points) || points < 0) {
-      setError("Điểm tích lũy phải là số nguyên không âm.");
-      return;
-    }
-
-    try {
-      await onSubmit({
-        address: normalizeNullableText(form.address),
-        email: normalizeNullableText(form.email),
-        name,
-        note: normalizeNullableText(form.note),
-        phone: normalizeNullableText(form.phone),
-        points,
-      });
-    } catch (requestError) {
-      setError(getErrorMessage(requestError, "Lưu khách hàng thất bại."));
-    }
-  }
-
-  return (
-    <form className="space-y-4" id={formId} onSubmit={handleSubmit}>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Input
-          label="Tên khách hàng"
-          onChange={(event) => updateField("name", event.target.value)}
-          placeholder="Nguyễn Hoàng An"
-          required
-          value={form.name}
-        />
-        <Input
-          label="Số điện thoại"
-          onChange={(event) => updateField("phone", event.target.value)}
-          placeholder="090..."
-          value={form.phone}
-        />
-        <Input
-          label="Email"
-          onChange={(event) => updateField("email", event.target.value)}
-          placeholder="khach@example.com"
-          type="email"
-          value={form.email}
-        />
-        <Input
-          label="Địa chỉ"
-          onChange={(event) => updateField("address", event.target.value)}
-          placeholder="Quận/Huyện, Tỉnh/Thành"
-          value={form.address}
-        />
-        <Input
-          inputMode="numeric"
-          label="Điểm tích lũy"
-          onChange={(event) => updateField("points", normalizeIntegerInput(event.target.value))}
-          placeholder="0"
-          value={formatIntegerInput(form.points)}
-        />
-      </div>
-      <Textarea
-        label="Ghi chú"
-        onChange={(event) => updateField("note", event.target.value)}
-        placeholder="Sở thích, lịch sử chăm sóc, lưu ý giao hàng..."
-        value={form.note}
-      />
-
-      {error ? (
-        <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
-        </div>
-      ) : null}
-    </form>
-  );
 }
 
 export function CustomersPage() {

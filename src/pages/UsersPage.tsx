@@ -12,6 +12,12 @@ import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { getErrorMessage } from "../lib/errors";
 import { formatDateTime } from "../lib/format";
+import {
+  formFieldLimits,
+  getEmailError,
+  getPhoneError,
+  getRequiredTextError,
+} from "../lib/formValidation";
 import { formatPhoneNumber, normalizePhoneNumber } from "../lib/phone";
 import {
   createManagedUser,
@@ -26,6 +32,7 @@ import { fetchRoles } from "../services/roles";
 import type { AppRole } from "../types";
 
 type UserFormState = UserInput;
+type UserFormErrors = Partial<Record<keyof UserFormState, string>>;
 
 const emptyUserForm: UserFormState = {
   email: "",
@@ -113,6 +120,7 @@ function UserEditorModal({
   user,
 }: UserEditorModalProps) {
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<UserFormErrors>({});
   const [form, setForm] = useState<UserFormState>(() => userToForm(user, roles));
   const [showPassword, setShowPassword] = useState(false);
   const formId = user ? `user-form-${user.id}` : "user-form-create";
@@ -120,6 +128,7 @@ function UserEditorModal({
   useEffect(() => {
     setForm(userToForm(user, roles));
     setError("");
+    setFieldErrors({});
     setShowPassword(false);
   }, [open, roles, user]);
 
@@ -127,13 +136,18 @@ function UserEditorModal({
     event.preventDefault();
     setError("");
 
-    if (!form.phone.trim() || !form.role_id) {
-      setError("Nhập số điện thoại và chọn vai trò.");
-      return;
+    const nextFieldErrors: UserFormErrors = {
+      email: getEmailError(form.email),
+      full_name: getRequiredTextError(form.full_name, "Tên nhân viên", formFieldLimits.name),
+      phone: getPhoneError(form.phone, true),
+      role_id: form.role_id ? "" : "Vui lòng chọn vai trò.",
+    };
+    if ((!user || form.password) && (form.password?.length ?? 0) < 6) {
+      nextFieldErrors.password = "Mật khẩu phải có ít nhất 6 ký tự.";
     }
+    setFieldErrors(nextFieldErrors);
 
-    if (!user && !form.password) {
-      setError("Nhập mật khẩu cho nhân viên mới.");
+    if (Object.values(nextFieldErrors).some(Boolean)) {
       return;
     }
 
@@ -173,12 +187,17 @@ function UserEditorModal({
       size="lg"
       title={user ? "Sửa nhân viên" : "Tạo nhân viên"}
     >
-      <form className="space-y-5" id={formId} onSubmit={handleSubmit}>
+      <form className="space-y-5" id={formId} noValidate onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
             autoComplete="tel"
+            error={fieldErrors.phone}
             label="Số điện thoại *"
-            onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
+            maxLength={24}
+            onChange={(event) => {
+              setForm((current) => ({ ...current, phone: event.target.value }));
+              setFieldErrors((current) => ({ ...current, phone: "" }));
+            }}
             placeholder="0362123456"
             required
             type="tel"
@@ -186,15 +205,26 @@ function UserEditorModal({
           />
           <Input
             autoComplete="email"
+            error={fieldErrors.email}
             label="Email (tùy chọn, dùng để quên mật khẩu)"
-            onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+            maxLength={formFieldLimits.email}
+            onChange={(event) => {
+              setForm((current) => ({ ...current, email: event.target.value }));
+              setFieldErrors((current) => ({ ...current, email: "" }));
+            }}
             placeholder="nhanvien@example.com"
             type="email"
             value={form.email}
           />
           <Input
-            label="Tên hiển thị"
-            onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))}
+            error={fieldErrors.full_name}
+            label="Tên nhân viên *"
+            maxLength={formFieldLimits.name}
+            onChange={(event) => {
+              setForm((current) => ({ ...current, full_name: event.target.value }));
+              setFieldErrors((current) => ({ ...current, full_name: "" }));
+            }}
+            required
             value={form.full_name}
           />
           <div>
@@ -206,10 +236,12 @@ function UserEditorModal({
                 aria-label={user ? "Mật khẩu mới" : "Mật khẩu"}
                 autoComplete="new-password"
                 className="pr-12"
+                error={fieldErrors.password}
                 minLength={6}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, password: event.target.value }))
-                }
+                onChange={(event) => {
+                  setForm((current) => ({ ...current, password: event.target.value }));
+                  setFieldErrors((current) => ({ ...current, password: "" }));
+                }}
                 type={showPassword ? "text" : "password"}
                 value={form.password}
               />
@@ -228,8 +260,12 @@ function UserEditorModal({
         <label className="block">
           <span className="mb-2 block text-sm font-extrabold text-slate-950">Vai trò</span>
           <select
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-coal outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
-            onChange={(event) => setForm((current) => ({ ...current, role_id: event.target.value }))}
+            aria-invalid={Boolean(fieldErrors.role_id)}
+            className={`w-full rounded-2xl border bg-white px-4 py-3 text-sm font-bold text-coal outline-none focus:ring-4 ${fieldErrors.role_id ? "border-red-400 focus:border-red-500 focus:ring-red-100" : "border-slate-200 focus:border-moss-400 focus:ring-moss-100"}`}
+            onChange={(event) => {
+              setForm((current) => ({ ...current, role_id: event.target.value }));
+              setFieldErrors((current) => ({ ...current, role_id: "" }));
+            }}
             value={form.role_id}
           >
             <option value="">Chọn vai trò</option>
@@ -239,6 +275,11 @@ function UserEditorModal({
               </option>
             ))}
           </select>
+          {fieldErrors.role_id ? (
+            <span className="mt-1 block text-xs font-semibold text-red-600">
+              {fieldErrors.role_id}
+            </span>
+          ) : null}
         </label>
 
         <label className={`flex items-center justify-between gap-4 rounded-2xl bg-slate-50 px-4 py-3.5 ${user && !canToggleUser ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>

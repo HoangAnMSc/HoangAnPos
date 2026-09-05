@@ -2,9 +2,10 @@ import { clsx } from "clsx";
 
 type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
   label?: string;
+  error?: string;
 };
 
-export function Textarea({ className, id, label, ...props }: TextareaProps) {
+export function Textarea({ className, error, id, label, ...props }: TextareaProps) {
   const inputId = id ?? props.name;
 
   return (
@@ -15,11 +16,14 @@ export function Textarea({ className, id, label, ...props }: TextareaProps) {
       <textarea
         className={clsx(
           "min-h-24 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-coal outline-none transition placeholder:text-coal/35 focus:border-moss-500 focus:ring-4 focus:ring-moss-100",
+          error && "border-red-400 focus:border-red-500 focus:ring-red-100",
           className
         )}
         id={inputId}
         {...props}
+        aria-invalid={error ? true : props["aria-invalid"]}
       />
+      {error ? <span className="mt-1 block text-xs font-semibold text-red-600">{error}</span> : null}
     </label>
   );
 }

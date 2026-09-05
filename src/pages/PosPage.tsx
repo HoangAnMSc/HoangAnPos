@@ -1,5 +1,4 @@
 import {
-  FormEvent,
   KeyboardEvent,
   useCallback,
   useEffect,
@@ -29,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { CustomerForm } from "../components/customers/CustomerForm";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { ConfigurableProductCard } from "../components/products/ConfigurableProductCard";
 import { Button } from "../components/ui/Button";
@@ -134,21 +134,8 @@ type PosWorkspace = {
   bills: PosBill[];
 };
 
-type QuickCustomerFormState = {
-  name: string;
-  phone: string;
-  note: string;
-};
-
 const posWorkspaceStorageKey = (userId: string) =>
   `hoang-an-pos:pos-workspace:v2:${userId}`;
-
-const emptyCustomerForm: QuickCustomerFormState = {
-  name: "",
-  note: "",
-  phone: "",
-};
-const renderLegacyModalActions = false;
 
 function createLineId(productId: string) {
   return `${productId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -417,85 +404,6 @@ function getCartItemImageUrl(item: CartItem) {
     item.variant?.linked_values?.image_url ??
     item.product.image_url ??
     null
-  );
-}
-
-type QuickCustomerFormProps = {
-  formId: string;
-  submitting: boolean;
-  onCancel: () => void;
-  onSubmit: (input: CustomerInput) => Promise<void>;
-};
-
-function QuickCustomerForm({
-  formId,
-  onCancel,
-  onSubmit,
-  submitting,
-}: QuickCustomerFormProps) {
-  const [form, setForm] = useState(emptyCustomerForm);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-
-    const name = form.name.trim();
-    if (!name) {
-      setError("Tên khách hàng là bắt buộc.");
-      return;
-    }
-
-    await onSubmit({
-      name,
-      note: normalizeNullableText(form.note),
-      phone: normalizeNullableText(form.phone),
-    });
-  }
-
-  return (
-    <form className="space-y-4" id={formId} onSubmit={handleSubmit}>
-      <Input
-        label="Tên khách hàng"
-        onChange={(event) =>
-          setForm((current) => ({ ...current, name: event.target.value }))
-        }
-        placeholder="Tên khách hàng"
-        required
-        value={form.name}
-      />
-      <Input
-        label="Số điện thoại"
-        onChange={(event) =>
-          setForm((current) => ({ ...current, phone: event.target.value }))
-        }
-        placeholder="090..."
-        value={form.phone}
-      />
-      <Textarea
-        label="Ghi chú nhanh"
-        onChange={(event) =>
-          setForm((current) => ({ ...current, note: event.target.value }))
-        }
-        placeholder="Ví dụ: khách thân thiết, cần giao chiều nay..."
-        value={form.note}
-      />
-      {error ? (
-        <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
-        </div>
-      ) : null}
-      {renderLegacyModalActions ? (
-        <div className="hidden">
-          <Button onClick={onCancel} type="button" variant="secondary">
-            Hủy
-          </Button>
-          <Button isLoading={submitting} type="submit">
-            Lưu khách hàng
-          </Button>
-        </div>
-      ) : null}
-    </form>
   );
 }
 
@@ -3086,14 +2994,12 @@ export function PosPage() {
           }
           onClose={() => setCustomerModalOpen(false)}
           open={customerModalOpen}
-          size="md"
+          size="lg"
           title="Thêm khách hàng nhanh"
         >
-          <QuickCustomerForm
+          <CustomerForm
             formId={quickCustomerFormId}
-            onCancel={() => setCustomerModalOpen(false)}
             onSubmit={handleCreateCustomer}
-            submitting={submittingCustomer}
           />
         </Modal>
       ) : null}

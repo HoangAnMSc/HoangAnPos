@@ -1,5 +1,13 @@
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import { productEngineClient } from "../features/products/services/client";
+import {
+  formFieldLimits,
+  getEmailError,
+  getOptionalTextError,
+  getPhoneError,
+  getRequiredTextError,
+} from "../lib/formValidation";
+import { normalizeNullableText } from "../lib/text";
 
 export type CustomerPurchaseHistoryItem = {
   id: string;
@@ -31,12 +39,38 @@ export type CustomerPurchaseHistoryOrder = {
 
 export type CustomerInput = {
   name: string;
-  phone?: string | null;
+  phone: string;
   email?: string | null;
   address?: string | null;
   note?: string | null;
-  points?: number;
 };
+
+function normalizeCustomerInput(input: CustomerInput): CustomerInput {
+  const name = String(input.name ?? "").trim();
+  const phone = String(input.phone ?? "");
+  const email = String(input.email ?? "").trim().toLowerCase();
+  const address = String(input.address ?? "");
+  const note = String(input.note ?? "");
+  const errors = [
+    getRequiredTextError(name, "Tên khách hàng", formFieldLimits.name),
+    getPhoneError(phone, true),
+    getEmailError(email),
+    getOptionalTextError(address, "Địa chỉ", formFieldLimits.address),
+    getOptionalTextError(note, "Ghi chú", formFieldLimits.note),
+  ].filter(Boolean);
+
+  if (errors.length > 0) {
+    throw new Error(errors[0]);
+  }
+
+  return {
+    address: normalizeNullableText(address),
+    email: normalizeNullableText(email),
+    name,
+    note: normalizeNullableText(note),
+    phone: phone.trim(),
+  };
+}
 
 export async function fetchCustomers() {
   requireSupabaseConfig();
@@ -148,7 +182,11 @@ export async function fetchCustomerPurchaseHistory(
 export async function createCustomer(input: CustomerInput) {
   requireSupabaseConfig();
 
-  const { data, error } = await supabase.from("customers").insert(input).select("*").single();
+  const { data, error } = await supabase
+    .from("customers")
+    .insert(normalizeCustomerInput(input))
+    .select("*")
+    .single();
 
   if (error) {
     throw error;
@@ -162,7 +200,7 @@ export async function updateCustomer(id: string, input: CustomerInput) {
 
   const { data, error } = await supabase
     .from("customers")
-    .update(input)
+    .update(normalizeCustomerInput(input))
     .eq("id", id)
     .select("*")
     .single();
