@@ -18,6 +18,8 @@ import {
   sortVariantsByAttributeOrder,
 } from "../utils/variants";
 import { productEngineClient } from "./client";
+import { isValidEan13, normalizeEan13Input } from "../../../lib/productDisplay";
+import { fetchProductBarcodeReservations, getProductBarcodeConflictMessage } from "./productBarcodes";
 
 function throwIfError(error: { message: string } | null) {
   if (error) throw new Error(error.message);
@@ -352,7 +354,23 @@ export async function saveProduct(input: ProductEditorInput) {
       .filter((row) => !inputVariantIds.has(row.id))
       .map((row) => row.sku),
   );
-  const normalizedVariants = variantsWithStoredIds.map((variant) => {
+  const normalizedBarcodeVariants = variantsWithStoredIds.map((variant) => ({
+    ...variant,
+    barcode: normalizeEan13Input(variant.barcode) || null,
+  }));
+  const barcodes = normalizedBarcodeVariants.map((variant) => variant.barcode).filter((code): code is string => Boolean(code));
+  if (barcodes.some((code) => !isValidEan13(code))) {
+    throw new Error("Mỗi EAN-13 phải có đúng 13 chữ số và số kiểm tra hợp lệ.");
+  }
+  if (new Set(barcodes).size !== barcodes.length) {
+    throw new Error("EAN-13 không được trùng giữa các SKU.");
+  }
+  const reservations = await fetchProductBarcodeReservations(barcodes);
+  for (const variant of normalizedBarcodeVariants) {
+    const conflict = getProductBarcodeConflictMessage(variant.barcode, reservations, variant.id);
+    if (conflict) throw new Error(conflict);
+  }
+  const normalizedVariants = normalizedBarcodeVariants.map((variant) => {
     const generatedSku =
       uniqueSlug !== input.slug && variant.sku.startsWith(`${originalPrefix}-`)
         ? `${uniquePrefix}${variant.sku.slice(originalPrefix.length)}`

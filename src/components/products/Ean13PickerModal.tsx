@@ -17,6 +17,7 @@ type Props = {
   open: boolean;
   title?: string;
   usedCodes: string[];
+  getConflictMessage?: (code: string) => string | null;
 };
 
 export function Ean13PickerModal({
@@ -27,6 +28,7 @@ export function Ean13PickerModal({
   open,
   title = "Chọn mã EAN-13",
   usedCodes,
+  getConflictMessage,
 }: Props) {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [error, setError] = useState("");
@@ -44,12 +46,12 @@ export function Ean13PickerModal({
       setError("Mã EAN-13 phải có đúng 13 chữ số và đúng số kiểm tra.");
       return;
     }
-    if (
-      code !== normalizeEan13Input(currentCode ?? "") &&
-      usedCodes.some((item) => normalizeEan13Input(item) === code)
-    ) {
-      setError(`EAN-13 ${code} đã được sử dụng bởi SKU khác.`);
-      return;
+    if (code !== normalizeEan13Input(currentCode ?? "")) {
+      const conflict = getConflictMessage?.(code);
+      if (conflict || usedCodes.some((item) => normalizeEan13Input(item) === code)) {
+        setError(conflict || `EAN-13 ${code} đã được sử dụng bởi SKU khác.`);
+        return;
+      }
     }
     onSelect(code);
     setScannerOpen(false);

@@ -56,6 +56,11 @@ import {
   saveProductTypeAttributes,
   updateProductStatus,
 } from "../features/products/services/productEngine";
+import {
+  fetchProductBarcodeReservations,
+  getProductBarcodeConflictMessage,
+  type ProductBarcodeReservation,
+} from "../features/products/services/productBarcodes";
 import type {
   AttributeDataType,
   AttributeInputType,
@@ -466,6 +471,7 @@ export function ProductPage() {
   const [pageTab, setPageTab] = useState<PageTab>("products");
   const [editorTab, setEditorTab] = useState<EditorTab>("general");
   const [products, setProducts] = useState<Product[]>([]);
+  const [barcodeReservations, setBarcodeReservations] = useState<ProductBarcodeReservation[]>([]);
   const [types, setTypes] = useState<ProductType[]>([]);
   const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
   const [typeAttributes, setTypeAttributes] = useState<ProductTypeAttribute[]>(
@@ -504,18 +510,20 @@ export function ProductPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, t, a, ta, settings] = await Promise.all([
+      const [p, t, a, ta, settings, reservedBarcodes] = await Promise.all([
         fetchProducts(),
         fetchProductTypes(),
         fetchAttributes(),
         fetchProductTypeAttributes(),
         fetchProductSettings(),
+        fetchProductBarcodeReservations(),
       ]);
       setProducts(p);
       setTypes(t);
       setAttributes(a);
       setTypeAttributes(ta);
       setProductSettings(settings);
+      setBarcodeReservations(reservedBarcodes);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Không tải được dữ liệu.",
@@ -670,13 +678,8 @@ export function ProductPage() {
     });
   }
   const usedEan13Codes = useMemo(
-    () =>
-      products.flatMap((product) =>
-        product.variants
-          .map((variant) => variant.barcode)
-          .filter((code): code is string => Boolean(code)),
-      ),
-    [products],
+    () => barcodeReservations.map((row) => row.barcode),
+    [barcodeReservations],
   );
   function edit(product: Product) {
     if (!canUpdateProduct && !canDeleteProduct) return;
@@ -857,14 +860,11 @@ export function ProductPage() {
       setEditorTab(hasVariants ? "images" : "general");
       return;
     }
-    const conflictingBarcode = formToSave.variants.find((variant) =>
-      products.some((product) => product.variants.some((stored) =>
-        stored.id !== variant.id &&
-        normalizeEan13Input(stored.barcode) === normalizeEan13Input(variant.barcode),
-      )),
-    )?.barcode;
-    if (conflictingBarcode) {
-      showProductSaveError(`EAN-13 ${conflictingBarcode} đã được sử dụng bởi SKU khác.`);
+    const barcodeConflict = formToSave.variants
+      .map((variant) => getProductBarcodeConflictMessage(variant.barcode, barcodeReservations, variant.id))
+      .find(Boolean);
+    if (barcodeConflict) {
+      showProductSaveError(barcodeConflict);
       setEditorTab(hasVariants ? "images" : "general");
       return;
     }
@@ -2056,6 +2056,9 @@ export function ProductPage() {
                   onChange={updateVariants}
                   onGenerate={generate}
                   usedEan13Codes={usedEan13Codes}
+                  getBarcodeConflictMessage={(code, variantId) =>
+                    getProductBarcodeConflictMessage(code, barcodeReservations, variantId)
+                  }
                   variants={form.variants}
                 />
               </>
@@ -2141,6 +2144,7 @@ export function ProductPage() {
       </Modal>
       <Ean13PickerModal
         description="Sản phẩm mới cần một EAN-13 cho SKU mặc định. Bạn có thể quét mã trên bao bì hoặc để hệ thống tự tạo mã Việt Nam."
+        getConflictMessage={(code) => getProductBarcodeConflictMessage(code, barcodeReservations)}
         onClose={() => setEan13GateOpen(false)}
         onSelect={createProductWithEan13}
         open={ean13GateOpen}
@@ -2149,6 +2153,7 @@ export function ProductPage() {
       />
       <Ean13PickerModal
         currentCode={form.variants[0]?.barcode}
+        getConflictMessage={(code) => getProductBarcodeConflictMessage(code, barcodeReservations, form.variants[0]?.id)}
         description="Bạn có thể quét lại mã trên bao bì hoặc tự tạo một EAN-13 Việt Nam mới cho SKU mặc định."
         onClose={() => setDefaultEanOpen(false)}
         onSelect={(code) => updatePrimaryVariant({ barcode: code })}

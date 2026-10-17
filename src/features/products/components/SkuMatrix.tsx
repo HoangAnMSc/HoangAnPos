@@ -17,6 +17,7 @@ type Props = {
   onAddManual: () => void;
   fallbackImageUrl?: string | null;
   usedEan13Codes?: string[];
+  getBarcodeConflictMessage?: (code: string, variantId?: string) => string | null;
 };
 const pageSize = 50;
 function SellSwitch({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
@@ -40,6 +41,7 @@ export function SkuMatrix({
   onChange,
   onGenerate,
   usedEan13Codes = [],
+  getBarcodeConflictMessage,
   variants,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -509,6 +511,7 @@ export function SkuMatrix({
       </Modal>
       <Ean13PickerModal
         currentCode={eanTarget?.barcode}
+        getConflictMessage={(code) => getBarcodeConflictMessage?.(code, eanTarget?.id) ?? null}
         description="EAN-13 thuộc riêng SKU này. Có thể quét mã trên bao bì hoặc tự tạo mã Việt Nam không trùng với SKU khác."
         onClose={() => setEanTarget(null)}
         onSelect={(code) => {

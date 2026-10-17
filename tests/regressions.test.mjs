@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { build } from "esbuild";
 
+let sourceInstance = 0;
 async function loadSource(entry, mockSupabase = false, mockAuth = false) {
   const result = await build({
     entryPoints: [entry], bundle: true, write: false, format: "esm", platform: "node",
@@ -26,7 +27,7 @@ async function loadSource(entry, mockSupabase = false, mockAuth = false) {
       },
     }] : [],
   });
-  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}#${sourceInstance++}`);
 }
 
 test("existing Product Engine acceptance scenarios", async () => {
@@ -67,6 +68,73 @@ test("switching a simple SKU to combinations retains identity, barcode and stock
   assert.equal(generated[1].stock_quantity, 0);
   assert.deepEqual(mergeGeneratedVariants(attributes, generated, "SHIRT"), generated);
   assert.deepEqual(original.value_ids, []);
+});
+
+function barcodeDatabase(rows, rpcCalls = []) {
+  return {
+    from(table) {
+      let columns = "", offset = 0, last = Infinity, codes;
+      const query = {
+        select(value) { columns = value; return query; },
+        not() { return query; }, order() { return query; }, like() { return query; },
+        neq() { return query; }, eq() { return query; },
+        range(first, end) { offset = first; last = end; return query; },
+        in(_column, values) { codes = values; return query; },
+        then(resolve, reject) {
+          const data = table === "products" ? []
+            : rows.filter((row) => !codes || codes.includes(row.barcode))
+              .slice(offset, last + 1).map((row) => columns.includes("products(") ? row : {
+                id: row.id, product_id: row.product_id, sku: row.sku,
+              });
+          return Promise.resolve({ data, error: null }).then(resolve, reject);
+        },
+      };
+      return query;
+    },
+    rpc: async (_name, args) => { rpcCalls.push(args); return { data: "saved-product", error: null }; },
+  };
+}
+
+const archivedBarcode = {
+  id: "archived-sku", product_id: "archived-product", sku: "ARCHIVED-001", barcode: "4006381333931",
+  is_active: false, products: { name: "Sản phẩm đã xóa", deleted_at: "2026-10-16T00:00:00Z" },
+};
+
+test("barcode lookup includes deleted products, paginates and identifies the owning SKU", async () => {
+  const rows = [archivedBarcode, ...Array.from({ length: 500 }, (_, index) => ({
+    ...archivedBarcode, id: `sku-${index}`, barcode: String(index).padStart(13, "0"),
+  }))];
+  globalThis.testSupabase = barcodeDatabase(rows);
+  try {
+    const { fetchProductBarcodeReservations, getProductBarcodeConflictMessage } = await loadSource("src/features/products/services/productBarcodes.ts", true);
+    const all = await fetchProductBarcodeReservations();
+    assert.equal(all.length, 501, "Lookup must not truncate reservations after the first page");
+    const matching = await fetchProductBarcodeReservations([archivedBarcode.barcode]);
+    assert.equal(matching.length, 1);
+    assert.match(getProductBarcodeConflictMessage(archivedBarcode.barcode, matching), /ARCHIVED-001.*Sản phẩm đã xóa.*đã xóa/);
+    assert.equal(getProductBarcodeConflictMessage(archivedBarcode.barcode, matching, archivedBarcode.id), null);
+    assert.equal(getProductBarcodeConflictMessage("", matching), null);
+  } finally { delete globalThis.testSupabase; }
+});
+
+test("save checks current barcode data before RPC, including reservations invisible in the product list", async () => {
+  const rpcCalls = [];
+  globalThis.testSupabase = barcodeDatabase([archivedBarcode], rpcCalls);
+  try {
+    const { saveProduct } = await loadSource("src/features/products/services/productEngine.ts", true);
+    const input = {
+      name: "Sản phẩm mới", slug: "san-pham-moi", variant_attributes: [], specifications: [], images: [],
+      variants: [{ sku: "NEW-001", barcode: archivedBarcode.barcode }],
+    };
+    await assert.rejects(saveProduct(input), /ARCHIVED-001.*Sản phẩm đã xóa/);
+    assert.equal(rpcCalls.length, 0, "A reserved barcode must not reach the write RPC");
+    await assert.rejects(saveProduct({ ...input, variants: [{ sku: "NEW-001", barcode: "4006381333932" }] }), /số kiểm tra hợp lệ/);
+    assert.equal(rpcCalls.length, 0);
+    await saveProduct({ ...input, variants: [{ sku: "NEW-001", barcode: "001 234 567 890 5" }] });
+    assert.equal(rpcCalls[0].payload.variants[0].barcode, "0012345678905");
+    await saveProduct({ ...input, id: archivedBarcode.product_id, variants: [{ id: archivedBarcode.id, sku: archivedBarcode.sku, barcode: archivedBarcode.barcode }] });
+    assert.equal(rpcCalls[1].payload.variants[0].id, archivedBarcode.id, "Editing an existing SKU may keep its own barcode");
+  } finally { delete globalThis.testSupabase; }
 });
 
 test("Cloudinary deletion keeps the actual API error and uses the known public ID", async () => {
