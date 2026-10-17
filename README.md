@@ -135,9 +135,15 @@ Sau khi thay đổi biến môi trường, hãy redeploy. API quản lý nhân v
 
 ## Các lệnh thường dùng
 
+Nếu database đã cài Product Engine, chạy migration
+`supabase/migrations/202610170001_fix_cloudinary_image_cleanup.sql` trong SQL Editor
+để sửa lỗi dọn liên kết sau khi xóa ảnh Cloudinary. Migration này giữ nguyên dữ liệu.
+Không chạy lại `schema.sql` trên database đang sử dụng vì file đó xóa schema `public`.
+
 ```bash
 npm run dev
 npm run lint
+npm test
 npm run build
 npm run preview
 ```

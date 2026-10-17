@@ -235,12 +235,6 @@ begin
   delete from public.product_images where image_url=image_url_input;
   get diagnostics affected=row_count;
 
-  update public.products
-  set image_url=null, updated_at=now()
-  where image_url=image_url_input;
-  get diagnostics current_count=row_count;
-  affected:=affected+current_count;
-
   update public.product_variant_values set metadata=metadata-'image_url'-'cloudinary_public_id',updated_at=now() where metadata->>'image_url'=image_url_input;
   get diagnostics current_count=row_count;
   return affected+current_count;

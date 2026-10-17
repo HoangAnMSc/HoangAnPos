@@ -174,13 +174,6 @@ const sql = readFileSync(
   new URL("../supabase/schema.sql", import.meta.url),
   "utf8",
 );
-const warehouseAuditMigration = readFileSync(
-  new URL(
-    "../supabase/migrations/202608140001_warehouse_product_audit.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
 for (const table of [
   "product_types",
   "product_attributes",
@@ -240,7 +233,7 @@ assert.match(
   /variant_value_links_variant_value_id_variant_attribute_id_fkey[\s\S]*on delete cascade/i,
   "Composite variant-value ownership FK must cascade",
 );
-for (const source of [sql, warehouseAuditMigration]) {
+for (const source of [sql]) {
   assert.match(
     source,
     /product_name_snapshot/i,

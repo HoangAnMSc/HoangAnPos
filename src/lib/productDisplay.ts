@@ -197,7 +197,7 @@ export function formatExpiryDays(value?: string | null) {
 }
 
 export function normalizeEan13Input(value?: string | null) {
-  return (value ?? "").replace(/\D/g, "").slice(0, 13);
+  return (value ?? "").replace(/\D/g, "");
 }
 
 export function calculateEan13CheckDigit(first12Digits: string) {

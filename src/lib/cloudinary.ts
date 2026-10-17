@@ -88,7 +88,7 @@ export function getCloudinaryPublicId(imageUrl: string) {
   try {
     const url = new URL(imageUrl);
 
-    if (!url.hostname.includes("cloudinary.com")) {
+    if (url.hostname !== "res.cloudinary.com") {
       return null;
     }
 
@@ -127,9 +127,10 @@ export async function deleteCloudinaryProductImage(
   options?: {
     deleteToken?: string | null;
     deleteTokenExpiresAt?: string | null;
+    publicId?: string | null;
   },
 ) {
-  const publicId = getCloudinaryPublicId(imageUrl);
+  const publicId = options?.publicId?.trim() || getCloudinaryPublicId(imageUrl);
 
   if (!publicId) {
     throw new Error("Không nhận diện được public_id của ảnh Cloudinary.");
@@ -148,10 +149,18 @@ export async function deleteCloudinaryProductImage(
 
   try {
     return await deleteCloudinaryImageViaAppApi(publicId);
-  } catch {
-    return deleteCloudinaryImageViaSupabase(publicId);
+  } catch (error) {
+    // Preserve credential, permission and Cloudinary errors from the app API.
+    if (!(error instanceof CloudinaryApiUnavailableError)) throw error;
+    try {
+      return await deleteCloudinaryImageViaSupabase(publicId);
+    } catch {
+      throw error;
+    }
   }
 }
+
+class CloudinaryApiUnavailableError extends Error {}
 
 function isDeleteTokenUsable(expiresAt?: string | null) {
   if (!expiresAt) {
@@ -195,8 +204,8 @@ async function deleteCloudinaryImageViaAppApi(publicId: string) {
   });
   const contentType = response.headers.get("content-type") ?? "";
 
-  if (!contentType.includes("application/json")) {
-    throw new Error("API xóa ảnh của ứng dụng chưa khả dụng.");
+  if (!contentType.includes("application/json") || response.status === 404 || response.status === 405) {
+    throw new CloudinaryApiUnavailableError("API xóa ảnh của ứng dụng chưa khả dụng.");
   }
 
   const data = (await response.json()) as CloudinaryDeleteResponse;

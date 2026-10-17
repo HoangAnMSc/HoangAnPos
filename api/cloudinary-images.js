@@ -115,7 +115,7 @@ export default async function handler(request, response) {
   if (request.method === "GET") {
     const rawScope = Array.isArray(request.query?.scope)
       ? request.query.scope[0]
-      : request.query?.scope;
+      : request.query?.scope ?? new URL(request.url, "http://localhost").searchParams.get("scope");
     const scope =
       typeof rawScope === "string" && rawScope.trim()
         ? rawScope.trim()

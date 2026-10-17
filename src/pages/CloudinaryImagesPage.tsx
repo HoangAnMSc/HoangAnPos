@@ -35,6 +35,7 @@ type ImageLibraryItem = {
   height: number | null;
   publicId: string | null;
   record: CloudinaryImage | null;
+  relatedUrls: string[];
   products: Product[];
   url: string;
   width: number | null;
@@ -46,6 +47,9 @@ function createImageLibraryItems(
   cloudinaryResources: CloudinaryImageResource[]
 ) {
   const items = new Map<string, ImageLibraryItem>();
+  const itemsByPublicId = new Map<string, ImageLibraryItem>();
+  const findItem = (url: string, publicId: string | null) =>
+    items.get(url) ?? (publicId ? itemsByPublicId.get(publicId) : undefined);
 
   cloudinaryResources.forEach((resource) => {
     const url = resource.secure_url || resource.url;
@@ -54,7 +58,7 @@ function createImageLibraryItems(
       return;
     }
 
-    items.set(url, {
+    const item: ImageLibraryItem = {
       bytes: resource.bytes ?? null,
       cloudinary: resource,
       createdAt: resource.created_at ?? "",
@@ -63,17 +67,30 @@ function createImageLibraryItems(
       products: [],
       publicId: resource.public_id || getCloudinaryPublicId(url),
       record: null,
+      relatedUrls: resource.url ? [url, resource.url] : [url],
       url,
       width: resource.width ?? null,
-    });
+    };
+    items.set(url, item);
+    if (item.publicId) itemsByPublicId.set(item.publicId, item);
   });
 
   records.forEach((record) => {
-    const existing = items.get(record.url);
+    const publicId = record.public_id || getCloudinaryPublicId(record.url);
+    const existing = findItem(record.url, publicId);
 
     if (existing) {
-      existing.record = record;
+      existing.record ??= record;
+      existing.relatedUrls.push(record.url);
       existing.publicId = existing.publicId || record.public_id || getCloudinaryPublicId(record.url);
+    } else {
+      const item: ImageLibraryItem = {
+        bytes: null, cloudinary: null, createdAt: record.created_at,
+        format: null, height: null, width: null, products: [],
+        publicId, record, relatedUrls: [record.url], url: record.url,
+      };
+      items.set(record.url, item);
+      if (publicId) itemsByPublicId.set(publicId, item);
     }
   });
 
@@ -84,10 +101,11 @@ function createImageLibraryItems(
       return;
     }
 
-    const existing = items.get(imageUrl);
+    const existing = findItem(imageUrl, getCloudinaryPublicId(imageUrl));
 
     if (existing) {
       existing.products.push(product);
+      existing.relatedUrls.push(imageUrl);
     }
   });
 
@@ -106,18 +124,33 @@ export function CloudinaryImagesPage() {
   const [previewImage, setPreviewImage] = useState<ImageLibraryItem | null>(null);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(() => new Set());
   const [uploading, setUploading] = useState(false);
+  const [loadWarning, setLoadWarning] = useState("");
   const canUploadImage = canAccess("cloudinary-images.upload");
   const canDeleteImage = canAccess("cloudinary-images.delete");
 
   const loadImages = useCallback(async () => {
     setLoading(true);
+    setLoadWarning("");
 
     try {
-      const [nextProducts, nextRecords, nextCloudinaryResources] = await Promise.all([
+      const [productsResult, recordsResult, resourcesResult] = await Promise.allSettled([
         fetchProducts(),
         fetchCloudinaryImageRecords(),
         fetchCloudinaryImageResources(),
       ]);
+
+      if (resourcesResult.status === "rejected" && recordsResult.status === "rejected") {
+        throw resourcesResult.reason;
+      }
+      const nextProducts = productsResult.status === "fulfilled" ? productsResult.value : [];
+      const nextRecords = recordsResult.status === "fulfilled" ? recordsResult.value : [];
+      const nextCloudinaryResources = resourcesResult.status === "fulfilled" ? resourcesResult.value : [];
+      const warnings = [
+        productsResult.status === "rejected" ? "Chưa kiểm tra được ảnh đang dùng bởi sản phẩm." : "",
+        recordsResult.status === "rejected" ? getErrorMessage(recordsResult.reason, "Không tải được bản ghi ảnh.") : "",
+        resourcesResult.status === "rejected" ? getErrorMessage(resourcesResult.reason, "Không tải được ảnh từ Cloudinary.") : "",
+      ].filter(Boolean);
+      setLoadWarning(warnings.join(" "));
 
       const nextImages = createImageLibraryItems(nextProducts, nextRecords, nextCloudinaryResources);
       const availableUrls = new Set(nextImages.map((item) => item.url));
@@ -233,16 +266,21 @@ export function CloudinaryImagesPage() {
     }
 
     const urls = items.map((item) => item.url);
+    const deletedUrls: string[] = [];
     setDeletingUrls(urls);
 
     try {
       for (const item of items) {
         await deleteCloudinaryProductImage(item.url, {
+          publicId: item.publicId,
           deleteToken: item.record?.delete_token,
           deleteTokenExpiresAt: item.record?.delete_token_expires_at,
         });
-        await clearProductsImageUrl(item.url);
-        await deleteCloudinaryImageRecord(item.url);
+        for (const url of new Set(item.relatedUrls)) {
+          await clearProductsImageUrl(url);
+          await deleteCloudinaryImageRecord(url);
+        }
+        deletedUrls.push(item.url);
       }
 
       setSelectedUrls((current) => {
@@ -255,12 +293,18 @@ export function CloudinaryImagesPage() {
       showSuccess(`Đã xóa ${items.length} ảnh khỏi thư viện Cloudinary.`);
     } catch (requestError) {
       setErrorNotice({
-        detail:
-          "Cần cấu hình CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY và CLOUDINARY_API_SECRET cho API route /api/cloudinary-images trên Vercel hoặc Edge Function delete-cloudinary-image của Supabase.",
+        detail: deletedUrls.length
+          ? `Đã xóa ${deletedUrls.length}/${items.length} ảnh. Những ảnh còn lại chưa hoàn tất; bạn có thể thử lại.`
+          : "Nếu ảnh đã được xóa trên Cloudinary, hãy thử lại để hoàn tất dọn liên kết ảnh trong dữ liệu sản phẩm.",
         message: getErrorMessage(requestError, "Xóa ảnh Cloudinary thất bại."),
         title: "Xóa ảnh thất bại",
       });
     } finally {
+      if (deletedUrls.length) {
+        setImages((current) => current.filter((item) => !deletedUrls.includes(item.url)));
+        setSelectedUrls((current) => new Set([...current].filter((url) => !deletedUrls.includes(url))));
+        setPreviewImage((current) => current && deletedUrls.includes(current.url) ? null : current);
+      }
       setDeletingUrls([]);
     }
   }
@@ -279,6 +323,11 @@ export function CloudinaryImagesPage() {
   return (
     <PageContainer className={selectedItems.length > 0 ? "!pb-28" : undefined}>
         <ConfigNotice />
+        {loadWarning ? (
+          <p className="rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-800" role="status">
+            {loadWarning}
+          </p>
+        ) : null}
 
         <section className="rounded-2xl bg-white p-3 shadow-soft ring-1 ring-coal/5 sm:p-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">

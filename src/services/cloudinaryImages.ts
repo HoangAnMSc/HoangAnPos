@@ -10,6 +10,8 @@ function isMissingCloudinaryImagesTable(error: unknown) {
   return (
     typeof error === "object" &&
     error !== null &&
+    "code" in error &&
+    (error.code === "PGRST205" || error.code === "42P01") &&
     "message" in error &&
     typeof error.message === "string" &&
     error.message.includes("cloudinary_images")

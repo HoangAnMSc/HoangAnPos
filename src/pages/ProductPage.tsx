@@ -112,6 +112,9 @@ function productArchiveErrorMessage(reason: unknown) {
 }
 
 function productSaveErrorMessage(message: string) {
+  if (message.includes("product_variants_barcode_key")) {
+    return "EAN-13 đã được sử dụng bởi SKU khác, kể cả SKU đã ẩn. Hãy chọn mã khác rồi lưu lại.";
+  }
   for (const tag of ["VARIANT_HAS_STOCK", "STOCK_PERMISSION_DENIED"]) {
     if (message.includes(tag)) {
       return message.replace(new RegExp(`^.*${tag}:\\s*`), "");
@@ -827,7 +830,7 @@ export function ProductPage() {
         );
         return;
       }
-      formToSave = { ...form, variants };
+      formToSave = { ...formToSave, variants };
       setForm(formToSave);
     }
     if (
@@ -854,6 +857,24 @@ export function ProductPage() {
       setEditorTab(hasVariants ? "images" : "general");
       return;
     }
+    const conflictingBarcode = formToSave.variants.find((variant) =>
+      products.some((product) => product.variants.some((stored) =>
+        stored.id !== variant.id &&
+        normalizeEan13Input(stored.barcode) === normalizeEan13Input(variant.barcode),
+      )),
+    )?.barcode;
+    if (conflictingBarcode) {
+      showProductSaveError(`EAN-13 ${conflictingBarcode} đã được sử dụng bởi SKU khác.`);
+      setEditorTab(hasVariants ? "images" : "general");
+      return;
+    }
+    formToSave = {
+      ...formToSave,
+      variants: formToSave.variants.map((variant) => ({
+        ...variant,
+        barcode: normalizeEan13Input(variant.barcode) || null,
+      })),
+    };
     setSaving(true);
     try {
       const baseSlug = formToSave.slug.trim();
@@ -964,13 +985,6 @@ export function ProductPage() {
         current.variants,
         createSkuPrefix(current.slug),
       );
-      const initialBarcode =
-        current.variants.length === 1 && current.variants[0].is_default
-          ? current.variants[0].barcode
-          : null;
-      if (initialBarcode && generated[0] && !generated[0].barcode) {
-        generated[0] = { ...generated[0], barcode: initialBarcode };
-      }
       return { ...current, variants: generated };
     });
     setDirtyDimensions(false);
@@ -1023,6 +1037,9 @@ export function ProductPage() {
           value_ids: valueIds,
           image_url: null,
           cloudinary_public_id: null,
+          ...(current.variants.length === 1 && current.variants[0].is_default
+            ? { ...current.variants[0], is_default: false, value_ids: valueIds }
+            : {}),
         },
       ],
     }));
@@ -1106,10 +1123,7 @@ export function ProductPage() {
       return;
     setHasVariants(next);
     if (next) {
-      setForm((current) => ({
-        ...current,
-        variants: current.variants.filter((item) => item.value_ids.length > 0),
-      }));
+      // Retain the default SKU until generation carries its barcode to a combination.
       const configured = typeAttributes
         .filter(
           (item) =>

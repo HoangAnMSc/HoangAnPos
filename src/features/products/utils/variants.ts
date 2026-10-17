@@ -146,6 +146,10 @@ export function mergeGeneratedVariants(
   current: VariantDraft[],
   skuPrefix: string,
 ) {
+  const defaultVariant = attributes.length > 0 && current.length === 1 &&
+    current[0].is_default && current[0].value_ids.length === 0
+    ? current[0]
+    : null;
   const existing = new Map(
     current.map((variant) => [
       variantCombinationKey(variant.value_ids),
@@ -168,6 +172,11 @@ export function mergeGeneratedVariants(
         value_ids: valueIds,
         image_url: null,
         cloudinary_public_id: null,
+        ...(index === 0 && defaultVariant ? {
+          ...defaultVariant,
+          value_ids: valueIds,
+          is_default: false,
+        } : {}),
       },
   );
 }
