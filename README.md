@@ -138,6 +138,12 @@ Sau khi thay đổi biến môi trường, hãy redeploy. API quản lý nhân v
 Nếu database đã cài Product Engine, chạy migration
 `supabase/migrations/202610170001_fix_cloudinary_image_cleanup.sql` trong SQL Editor
 để sửa lỗi dọn liên kết sau khi xóa ảnh Cloudinary. Migration này giữ nguyên dữ liệu.
+Chạy tiếp `supabase/migrations/202610170002_release_deleted_product_barcodes.sql`
+để tự giải phóng EAN-13 khi xóa sản phẩm hết tồn kho. Migration cũng xử lý các
+sản phẩm đã xóa trước đây nếu mọi SKU đều hết tồn; mã cũ được lưu ở
+`product_variants.archived_barcode`, giữ nguyên SKU và lịch sử đơn hàng/kho.
+Sản phẩm chỉ tạm ngừng bán vẫn giữ EAN-13. Chạy migration trong SQL Editor
+bằng tài khoản quản trị database; không cần điền UUID tài khoản POS.
 Không chạy lại `schema.sql` trên database đang sử dụng vì file đó xóa schema `public`.
 
 ```bash

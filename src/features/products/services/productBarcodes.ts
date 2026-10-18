@@ -11,7 +11,8 @@ export type ProductBarcodeReservation = {
   products: { name: string; deleted_at: string | null } | null;
 };
 
-// The UNIQUE constraint also reserves codes on retired SKUs and deleted products.
+// Retired SKUs still reserve codes. soft_delete_product releases deleted-product
+// codes; legacy reservations remain visible until the database migration is run.
 export async function fetchProductBarcodeReservations(codes?: string[]) {
   requireSupabaseConfig();
   if (codes && codes.length === 0) return [];

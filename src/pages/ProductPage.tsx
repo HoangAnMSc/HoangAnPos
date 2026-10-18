@@ -16,7 +16,7 @@ import {
   Tags,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { CloudinaryImageField } from "../components/media/CloudinaryImageField";
 import { Ean13LabelsModal } from "../components/products/Ean13LabelsModal";
@@ -36,10 +36,17 @@ import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { formatIntegerInput, normalizeIntegerInput } from "../lib/format";
 import { getErrorMessage } from "../lib/errors";
 import {
-  clearLocalDraft,
   readLocalDraft,
   writeLocalDraft,
 } from "../lib/localDraft";
+import {
+  clearProductEditorDraft,
+  findProductEditorDraft,
+  readProductEditorDraft,
+  writeProductEditorDraft,
+  type ProductEditorDraft,
+  type ProductEditorTab as EditorTab,
+} from "../lib/productEditorDraft";
 import { VariantBuilder } from "../features/products/components/VariantBuilder";
 import { SkuMatrix } from "../features/products/components/SkuMatrix";
 import {
@@ -120,7 +127,7 @@ function productSaveErrorMessage(message: string) {
   if (message.includes("product_variants_barcode_key")) {
     return "EAN-13 đã được sử dụng bởi SKU khác, kể cả SKU đã ẩn. Hãy chọn mã khác rồi lưu lại.";
   }
-  for (const tag of ["VARIANT_HAS_STOCK", "STOCK_PERMISSION_DENIED"]) {
+  for (const tag of ["VARIANT_HAS_STOCK", "STOCK_PERMISSION_DENIED", "PRODUCT_DELETED"]) {
     if (message.includes(tag)) {
       return message.replace(new RegExp(`^.*${tag}:\\s*`), "");
     }
@@ -330,7 +337,6 @@ function QuickStatusButton({
     </button>
   );
 }
-type EditorTab = "general" | "specifications" | "variants" | "images" | "seo";
 const editorSteps: Array<[EditorTab, string]> = [
   ["general", "Thông tin & ảnh"],
   ["specifications", "Thuộc tính"],
@@ -338,13 +344,6 @@ const editorSteps: Array<[EditorTab, string]> = [
   ["images", "Tổ hợp"],
   ["seo", "SEO"],
 ];
-type ProductEditorDraft = {
-  form: ProductEditorInput;
-  editorTab: EditorTab;
-  hasVariants: boolean;
-  dirtyDimensions: boolean;
-};
-
 const editorGuides: Record<EditorTab, { title: string; description: string }> = {
   general: {
     title: "Thông tin & hình ảnh",
@@ -504,6 +503,7 @@ export function ProductPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [restoredDraftKey, setRestoredDraftKey] = useState("");
+  const draftEnabledRef = useRef(false);
   const draftKey = `product-editor-draft:${user?.id ?? "anonymous"}`;
   const guideKey = `product-editor-guides:${user?.id ?? "anonymous"}`;
   const [guideDismissed, setGuideDismissed] = useState(false);
@@ -545,22 +545,32 @@ export function ProductPage() {
     );
   }, [guideKey]);
   useEffect(() => {
-    const draft = readLocalDraft<ProductEditorDraft | null>(draftKey, null);
-    if (draft?.form && editorSteps.some(([key]) => key === draft.editorTab)) {
+    const draft = readProductEditorDraft(draftKey);
+    draftEnabledRef.current = Boolean(draft);
+    if (draft) {
       setForm(draft.form);
       setEditorTab(draft.editorTab);
       setHasVariants(draft.hasVariants);
       setDirtyDimensions(draft.dirtyDimensions);
+      setOpen(draft.open !== false);
+    } else {
+      setForm(emptyInput());
+      setEditorTab("general");
+      setHasVariants(false);
+      setDirtyDimensions(false);
+      setOpen(false);
     }
     setRestoredDraftKey(draftKey);
   }, [draftKey]);
-  useEffect(() => {
-    if (restoredDraftKey !== draftKey || !open) return;
-    writeLocalDraft(draftKey, {
+  useLayoutEffect(() => {
+    if (restoredDraftKey !== draftKey || !draftEnabledRef.current) return;
+    // Persist on commit so a reload immediately after typing retains the edit.
+    writeProductEditorDraft(draftKey, {
       form,
       editorTab,
       hasVariants,
       dirtyDimensions,
+      open,
     } satisfies ProductEditorDraft);
   }, [dirtyDimensions, draftKey, editorTab, form, hasVariants, open, restoredDraftKey]);
   const filtered = useMemo(() => {
@@ -681,11 +691,43 @@ export function ProductPage() {
     () => barcodeReservations.map((row) => row.barcode),
     [barcodeReservations],
   );
+  function restoreProductDraft(draft: ProductEditorDraft) {
+    draftEnabledRef.current = true;
+    setForm(draft.form);
+    setEditorTab(draft.editorTab);
+    setHasVariants(draft.hasVariants);
+    setDirtyDimensions(draft.dirtyDimensions);
+    setOpen(true);
+  }
+  function clearCurrentProductDraft() {
+    draftEnabledRef.current = false;
+    clearProductEditorDraft(draftKey, form.id);
+  }
+  function closeProductEditor() {
+    if (!saving) setOpen(false);
+  }
+  function cancelProductEditor() {
+    if (saving) return;
+    clearCurrentProductDraft();
+    setOpen(false);
+  }
+  function startNewProduct() {
+    if (!canCreateProduct) return;
+    const draft = findProductEditorDraft(draftKey);
+    if (draft) restoreProductDraft(draft);
+    else setEan13GateOpen(true);
+  }
   function edit(product: Product) {
     if (!canUpdateProduct && !canDeleteProduct) return;
     const usesVariants = productUsesVariants(product);
     const modeVariants = getProductModeVariants(product);
     setViewingProduct(null);
+    const draft = findProductEditorDraft(draftKey, product.id);
+    if (draft) {
+      restoreProductDraft(draft);
+      return;
+    }
+    draftEnabledRef.current = true;
     setForm({
       ...product,
       specifications: product.specifications,
@@ -706,6 +748,7 @@ export function ProductPage() {
   }
   function createProductWithEan13(ean13: string) {
     if (!canCreateProduct) return;
+    draftEnabledRef.current = true;
     const base = emptyInput(ean13);
     const simpleType = types.find((type) => type.code === "general");
     const configured = simpleType
@@ -894,7 +937,7 @@ export function ProductPage() {
       if (uniqueSlug !== formToSave.slug) setForm(payload);
       const wasEditing = Boolean(formToSave.id);
       await saveProduct(payload);
-      clearLocalDraft(draftKey);
+      clearCurrentProductDraft();
       setOpen(false);
       await load();
       showSuccess(
@@ -925,7 +968,7 @@ export function ProductPage() {
     setError("");
     try {
       await archiveProduct(form.id);
-      clearLocalDraft(draftKey);
+      clearCurrentProductDraft();
       setOpen(false);
       await load();
       showSuccess("Đã xóa sản phẩm.");
@@ -1204,7 +1247,7 @@ export function ProductPage() {
               <Search className="h-4 w-4" />
               {query || productTypeFilter !== "all" || productStatusFilter !== "all" ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-moss-600" /> : null}
             </Button>
-            {canCreateProduct ? <Button aria-label="Thêm sản phẩm" className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={() => setEan13GateOpen(true)}>
+            {canCreateProduct ? <Button aria-label="Thêm sản phẩm" className="h-12 min-h-12 w-12 shrink-0 px-0" onClick={startNewProduct}>
               <Plus className="h-4 w-4" />
             </Button> : null}
             </div>
@@ -1567,7 +1610,7 @@ export function ProductPage() {
               onClick={() =>
                 editorStepIndex > 0
                   ? setEditorTab(editorSteps[editorStepIndex - 1][0])
-                  : setOpen(false)
+                  : cancelProductEditor()
               }
               variant="secondary"
             >
@@ -1581,7 +1624,7 @@ export function ProductPage() {
             </Button>
             <Button
               className="hidden sm:inline-flex"
-              onClick={() => setOpen(false)}
+              onClick={cancelProductEditor}
               variant="secondary"
             >
               Hủy
@@ -1629,7 +1672,7 @@ export function ProductPage() {
             <span>Xem hướng dẫn</span>
           </button>
         }
-        onClose={() => setOpen(false)}
+        onClose={closeProductEditor}
         open={open}
         size="wide"
         title={form.id ? "Sửa sản phẩm" : "Thêm sản phẩm"}

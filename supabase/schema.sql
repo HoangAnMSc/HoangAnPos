@@ -90,6 +90,7 @@ CREATE TABLE public.product_variants (
     product_id uuid NOT NULL,
     sku text NOT NULL,
     barcode text,
+    archived_barcode text,
     base_price numeric(12,2) DEFAULT 0 NOT NULL,
     compare_at_price numeric(12,2),
     cost_price numeric(12,2) DEFAULT 0 NOT NULL,
@@ -1031,6 +1032,35 @@ CREATE FUNCTION public.guard_product_engine_write() RETURNS trigger
     SET search_path TO 'public'
     AS $$
 begin
+  if tg_table_name = 'product_variants' and tg_op = 'UPDATE' then
+    -- Deleting a product may retire its SKUs without granting general edit rights.
+    -- SQL Editor maintenance uses the same narrow rule with the database owner.
+    if new.barcode is null and not new.is_active and not new.is_default
+      and old.stock_quantity = 0 and old.shelf_quantity = 0
+      and new.archived_barcode is not distinct from coalesce(old.barcode, old.archived_barcode)
+      and (
+        to_jsonb(new) - array['barcode', 'archived_barcode', 'is_active', 'is_default', 'updated_at']
+        = to_jsonb(old) - array['barcode', 'archived_barcode', 'is_active', 'is_default', 'updated_at']
+      )
+      and exists (
+        select 1 from public.products p
+        where p.id = old.product_id and p.deleted_at is not null
+          and not exists (
+            select 1 from public.product_variants pv
+            where pv.product_id = p.id and (pv.stock_quantity > 0 or pv.shelf_quantity > 0)
+          )
+      )
+      and (
+        public.has_permission('products.delete')
+        or (
+          session_user in ('postgres', 'supabase_admin')
+          and current_setting('role') in ('none', 'postgres', 'supabase_admin')
+        )
+      ) then
+      return new;
+    end if;
+  end if;
+
   if tg_table_name = 'products'
     and tg_op = 'UPDATE'
     and public.has_permission('products.toggle-active')
@@ -1698,6 +1728,7 @@ declare
   previous_stock integer;
   next_stock integer;
   variant_existed boolean;
+  product_deleted_at timestamp with time zone;
 begin
   if auth.uid() is null then raise exception 'Authentication required'; end if;
   if nullif(payload->>'id','') is null then
@@ -1708,6 +1739,11 @@ begin
     raise exception 'Permission denied for product create';
   end if;
   product_id_value := coalesce(nullif(payload->>'id','')::uuid, gen_random_uuid());
+  select p.deleted_at into product_deleted_at
+  from public.products p where p.id = product_id_value for update;
+  if found and product_deleted_at is not null then
+    raise exception 'PRODUCT_DELETED: Sản phẩm đã xóa. Hãy tải lại danh sách để tạo sản phẩm mới.';
+  end if;
   insert into public.products(id,product_type_id,category_id,name,slug,description,status,is_reward,reward_points_cost,seo_title,seo_description)
   values(product_id_value,nullif(payload->>'product_type_id','')::uuid,nullif(payload->>'category_id','')::uuid,
     trim(payload->>'name'),trim(payload->>'slug'),nullif(payload->>'description',''),coalesce(payload->>'status','draft'),
@@ -1827,6 +1863,7 @@ CREATE TABLE public.app_roles (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     name text NOT NULL,
     code text NOT NULL,
+    color text DEFAULT '#8b5cf6'::text NOT NULL,
     description text,
     permissions text[] DEFAULT '{}'::text[] NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
@@ -2014,13 +2051,16 @@ begin
   if remaining_stock > 0 then
     raise exception 'PRODUCT_HAS_STOCK: Sản phẩm còn % đơn vị trong % SKU. Hãy xuất hoặc điều chỉnh tồn về 0 trước khi xóa.', remaining_stock, stocked_skus;
   end if;
-  update public.product_variants
-  set is_active=false,is_default=false,updated_at=now()
-  where product_id=product_id_input;
   update public.products
   set status = 'inactive', deleted_at = now(), updated_at = now()
   where id = product_id_input and deleted_at is null
   returning * into result;
+
+  -- Preserve the original code for history, while releasing the UNIQUE barcode.
+  update public.product_variants
+  set archived_barcode = coalesce(barcode, archived_barcode), barcode = null,
+      is_active = false, is_default = false, updated_at = now()
+  where product_id = product_id_input;
   return result;
 end;
 $$;

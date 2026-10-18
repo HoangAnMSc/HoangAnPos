@@ -44,6 +44,48 @@ test("EAN-13 preserves leading zeros and rejects overlong scans", async () => {
   assert.equal(isValidEan13(code.slice(0, 12) + ((Number(code[12]) + 1) % 10)), false);
 });
 
+test("product drafts recover legacy data and remain separate by product and account", async () => {
+  const values = new Map();
+  const previousWindow = globalThis.window;
+  globalThis.window = { localStorage: {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  } };
+  try {
+    const drafts = await loadSource("src/lib/productEditorDraft.ts");
+    const account = "product-editor-draft:account-a";
+    const newDraft = { form: { name: "Đang nhập", slug: "dang-nhap", specifications: [], variant_attributes: [], variants: [], images: [] },
+      editorTab: "seo", hasVariants: false, dirtyDimensions: false, open: true };
+    values.set(account, JSON.stringify(newDraft));
+    assert.deepEqual(drafts.readProductEditorDraft(account), newDraft, "Old single-key drafts must remain recoverable");
+    drafts.writeProductEditorDraft(account, newDraft);
+    const edited = { ...newDraft, form: { ...newDraft.form, id: "product-a", name: "Đang sửa" }, open: false };
+    drafts.writeProductEditorDraft(account, edited);
+    assert.deepEqual(drafts.findProductEditorDraft(account), newDraft);
+    assert.deepEqual(drafts.findProductEditorDraft(account, "product-a"), edited);
+    assert.equal(drafts.findProductEditorDraft(account, "product-b"), null);
+    assert.equal(drafts.findProductEditorDraft("product-editor-draft:account-b", "product-a"), null);
+    assert.deepEqual(drafts.readProductEditorDraft(account), edited);
+    assert.equal(JSON.parse(values.get(account)).form, undefined, "The active-editor key should not duplicate the full form");
+    drafts.clearProductEditorDraft(account, "product-a");
+    assert.equal(values.has(account), false, "Saving/cancelling the active editor removes its resume pointer");
+    assert.deepEqual(drafts.findProductEditorDraft(account), newDraft, "Clearing an edited product must preserve the new-product draft");
+    drafts.writeProductEditorDraft(account, edited);
+    drafts.clearProductEditorDraft(account);
+    assert.deepEqual(drafts.readProductEditorDraft(account), edited, "Clearing another draft must not close the active editor");
+    values.set(account, "{broken-json");
+    assert.equal(drafts.readProductEditorDraft(account), null);
+    values.set(account, JSON.stringify({ ...newDraft, form: { name: "Incomplete" } }));
+    assert.equal(drafts.readProductEditorDraft(account), null);
+    values.set(account, JSON.stringify({ targetKey: "product-editor-draft:account-b:new" }));
+    assert.equal(drafts.readProductEditorDraft(account), null, "A pointer cannot restore another account's draft");
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
 test("switching a simple SKU to combinations retains identity, barcode and stock once", async () => {
   const { mergeGeneratedVariants } = await loadSource("src/features/products/utils/variants.ts");
   const original = {
