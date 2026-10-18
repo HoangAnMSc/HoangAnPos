@@ -44,6 +44,149 @@ test("EAN-13 preserves leading zeros and rejects overlong scans", async () => {
   assert.equal(isValidEan13(code.slice(0, 12) + ((Number(code[12]) + 1) % 10)), false);
 });
 
+function catalogDatabase(tables, requests, rpcCalls) {
+  return {
+    from(table) {
+      let first = 0, last = 499;
+      const filters = [], order = [];
+      const query = {
+        select() { return query; },
+        is(column, value) { filters.push((row) => row[column] === value); return query; },
+        eq(column, value) { filters.push((row) => row[column] === value); return query; },
+        in(column, values) { filters.push((row) => values.includes(row[column])); return query; },
+        order(column, options) { order.push([column, options?.ascending !== false]); return query; },
+        range(start, end) { first = start; last = end; return query; },
+        maybeSingle() { return Promise.resolve({ data: null, error: null }); },
+        then(resolve, reject) {
+          requests.push({ table, first, last });
+          const rows = (tables[table] ?? []).filter((row) => filters.every((filter) => filter(row)));
+          rows.sort((a, b) => {
+            for (const [column, ascending] of order) {
+              const delta = a[column] < b[column] ? -1 : a[column] > b[column] ? 1 : 0;
+              if (delta) return ascending ? delta : -delta;
+            }
+            return 0;
+          });
+          // Simulate a deployment with a response cap below the requested page size.
+          return Promise.resolve({ data: rows.slice(first, Math.min(last + 1, first + 137)), error: null }).then(resolve, reject);
+        },
+      };
+      return query;
+    },
+    rpc: async (name, args) => { rpcCalls.push({ name, args }); return { data: { id: "order-1" }, error: null }; },
+  };
+}
+
+test("large catalog preserves every SKU barcode through POS mapping, refresh and checkout", async () => {
+  const { createEan13 } = await loadSource("src/lib/productDisplay.ts");
+  const products = Array.from({ length: 1001 }, (_, index) => ({
+    id: `product-${String(index).padStart(4, "0")}`, name: `Product ${index}`, slug: `p-${index}`,
+    status: "active", deleted_at: null, created_at: "2026-01-01", product_type_id: null, category_id: null,
+  }));
+  const multiId = products.at(-1).id;
+  const variants = [
+    ...products.slice(0, -1).map((product, index) => ({
+      id: `simple-${index}`, product_id: product.id, sku: `S-${index}`, barcode: createEan13(String(index)),
+      is_default: true, is_active: true, base_price: 100, cost_price: 50, stock_quantity: 5,
+    })),
+    ...Array.from({ length: 1005 }, (_, index) => ({
+      id: `variant-${String(index).padStart(4, "0")}`, product_id: multiId, sku: `V-${index}`,
+      barcode: createEan13(String(index + 1000)), is_default: false, is_active: index !== 1003,
+      base_price: 200 + index, cost_price: 70, stock_quantity: index === 1002 ? 0 : 3,
+    })),
+  ];
+  const target = variants.at(-1);
+  const tables = {
+    products: [...products, { id: "deleted", deleted_at: "2026-01-01" }],
+    product_variants: [...variants, { id: "deleted-sku", product_id: "deleted" }],
+    product_variant_attributes: [{ id: "size", product_id: multiId, name: "Size", sort_order: 0 }],
+    product_variant_values: variants.slice(1000).map((variant) => ({
+      id: `value-${variant.id}`, variant_attribute_id: "size", label: variant.sku, sort_order: 0, metadata: {}, is_active: true,
+    })),
+    variant_value_links: variants.slice(1000).map((variant) => ({ variant_id: variant.id, variant_value_id: `value-${variant.id}` })),
+    product_images: [{ id: "image", product_id: multiId, variant_id: target.id, is_primary: true, image_url: "https://example.test/target.jpg", sort_order: 0 }],
+  };
+  const requests = [], rpcCalls = [];
+  globalThis.testSupabase = catalogDatabase(tables, requests, rpcCalls);
+  try {
+    const engine = await loadSource("src/features/products/services/productEngine.ts", true);
+    const catalog = await engine.fetchProducts();
+    assert.equal(catalog.length, 1001);
+    const multi = catalog.find((row) => row.id === multiId);
+    assert.equal(multi.variants.length, 1005);
+    assert.equal(multi.variant_attributes[0].values.length, 1005);
+    assert.equal(multi.variants.find((row) => row.id === target.id).image_url, tables.product_images[0].image_url);
+    assert.ok(requests.some((request) => request.table === "products" && request.first >= 1000));
+    const before = requests.length;
+    const { fetchProducts } = await loadSource("src/services/products.ts", true);
+    const { fetchProductSettings } = await loadSource("src/services/productSettings.ts", true);
+    const posProducts = await fetchProducts(catalog);
+    const settings = await fetchProductSettings(catalog);
+    assert.equal(requests.length, before, "Mapping and settings must reuse the loaded catalog");
+    assert.equal(settings.customAttributes[0].options.length, 1005);
+    const { buildPosBarcodeIndex, findCartVariantById } = await loadSource("src/lib/posBarcode.ts");
+    const index = buildPosBarcodeIndex(posProducts);
+    const match = index.get(target.barcode);
+    assert.equal(match.product.id, multiId);
+    assert.equal(match.variant.id, target.id);
+    assert.equal(match.variant.key, target.id);
+    assert.equal(match.variant.linked_values.price, String(target.base_price));
+    assert.equal(match.variant.image_url, tables.product_images[0].image_url);
+    assert.equal(match.variant.stock, 3);
+    assert.deepEqual(match.variant.values, { size: target.sku });
+    assert.equal(index.has(variants.at(-2).barcode), false, "Retired SKUs cannot be scanned");
+    assert.equal(index.get(variants.at(-3).barcode).variant.stock, 0, "Zero stock must not fall back to sibling inventory");
+    assert.deepEqual(findCartVariantById(match.product, target.id), match.variant);
+    assert.equal(findCartVariantById(match.product, "retired"), null);
+    const { createSale } = await loadSource("src/services/orders.ts", true);
+    const previousWindow = globalThis.window;
+    globalThis.window = { dispatchEvent() {}, localStorage: { setItem() {} } };
+    try {
+      await createSale({ cart: [{ product: match.product, variant: match.variant, quantity: 1 }], cashReceived: 5000, paymentMethod: "cash" });
+    } finally {
+      if (previousWindow === undefined) delete globalThis.window;
+      else globalThis.window = previousWindow;
+    }
+    assert.equal(rpcCalls.at(-1).args.items_input[0].variant_id, target.id);
+    assert.equal(rpcCalls.at(-1).args.items_input[0].quantity, 1);
+  } finally { delete globalThis.testSupabase; }
+});
+
+test("barcode index distinguishes sibling SKUs and rejects ambiguous or invented engine codes", async () => {
+  const { buildPosBarcodeIndex } = await loadSource("src/lib/posBarcode.ts");
+  const { createEan13, createInternalEan13FromId } = await loadSource("src/lib/productDisplay.ts");
+  const code = createEan13("001234567890");
+  const product = { id: "p", sku: code, is_active: true, attributes: { _variants: [{
+    values: { color: "Red" }, stock: 4, linked_values: { _variant_id: "red", barcode: code },
+  }] } };
+  assert.equal(buildPosBarcodeIndex([product]).get(code).variant.id, "red");
+  assert.equal(buildPosBarcodeIndex([product]).has(createInternalEan13FromId("p")), false);
+  const duplicate = { ...product, id: "other" };
+  assert.equal(buildPosBarcodeIndex([product, duplicate]).get(code), null);
+  assert.equal(buildPosBarcodeIndex([{ ...product, attributes: { _variants: [] } }]).has(code), false);
+  assert.equal(buildPosBarcodeIndex([{ ...product, is_active: false }]).get(code).product.is_active, false);
+});
+
+test("catalog pagination propagates errors instead of returning a partial stock list", async () => {
+  const { fetchAllRows, fetchRowsForIds } = await loadSource("src/lib/catalogData.ts");
+  await assert.rejects(fetchAllRows(async (first) => first === 0
+    ? { data: [{ id: 1 }], error: null }
+    : { data: null, error: { message: "Network failed" } }), /Network failed/);
+  assert.deepEqual(await fetchRowsForIds([], () => { throw new Error("Unexpected request"); }), []);
+});
+
+test("product thumbnails resize unsigned originals without altering signed or external URLs", async () => {
+  const { productThumbnailUrl } = await loadSource("src/lib/productImage.ts");
+  const original = "https://res.cloudinary.com/shop/image/upload/v123/products/a.jpg";
+  assert.equal(productThumbnailUrl(original, 384), "https://res.cloudinary.com/shop/image/upload/c_limit,w_384,h_384/f_auto/q_auto/v123/products/a.jpg");
+  for (const source of [
+    "https://example.test/a.jpg", "blob:preview", "/image.png",
+    "https://res.cloudinary.com/shop/image/upload/s--signature--/v123/a.jpg",
+    "https://res.cloudinary.com/shop/image/upload/c_fill,w_200/v123/a.jpg",
+    `${original}?token=private`,
+  ]) assert.equal(productThumbnailUrl(source), source);
+});
+
 test("product drafts recover legacy data and remain separate by product and account", async () => {
   const values = new Map();
   const previousWindow = globalThis.window;

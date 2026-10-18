@@ -1,6 +1,7 @@
 import { requireSupabaseConfig } from "../../../lib/supabase";
 import { normalizeEan13Input } from "../../../lib/productDisplay";
 import { productEngineClient } from "./client";
+import { fetchAllRows, fetchRowsForIds } from "../../../lib/catalogData";
 
 export type ProductBarcodeReservation = {
   id: string;
@@ -17,22 +18,21 @@ export async function fetchProductBarcodeReservations(codes?: string[]) {
   requireSupabaseConfig();
   if (codes && codes.length === 0) return [];
 
-  const reservations: ProductBarcodeReservation[] = [];
-  const pageSize = 500;
-  for (let offset = 0; ; offset += pageSize) {
+  const readPage = async (batch: string[] | undefined, first: number, last: number) => {
     let query = productEngineClient
       .from("product_variants")
-      .select("id,product_id,sku,barcode,is_active,products(name,deleted_at)")
+      .select("id,product_id,sku,barcode,is_active,products(name,deleted_at)", { count: "exact" })
       .not("barcode", "is", null)
       .order("id")
-      .range(offset, offset + pageSize - 1);
-    if (codes) query = query.in("barcode", [...new Set(codes)]);
-    const { data, error } = await query;
+      .range(first, last);
+    if (batch) query = query.in("barcode", batch);
+    const { data, error, count } = await query;
     if (error) throw new Error(`Không kiểm tra được EAN-13 trong dữ liệu: ${error.message}`);
-    const page = (data ?? []) as unknown as ProductBarcodeReservation[];
-    reservations.push(...page);
-    if (page.length < pageSize) return reservations;
-  }
+    return { data: (data ?? []) as unknown as ProductBarcodeReservation[], error: null, count };
+  };
+  return codes
+    ? fetchRowsForIds(codes, readPage)
+    : fetchAllRows((first, last) => readPage(undefined, first, last));
 }
 
 export function getProductBarcodeConflictMessage(

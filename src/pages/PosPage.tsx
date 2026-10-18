@@ -30,6 +30,7 @@ import {
 import { Link } from "react-router-dom";
 import { CustomerForm } from "../components/customers/CustomerForm";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
+import { ProductThumbnail } from "../components/products/ProductThumbnail";
 import { ConfigurableProductCard } from "../components/products/ConfigurableProductCard";
 import { Button } from "../components/ui/Button";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
@@ -56,14 +57,15 @@ import {
   type ReceiptPaperSize,
 } from "../lib/receipt";
 import {
-  findProductByEan13,
   getProductEan13Value,
   isValidEan13,
   normalizeEan13Input,
 } from "../lib/productDisplay";
+import { buildPosBarcodeIndex, cartVariantFromSku, findCartVariantById } from "../lib/posBarcode";
 import {
   getProductVariantDefinitions,
   getProductVariantCount,
+  getProductVariants,
   isProductVariantOptionAvailable,
   resolveProductVariantSelection,
   type ProductVariantSelection,
@@ -86,6 +88,7 @@ import {
 import { fetchPaymentSettings } from "../services/paymentSettings";
 import { evaluatePromotions } from "../features/promotions/services/promotions";
 import type { PromotionEvaluation } from "../features/promotions/types";
+import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
 import { formatVariantValueLabel } from "../features/products/utils/variants";
 import type { ReceiptPromotion } from "../lib/receipt";
 import {
@@ -152,7 +155,7 @@ function createCartVariant(
   return {
     id: resolved.linked_values._variant_id,
     image_url: resolved.image_url,
-    key: JSON.stringify(resolved.values),
+    key: resolved.linked_values._variant_id ?? JSON.stringify(resolved.values),
     label: resolved.label,
     linked_values: resolved.linked_values,
     source_values: resolved.matches.map((variant) => variant.values),
@@ -198,7 +201,7 @@ function applyVariantProductData(
       "reward_points_cost",
       product.reward_points_cost,
     ),
-    sku: linked.sku ?? product.sku,
+    sku: linked.barcode || linked.sku || product.sku,
   };
 }
 
@@ -427,7 +430,6 @@ export function PosPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState("");
   const [cartExpanded, setCartExpanded] = useState(true);
-  const [lineSeparated, setLineSeparated] = useState(true);
   const [loading, setLoading] = useState(true);
   const [orderNoteModalOpen, setOrderNoteModalOpen] = useState(false);
   const [orderDetailsOpen, setOrderDetailsOpen] = useState(false);
@@ -564,11 +566,12 @@ export function PosPage() {
     setError("");
 
     try {
+      const catalog = fetchEngineProducts();
       const [productData, customerData, settingsData, productSettingsData] = await Promise.all([
-        fetchProducts(),
+        catalog.then((data) => fetchProducts(data)),
         fetchCustomers(),
         fetchPaymentSettings(),
-        fetchProductSettings(),
+        catalog.then((data) => fetchProductSettings(data)),
       ]);
       setProducts(productData);
       setCustomers(customerData);
@@ -641,7 +644,10 @@ export function PosPage() {
               return null;
             }
 
-            const freshVariant = item.variant?.key
+            const storedVariantId = item.variant?.id ?? item.variant?.linked_values?._variant_id;
+            const freshVariant = storedVariantId
+              ? findCartVariantById(freshProduct, storedVariantId)
+              : item.variant?.key
               ? createCartVariant(
                   freshProduct,
                   selectionFromCartVariant(item.variant),
@@ -666,10 +672,13 @@ export function PosPage() {
             }
 
             const quantity = Math.min(item.quantity, availableStock);
+            if (quantity <= 0) {
+              changed = true;
+              return null;
+            }
             if (
               quantity !== item.quantity ||
               freshProduct !== item.product ||
-              freshVariant?.stock !== item.variant?.stock ||
               freshVariant?.stock !== item.variant?.stock
             ) {
               changed = true;
@@ -717,6 +726,13 @@ export function PosPage() {
   }, [canCheckout]);
 
   const activeProducts = useMemo(() => getActiveProducts(products), [products]);
+  const barcodeIndex = useMemo(() => buildPosBarcodeIndex(products), [products]);
+  const productSearchText = useMemo(() => new Map(products.map((product) => [
+    product.id,
+    [product.name, product.sku, product.category, ...getProductVariants(product).flatMap((variant) => [
+      variant.linked_values?.sku, variant.linked_values?.barcode,
+    ])].filter(Boolean).join(" ").toLocaleLowerCase("vi"),
+  ])), [products]);
   const productCategories = useMemo(() => {
     const counts = new Map<string, number>();
     activeProducts
@@ -743,20 +759,9 @@ export function PosPage() {
 
     return activeProducts
       .filter(matchesSelectedCategory)
-      .filter((product) =>
-        [
-          product.name,
-          product.sku,
-          product.category,
-          getProductEan13Value(product),
-        ]
-          .filter(Boolean)
-          .some((value) =>
-            value!.toLowerCase().includes(normalizedProductQuery),
-          ),
-      )
+      .filter((product) => productSearchText.get(product.id)?.includes(normalizedProductQuery))
       .slice(0, 8);
-  }, [activeProducts, matchesSelectedCategory, normalizedProductQuery]);
+  }, [activeProducts, matchesSelectedCategory, normalizedProductQuery, productSearchText]);
   const quickProducts = useMemo(
     () =>
       activeProducts
@@ -997,6 +1002,10 @@ export function PosPage() {
       product,
       productSettings,
     );
+    const skus = getProductVariants(product);
+    if (variant === undefined && !variantDefinitions.length && skus.length === 1) {
+      variant = cartVariantFromSku(skus[0]);
+    }
     if (variant === undefined && variantDefinitions.length) {
       focusSearchAfterVariantRef.current = focusSearchAfterAdd;
       setProductToVariantSelect(product);
@@ -1041,19 +1050,6 @@ export function PosPage() {
         maxByVariant <= 0
       ) {
         return current;
-      }
-
-      if (lineSeparated) {
-        return [
-          ...current,
-          {
-            batch: null,
-            lineId: createLineId(product.id),
-            product: effectiveProduct,
-            quantity: 1,
-            variant: selectedVariant,
-          },
-        ];
       }
 
       const existingItem = current.find(
@@ -1199,10 +1195,20 @@ export function PosPage() {
   }
 
   function handleProductSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" && /^\d{13}$/.test(normalizeEan13Input(productQuery))) {
+      event.preventDefault();
+      handleEan13Detected(productQuery);
+      return;
+    }
     if (event.key === "Enter" && productResults[0] && canCheckout) {
       event.preventDefault();
       addToCart(productResults[0]);
     }
+  }
+
+  function addSearchResultToCart(product: Product, focusSearchAfterAdd = true) {
+    if (isValidEan13(productQuery)) handleEan13Detected(productQuery);
+    else addToCart(product, focusSearchAfterAdd);
   }
 
   function handleEan13Detected(value: string) {
@@ -1211,7 +1217,7 @@ export function PosPage() {
     }
 
     const ean13Code = normalizeEan13Input(value);
-    const product = findProductByEan13(products, ean13Code);
+    const match = barcodeIndex.get(ean13Code);
 
     setSuccess("");
 
@@ -1225,7 +1231,12 @@ export function PosPage() {
       return;
     }
 
-    if (!product) {
+    if (match === null) {
+      showErrorNotice(`EAN-13 ${ean13Code} đang trùng ở nhiều SKU. Hãy sửa mã tại trang sản phẩm.`, "Mã vạch bị trùng");
+      return;
+    }
+
+    if (!match) {
       showErrorNotice(
         `Chưa có sản phẩm trong cơ sở dữ liệu với EAN-13 ${ean13Code}.`,
         "Không có sản phẩm",
@@ -1234,6 +1245,8 @@ export function PosPage() {
       productSearchRef.current?.focus();
       return;
     }
+
+    const { product, variant } = match;
 
     if (!product.is_active) {
       showErrorNotice(
@@ -1244,6 +1257,7 @@ export function PosPage() {
     }
 
     if (
+      (variant && getQuantityInCart(product.id, variant.key) >= variant.stock) ||
       getSellableStock(product) <= 0 ||
       getQuantityInCart(product.id) >= getSellableStock(product)
     ) {
@@ -1254,8 +1268,8 @@ export function PosPage() {
       return;
     }
 
-    addToCart(product);
-    setSuccess(`Đã quét ${product.name}.`);
+    addToCart(product, true, variant);
+    setSuccess(`Đã quét ${product.name}${variant ? ` · ${variant.label}` : ""}.`);
   }
 
   async function handleCreateCustomer(input: CustomerInput) {
@@ -1591,12 +1605,13 @@ export function PosPage() {
                             className="grid w-full grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl p-2 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-400 disabled:cursor-not-allowed disabled:opacity-55 sm:grid-cols-[68px_minmax(0,1fr)_120px_96px] sm:p-3"
                             disabled={disabled}
                             key={product.id}
-                            onClick={() => addToCart(product)}
+                            onClick={() => addSearchResultToCart(product)}
                             type="button"
                           >
                             <div className="h-14 w-14 overflow-hidden rounded-xl bg-slate-100 sm:h-[68px] sm:w-[68px]">
                               {product.image_url ? (
-                                <img
+                                <ProductThumbnail thumbnailWidth={160}
+                                  cacheVersion={product.updated_at}
                                   alt={product.name}
                                   className="h-full w-full object-cover"
                                   src={product.image_url}
@@ -1902,6 +1917,7 @@ export function PosPage() {
                                 compareAtPrice={cardData.compareAtPrice}
                                 disabled={disabled}
                                 imageUrl={cardData.imageUrl}
+                                imageVersion={product.updated_at}
                                 name={product.name}
                                 onActivate={() => addToCart(product, false)}
                                 price={cardData.price}
@@ -1990,20 +2006,6 @@ export function PosPage() {
                       />
                     </button>
                     <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 sm:justify-end">
-                      <label className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-slate-700 sm:gap-2 sm:text-sm">
-                        <input
-                          checked={lineSeparated}
-                          className="h-4 w-4 rounded border-slate-300 text-moss-600 focus:ring-moss-500"
-                          onChange={(event) =>
-                            setLineSeparated(event.target.checked)
-                          }
-                          type="checkbox"
-                        />
-                        <span className="sm:hidden">Tách dòng</span>
-                        <span className="hidden sm:inline">
-                          Tách dòng sản phẩm
-                        </span>
-                      </label>
                       {canCheckout && cart.length > 0 ? (
                         <button
                           aria-label="Xóa tất cả sản phẩm trong giỏ"
@@ -2059,7 +2061,8 @@ export function PosPage() {
                               >
                                   <div className="h-14 w-14 overflow-hidden rounded-xl bg-slate-100 sm:h-16 sm:w-16">
                                    {getCartItemImageUrl(item) ? (
-                                     <img
+                                     <ProductThumbnail thumbnailWidth={160}
+                                       cacheVersion={item.product.updated_at}
                                        alt={item.product.name}
                                        className="h-full w-full object-cover"
                                        src={getCartItemImageUrl(item) || ""}
@@ -2569,7 +2572,8 @@ export function PosPage() {
                   <div className="flex min-w-0 gap-3">
                     <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-slate-100 ring-1 ring-slate-200">
                       {getCartItemImageUrl(item) ? (
-                        <img
+                        <ProductThumbnail thumbnailWidth={160}
+                          cacheVersion={item.product.updated_at}
                           alt={item.product.name}
                           className="h-full w-full object-cover"
                           src={getCartItemImageUrl(item) || ""}
@@ -2591,6 +2595,9 @@ export function PosPage() {
                       ) : null}
                       <p className="mt-1 truncate text-[11px] font-bold text-slate-400">
                         SKU: {selectedSku}
+                      </p>
+                      <p className="mt-1 truncate text-[11px] font-bold text-slate-400">
+                        EAN-13: {item.variant?.linked_values?.barcode || "Chưa có EAN-13"}
                       </p>
                     </div>
                     {canCheckout ? (
@@ -2736,6 +2743,7 @@ export function PosPage() {
               autoFocus
               className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-base font-semibold text-slate-900 outline-none focus:border-moss-400 focus:ring-4 focus:ring-moss-100"
               onChange={(event) => setProductQuery(event.target.value)}
+              onKeyDown={handleProductSearchKeyDown}
               placeholder="Tên, mã hàng hoặc EAN-13"
               ref={mobileProductSearchRef}
               value={productQuery}
@@ -2778,13 +2786,14 @@ export function PosPage() {
                     onClick={() => {
                       setProductSearchModalOpen(false);
                       setProductQuery("");
-                      addToCart(product, false);
+                      addSearchResultToCart(product, false);
                     }}
                     type="button"
                   >
                     <div className="h-12 w-12 overflow-hidden rounded-lg bg-slate-100">
                       {product.image_url ? (
-                        <img
+                        <ProductThumbnail thumbnailWidth={160}
+                          cacheVersion={product.updated_at}
                           alt={product.name}
                           className="h-full w-full object-cover"
                           src={product.image_url}
@@ -3533,7 +3542,8 @@ export function PosPage() {
             <div className="flex h-full min-h-0 flex-col overflow-hidden sm:grid sm:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.15fr)]">
               <div className="relative h-[32dvh] min-h-[230px] max-h-[330px] flex-none overflow-hidden rounded-t-[2rem] bg-slate-100 sm:m-5 sm:aspect-square sm:h-auto sm:min-h-0 sm:max-h-none sm:rounded-2xl sm:ring-1 sm:ring-slate-200">
                 {activeVariantImage ? (
-                  <img
+                  <ProductThumbnail thumbnailWidth={768}
+                    cacheVersion={productToVariantSelect.updated_at}
                     alt={productToVariantSelect.name}
                     className="h-full w-full object-cover"
                     src={activeVariantImage}
@@ -3590,9 +3600,11 @@ export function PosPage() {
                         {productToVariantSelect.category}
                       </span>
                     ) : null}
-                    {productToVariantSelect.sku ? (
-                      <span>SKU: {productToVariantSelect.sku}</span>
-                    ) : null}
+                    <span aria-live="polite">
+                      EAN-13: {activeCartVariant
+                        ? activeVariantLinked.barcode || "Chưa có EAN-13"
+                        : "Chọn biến thể"}
+                    </span>
                   </div>
                   {productToVariantSelect.description ? (
                     <p className="mt-2 line-clamp-2 text-xs font-medium leading-5 text-slate-600">
@@ -3719,7 +3731,8 @@ export function PosPage() {
                                 <>
                                   <span className="grid aspect-square w-full place-items-center overflow-hidden bg-slate-100 text-slate-400">
                                     {optionImage ? (
-                                      <img
+                                      <ProductThumbnail thumbnailWidth={160}
+                                        cacheVersion={productToVariantSelect.updated_at}
                                         alt={formatVariantValueLabel(option, definition.unit)}
                                         className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                                         src={optionImage}
@@ -3739,7 +3752,7 @@ export function PosPage() {
                                 <>
                                   <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
                                     {optionImage ? (
-                                      <img alt="" className="h-full w-full object-cover" src={optionImage} />
+                                      <ProductThumbnail cacheVersion={productToVariantSelect.updated_at} thumbnailWidth={160} alt="" className="h-full w-full object-cover" src={optionImage} />
                                     ) : (
                                       <ImagePlus className="h-5 w-5" />
                                     )}

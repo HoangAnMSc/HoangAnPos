@@ -26,6 +26,7 @@ export type ProductFormState = {
 };
 
 export type ProductVariant = {
+  display_label?: string;
   values: Record<string, string>;
   stock: number;
   shelf_stock: number;

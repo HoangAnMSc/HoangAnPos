@@ -1,3 +1,4 @@
+import { fetchAllRows, fetchRowsForIds, groupBy } from "../../../lib/catalogData";
 import type { Json } from "../../../types/database";
 import { requireSupabaseConfig } from "../../../lib/supabase";
 import type {
@@ -132,144 +133,77 @@ export async function fetchCategories() {
 
 export async function fetchProducts(): Promise<Product[]> {
   requireSupabaseConfig();
-  const [
-    productsResult,
-    specsResult,
-    attributesResult,
-    valuesResult,
-    variantsResult,
-    linksResult,
-    imagesResult,
-    typesResult,
-    categoriesResult,
-    productAttributesResult,
-  ] = await Promise.all([
-    productEngineClient
-      .from("products")
-      .select("*")
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false }),
-    productEngineClient
-      .from("product_specifications")
-      .select("*")
-      .order("sort_order"),
-    productEngineClient
-      .from("product_variant_attributes")
-      .select("*")
-      .order("sort_order"),
-    productEngineClient
-      .from("product_variant_values")
-      .select("*")
-      .order("sort_order"),
-    productEngineClient
-      .from("product_variants")
-      .select("*")
-      .order("created_at"),
-    productEngineClient.from("variant_value_links").select("*"),
-    productEngineClient.from("product_images").select("*").order("sort_order"),
-    productEngineClient.from("product_types").select("id,name,code"),
-    productEngineClient.from("product_categories").select("id,name,slug"),
-    productEngineClient.from("product_attributes").select("id,unit"),
+  const products = await fetchAllRows((first, last) => productEngineClient
+    .from("products").select("*", { count: "exact" }).is("deleted_at", null)
+    .order("created_at", { ascending: false }).order("id").range(first, last));
+  if (!products.length) return [];
+  const ids = products.map((row) => String(row.id));
+  const [specs, attributes, variants, images, types, categories, attributeUnits] = await Promise.all([
+    fetchRowsForIds(ids, (batch, first, last) => productEngineClient
+      .from("product_specifications").select("*", { count: "exact" }).in("product_id", batch)
+      .order("sort_order").order("id").range(first, last)),
+    fetchRowsForIds(ids, (batch, first, last) => productEngineClient
+      .from("product_variant_attributes").select("*", { count: "exact" }).in("product_id", batch)
+      .order("sort_order").order("id").range(first, last)),
+    fetchRowsForIds(ids, (batch, first, last) => productEngineClient
+      .from("product_variants").select("*", { count: "exact" }).in("product_id", batch)
+      .order("created_at").order("id").range(first, last)),
+    fetchRowsForIds(ids, (batch, first, last) => productEngineClient
+      .from("product_images").select("*", { count: "exact" }).in("product_id", batch)
+      .order("sort_order").order("id").range(first, last)),
+    fetchAllRows((first, last) => productEngineClient.from("product_types")
+      .select("id,name,code", { count: "exact" }).order("id").range(first, last)),
+    fetchAllRows((first, last) => productEngineClient.from("product_categories")
+      .select("id,name,slug", { count: "exact" }).order("id").range(first, last)),
+    fetchAllRows((first, last) => productEngineClient.from("product_attributes")
+      .select("id,unit", { count: "exact" }).order("id").range(first, last)),
   ]);
-  [
-    productsResult,
-    specsResult,
-    attributesResult,
-    valuesResult,
-    variantsResult,
-    linksResult,
-    imagesResult,
-    typesResult,
-    categoriesResult,
-    productAttributesResult,
-  ].forEach((result) => throwIfError(result.error));
-  const specs = (specsResult.data ?? []) as ProductSpecification[];
-  const attributes = (attributesResult.data ?? []) as Array<
-    Omit<VariantAttribute, "values">
-  >;
-  const values = (valuesResult.data ?? []) as VariantValue[];
-  const variants = (variantsResult.data ?? []) as Array<
-    Omit<ProductVariant, "value_ids" | "image_url" | "cloudinary_public_id">
-  >;
-  const links = (linksResult.data ?? []) as Array<{
-    variant_id: string;
-    variant_value_id: string;
-  }>;
-  const images = (imagesResult.data ?? []) as ProductImage[];
-  const types = (typesResult.data ?? []) as Array<{
-    id: string;
-    name: string;
-    code: string;
-  }>;
-  const categories = (categoriesResult.data ?? []) as Array<{
-    id: string;
-    name: string;
-    slug: string;
-  }>;
-  const attributeUnits = new Map(
-    ((productAttributesResult.data ?? []) as Array<{ id: string; unit: string | null }>).map(
-      (attribute) => [attribute.id, attribute.unit] as const,
-    ),
-  );
-  return (
-    (productsResult.data ?? []) as Array<
-      Omit<
-        Product,
-        "specifications" | "variant_attributes" | "variants" | "images"
-      >
-    >
-  ).map((product) => {
-    const productVariantAttributes = attributes
-      .filter((item) => item.product_id === product.id)
-      .map((attribute) => ({
-        ...attribute,
-        unit: attribute.unit ??
-          (attribute.source_attribute_id
-            ? (attributeUnits.get(attribute.source_attribute_id) ?? null)
-            : null),
-        values: values.filter(
-          (value) => value.variant_attribute_id === attribute.id,
-        ),
-      }));
-    const productVariants = variants
-      .filter((item) => item.product_id === product.id)
-      .map((variant) => {
-        const image = images.find(
-          (item) => item.variant_id === variant.id && item.is_primary,
-        );
-        return {
-          ...variant,
-          value_ids: links
-            .filter((link) => link.variant_id === variant.id)
-            .map((link) => link.variant_value_id),
-          image_url: image?.image_url ?? null,
-          cloudinary_public_id: image?.cloudinary_public_id ?? null,
-        };
-      });
+  const [values, links] = await Promise.all([
+    fetchRowsForIds(attributes.map((row) => String(row.id)), (batch, first, last) => productEngineClient
+      .from("product_variant_values").select("*", { count: "exact" }).in("variant_attribute_id", batch)
+      .order("sort_order").order("id").range(first, last)),
+    fetchRowsForIds(variants.map((row) => String(row.id)), (batch, first, last) => productEngineClient
+      .from("variant_value_links").select("*", { count: "exact" }).in("variant_id", batch)
+      .order("variant_id").order("variant_value_id").range(first, last)),
+  ]);
+  // Index each relation once rather than scanning the full catalog for every SKU.
+  const specsByProduct = groupBy(specs as ProductSpecification[], (row) => row.product_id);
+  const attributesByProduct = groupBy(attributes as Omit<VariantAttribute, "values">[], (row) => row.product_id);
+  const variantsByProduct = groupBy(variants as Omit<ProductVariant, "value_ids" | "image_url" | "cloudinary_public_id">[], (row) => row.product_id);
+  const imagesByProduct = groupBy((images as ProductImage[]).filter((row) => !row.variant_id && !row.variant_value_id), (row) => row.product_id);
+  const imageByVariant = new Map((images as ProductImage[]).filter((row) => row.variant_id && row.is_primary).map((row) => [row.variant_id, row]));
+  const valuesByAttribute = groupBy(values as VariantValue[], (row) => row.variant_attribute_id);
+  const linksByVariant = groupBy(links as { variant_id: string; variant_value_id: string }[], (row) => row.variant_id);
+  const typeById = new Map(types.map((row) => [row.id, row]));
+  const categoryById = new Map(categories.map((row) => [row.id, row]));
+  const unitById = new Map(attributeUnits.map((row) => [row.id, row.unit as string | null]));
+  return products.map((row) => {
+    const product = row as unknown as Product;
+    const productAttributes = (attributesByProduct.get(product.id) ?? []).map((attribute) => ({
+      ...attribute,
+      unit: attribute.unit ?? unitById.get(attribute.source_attribute_id) ?? null,
+      values: valuesByAttribute.get(attribute.id) ?? [],
+    }));
+    const valueOrder = new Map(productAttributes.flatMap((attribute) => attribute.values)
+      .map((value, index) => [value.id, index]));
+    const productVariants = (variantsByProduct.get(product.id) ?? []).map((variant) => {
+      const image = imageByVariant.get(variant.id);
+      return {
+        ...variant,
+        value_ids: (linksByVariant.get(variant.id) ?? []).map((link) => link.variant_value_id)
+          .sort((a, b) => (valueOrder.get(a) ?? 0) - (valueOrder.get(b) ?? 0)),
+        image_url: image?.image_url ?? null,
+        cloudinary_public_id: image?.cloudinary_public_id ?? null,
+      };
+    });
     return {
       ...product,
-      product_type:
-        types.find((item) => item.id === product.product_type_id) ?? null,
-      category:
-        categories.find((item) => item.id === product.category_id) ?? null,
-      specifications: specs.filter((item) => item.product_id === product.id),
-      variant_attributes: productVariantAttributes,
-      variants: sortVariantsByAttributeOrder(
-        productVariants,
-        productVariantAttributes,
-      ),
-      images: images
-        .filter(
-          (item) =>
-            item.product_id === product.id &&
-            !item.variant_id &&
-            !item.variant_value_id,
-        )
-        .sort(
-          (first, second) =>
-            Number(second.is_primary) - Number(first.is_primary) ||
-            first.sort_order - second.sort_order,
-        ),
+      product_type: (typeById.get(product.product_type_id) as Product["product_type"]) ?? null,
+      category: (categoryById.get(product.category_id) as Product["category"]) ?? null,
+      specifications: specsByProduct.get(product.id) ?? [],
+      variant_attributes: productAttributes,
+      variants: sortVariantsByAttributeOrder(productVariants, productAttributes),
+      images: (imagesByProduct.get(product.id) ?? []).sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order),
     };
   });
 }
@@ -318,10 +252,9 @@ export async function saveProduct(input: ProductEditorInput) {
   }
   const originalPrefix = createSkuPrefix(input.slug);
   const uniquePrefix = createSkuPrefix(uniqueSlug);
-  const { data: skuRows, error: skuError } = await productEngineClient
+  const skuRows = await fetchAllRows((first, last) => productEngineClient
     .from("product_variants")
-    .select("id,product_id,sku");
-  throwIfError(skuError);
+    .select("id,product_id,sku").order("id").range(first, last));
   const allVariantRows = (skuRows ?? []) as Array<{
     id: string;
     product_id: string;

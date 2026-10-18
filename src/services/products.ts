@@ -4,6 +4,7 @@ import type { Json } from "../types/database";
 import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
 import {
   getActiveProductModeVariants,
+  formatVariantValueLabel,
   getVariantLabel,
 } from "../features/products/utils/variants";
 import { productEngineClient } from "../features/products/services/client";
@@ -139,11 +140,11 @@ function withoutDescription(input: ProductInput) {
   return payload;
 }
 
-export async function fetchProducts() {
+export async function fetchProducts(engineData?: Awaited<ReturnType<typeof fetchEngineProducts>>) {
   requireSupabaseConfig();
 
   try {
-    const engineProducts = await fetchEngineProducts();
+    const engineProducts = engineData ?? await fetchEngineProducts();
     return engineProducts.map((product): Product => {
       const variants = getActiveProductModeVariants(product);
       const defaultVariant = [...variants].sort(
@@ -156,7 +157,10 @@ export async function fetchProducts() {
         _defaultVariantId: defaultVariant?.id,
         _variantAttributeIds: product.variant_attributes.map((attribute) => attribute.id),
         _variants: variants.map((variant) => ({
-          display_label: getVariantLabel(variant, product.variant_attributes),
+          display_label: variant.value_ids.map((id) => {
+            const item = valuesById.get(id);
+            return item ? formatVariantValueLabel(item.value.label, item.attribute.unit) : "";
+          }).filter(Boolean).join(" / ") || "Mặc định",
           values: Object.fromEntries(variant.value_ids.map((id) => {
             const item = valuesById.get(id);
             return [item?.attribute.id ?? id, item?.value.label ?? id];
@@ -166,6 +170,7 @@ export async function fetchProducts() {
           image_url: variant.image_url ?? undefined,
           linked_values: {
             _variant_id: variant.id,
+            barcode: variant.barcode ?? "",
             sku: variant.sku,
             price: String(variant.base_price),
             cost_price: String(variant.cost_price),

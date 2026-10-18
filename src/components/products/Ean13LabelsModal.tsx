@@ -115,7 +115,7 @@ function printLabels(rows: LabelRow[], copies: number) {
 }
 
 export function Ean13LabelsModal({ onClose, open, products }: Ean13LabelsModalProps) {
-  const rows = useMemo(() => buildLabelRows(products), [products]);
+  const rows = useMemo(() => open ? buildLabelRows(products) : [], [open, products]);
   const [query, setQuery] = useState("");
   const [copies, setCopies] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");

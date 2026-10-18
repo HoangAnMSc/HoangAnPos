@@ -69,22 +69,20 @@ export function sortVariantsByAttributeOrder<
     (first, second) => first.sort_order - second.sort_order,
   );
 
+  const ranks = orderedAttributes.map((attribute) => new Map(
+    [...attribute.values].sort((a, b) => a.sort_order - b.sort_order)
+      .map((value, index) => [value.id, index]),
+  ));
+  const positions = new Map(variants.map((variant) => [variant, ranks.map((rank) => {
+    let position = Number.MAX_SAFE_INTEGER;
+    for (const id of variant.value_ids) position = Math.min(position, rank.get(id) ?? Number.MAX_SAFE_INTEGER);
+    return position;
+  })]));
   return [...variants].sort((first, second) => {
-    for (const attribute of orderedAttributes) {
-      const orderedValues = [...attribute.values].sort(
-        (firstValue, secondValue) =>
-          firstValue.sort_order - secondValue.sort_order,
-      );
-      const firstIndex = orderedValues.findIndex((value) =>
-        first.value_ids.includes(value.id),
-      );
-      const secondIndex = orderedValues.findIndex((value) =>
-        second.value_ids.includes(value.id),
-      );
-      const comparison =
-        (firstIndex < 0 ? Number.MAX_SAFE_INTEGER : firstIndex) -
-        (secondIndex < 0 ? Number.MAX_SAFE_INTEGER : secondIndex);
-      if (comparison !== 0) return comparison;
+    const a = positions.get(first)!;
+    const b = positions.get(second)!;
+    for (let index = 0; index < ranks.length; index++) {
+      if (a[index] !== b[index]) return a[index] - b[index];
     }
     return 0;
   });

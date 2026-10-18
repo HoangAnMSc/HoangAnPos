@@ -244,11 +244,11 @@ function fromRow(row: {
   };
 }
 
-export async function fetchProductSettings() {
+export async function fetchProductSettings(engineData?: Awaited<ReturnType<typeof fetchEngineProducts>>) {
   requireSupabaseConfig();
   let dynamicAttributes: CustomProductAttribute[] = [];
   try {
-    const products = await fetchEngineProducts();
+    const products = engineData ?? await fetchEngineProducts();
     const byId = new Map<string, CustomProductAttribute>();
     products.forEach((product) => product.variant_attributes.forEach((attribute) => {
       const current = byId.get(attribute.id);
@@ -285,11 +285,12 @@ export async function fetchProductSettings() {
   }
   const saved = data ? fromRow(data as never) : defaultProductSettings;
   const dynamicIds = dynamicAttributes.map((item) => item.id);
+  const dynamicIdSet = new Set(dynamicIds);
   return {
     ...saved,
     customAttributes: dynamicAttributes,
     attributeOrder: [
-      ...saved.attributeOrder.filter((id) => !dynamicIds.includes(id)),
+      ...saved.attributeOrder.filter((id) => !dynamicIdSet.has(id)),
       ...dynamicIds,
     ],
     enabledFields: {

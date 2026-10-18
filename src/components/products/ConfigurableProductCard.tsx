@@ -1,4 +1,5 @@
 import { Layers3, Package } from "lucide-react";
+import { ProductThumbnail } from "./ProductThumbnail";
 import { formatCurrency } from "../../lib/format";
 import type { ProductCardSettings } from "../../services/productSettings";
 
@@ -6,6 +7,7 @@ export type ProductCardData = {
   category?: string | null;
   compareAtPrice?: number | null;
   imageUrl?: string | null;
+  imageVersion?: string;
   name: string;
   price: number;
   status: "active" | "draft" | "inactive";
@@ -47,6 +49,7 @@ export function ConfigurableProductCard({
   compareAtPrice,
   disabled = false,
   imageUrl,
+  imageVersion,
   name,
   onActivate,
   price,
@@ -95,7 +98,8 @@ export function ConfigurableProductCard({
       {imageVisible ? (
         <div className="relative mx-2 mt-2 aspect-[1.25/1] shrink-0 overflow-hidden rounded-2xl bg-slate-100">
           {imageUrl ? (
-            <img
+            <ProductThumbnail
+              cacheVersion={imageVersion}
               alt={name}
               className={`h-full w-full transition duration-300 group-hover:scale-[1.035] ${settings.imageFit === "contain" ? "object-contain p-2" : "object-cover"}`}
               src={imageUrl}

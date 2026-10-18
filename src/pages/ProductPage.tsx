@@ -23,6 +23,8 @@ import { Ean13LabelsModal } from "../components/products/Ean13LabelsModal";
 import { Ean13PickerModal } from "../components/products/Ean13PickerModal";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { ConfigurableProductCard } from "../components/products/ConfigurableProductCard";
+import { ProductThumbnail } from "../components/products/ProductThumbnail";
+import { ProductVariantDetailModal } from "../components/products/ProductVariantDetailModal";
 import { productCardPreviewData } from "../components/products/productCardPreview";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -483,6 +485,7 @@ export function ProductPage() {
   const [productTypeFilter, setProductTypeFilter] = useState("all");
   const [productStatusFilter, setProductStatusFilter] = useState<ProductStatus | "all">("all");
   const [productScannerOpen, setProductScannerOpen] = useState(false);
+  const productScanMatchedRef = useRef(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
@@ -510,12 +513,13 @@ export function ProductPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const catalog = fetchProducts();
       const [p, t, a, ta, settings, reservedBarcodes] = await Promise.all([
-        fetchProducts(),
+        catalog,
         fetchProductTypes(),
         fetchAttributes(),
         fetchProductTypeAttributes(),
-        fetchProductSettings(),
+        catalog.then((data) => fetchProductSettings(data)),
         fetchProductBarcodeReservations(),
       ]);
       setProducts(p);
@@ -573,21 +577,16 @@ export function ProductPage() {
       open,
     } satisfies ProductEditorDraft);
   }, [dirtyDimensions, draftKey, editorTab, form, hasVariants, open, restoredDraftKey]);
+  const searchTextById = useMemo(() => new Map(products.map((product) => [
+    product.id,
+    [product.name, product.slug, product.product_type?.name,
+      ...getProductModeVariants(product).flatMap((variant) => [variant.sku, variant.barcode]),
+    ].filter(Boolean).join(" ").toLocaleLowerCase("vi"),
+  ])), [products]);
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("vi");
     return products.filter((product) => {
-      const searchableText = [
-        product.name,
-        product.slug,
-        product.product_type?.name,
-        ...getProductModeVariants(product).flatMap((variant) => [
-          variant.sku,
-          variant.barcode,
-        ]),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLocaleLowerCase("vi");
+      const searchableText = searchTextById.get(product.id) ?? "";
       const matchesQuery = !normalizedQuery || searchableText.includes(normalizedQuery);
       const matchesType = productTypeFilter === "all" ||
         (productTypeFilter === "uncategorized"
@@ -596,7 +595,7 @@ export function ProductPage() {
       const matchesStatus = productStatusFilter === "all" || product.status === productStatusFilter;
       return matchesQuery && matchesType && matchesStatus;
     });
-  }, [productStatusFilter, productTypeFilter, products, query]);
+  }, [productStatusFilter, productTypeFilter, products, query, searchTextById]);
   const productTypeFilters = useMemo(() => {
     const usedTypeIds = new Set(products.map((product) => product.product_type_id).filter(Boolean));
     return types.filter((type) => usedTypeIds.has(type.id));
@@ -626,11 +625,17 @@ export function ProductPage() {
   }
 
   function handleProductEanDetected(code: string) {
+    const normalizedCode = normalizeEan13Input(code);
+    const product = products.find((item) => getProductModeVariants(item).some(
+      (variant) => normalizeEan13Input(variant.barcode) === normalizedCode,
+    ));
+    productScanMatchedRef.current = Boolean(product);
     setQuery(code);
     setProductTypeFilter("all");
     setProductStatusFilter("all");
     setProductScannerOpen(false);
-    setProductSearchOpen(true);
+    setProductSearchOpen(!product);
+    if (product) setViewingProduct(product);
   }
 
   async function bulkUpdateStatus(status: ProductStatus) {
@@ -1258,108 +1263,6 @@ export function ProductPage() {
             </Card>
           ) : (
             <>
-              <Card className="hidden overflow-hidden p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[920px] text-sm">
-                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="p-4">Sản phẩm</th>
-                        <th>Loại</th>
-                        <th>SKU</th>
-                        <th>Giá từ</th>
-                        <th>Tồn kho</th>
-                        <th>Trạng thái</th>
-                        <th className="pr-4 text-right">Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.slice(0, 0).map((product) => {
-                        const active = product.variants.filter(
-                          (variant) => variant.is_active,
-                        );
-                        const price = active.length
-                          ? Math.min(
-                              ...active.map((variant) => variant.base_price),
-                            )
-                          : 0;
-                        const stock = active.reduce(
-                          (sum, variant) => sum + variant.stock_quantity,
-                          0,
-                        );
-                        return (
-                          <tr
-                            className="border-t border-slate-100 hover:bg-slate-50/70"
-                            key={product.id}
-                          >
-                            <td className="p-4">
-                              <div className="flex items-center gap-3">
-                                {product.images[0]?.image_url ? (
-                                  <img
-                                    alt=""
-                                    className="h-11 w-11 rounded-lg object-cover"
-                                    src={product.images[0].image_url}
-                                  />
-                                ) : (
-                                  <div className="grid h-11 w-11 place-items-center rounded-lg bg-slate-100 text-slate-400">
-                                    <Boxes className="h-5 w-5" />
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <p className="max-w-[280px] truncate font-extrabold">
-                                    {product.name}
-                                  </p>
-                                  <p className="text-xs text-slate-500">
-                                    /{product.slug}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-                            <td>
-                              {product.product_type?.name ?? "Chưa phân loại"}
-                            </td>
-                            <td>{active.length}</td>
-                            <td className="font-bold text-moss-700">
-                              {formatCurrency(price)}
-                            </td>
-                            <td>
-                              <span
-                                className={
-                                  stock > 0
-                                    ? "font-bold text-emerald-700"
-                                    : "font-bold text-red-600"
-                                }
-                              >
-                                {stock}
-                              </span>
-                            </td>
-                            <td>
-                              <StatusPill
-                                active={product.status === "active"}
-                                label={
-                                  product.status === "active"
-                                    ? "Đang bán"
-                                    : product.status
-                                }
-                              />
-                            </td>
-                            <td className="pr-4">
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  className="min-h-9 px-3 py-1.5"
-                                  onClick={() => edit(product)}
-                                  variant="secondary"
-                                >
-                                  <Pencil className="h-4 w-4" /> Sửa
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
               <div className="grid grid-cols-2 justify-start gap-2 sm:[grid-template-columns:repeat(auto-fill,minmax(168px,184px))] sm:gap-3">
                 {filtered.map((product) => (
                   <ProductAdminCard
@@ -1402,86 +1305,6 @@ export function ProductPage() {
                   </div>
                 </div>
               ) : null}
-              <div className="!hidden grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {filtered.slice(0, 0).map((product) => {
-                  const active = product.variants.filter(
-                    (variant) => variant.is_active,
-                  );
-                  const price = active.length
-                    ? Math.min(...active.map((variant) => variant.base_price))
-                    : 0;
-                  const stock = active.reduce(
-                    (sum, variant) => sum + variant.stock_quantity,
-                    0,
-                  );
-                  return (
-                    <Card className="p-4" key={product.id}>
-                      <div className="flex gap-3">
-                        {product.images[0]?.image_url ? (
-                          <img
-                            alt=""
-                            className="h-20 w-20 rounded-xl object-cover"
-                            src={product.images[0].image_url}
-                          />
-                        ) : (
-                          <div className="h-20 w-20 rounded-xl bg-slate-100" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <h3 className="truncate font-extrabold">
-                            {product.name}
-                          </h3>
-                          <p className="text-xs text-slate-500">
-                            {product.product_type?.name ?? "Chưa có loại"} ·{" "}
-                            {active.length} SKU
-                          </p>
-                          <p className="mt-2 font-black text-moss-700">
-                            {formatCurrency(price)}
-                          </p>
-                          <p className="text-xs">Tồn: {stock}</p>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-3">
-                        <StatusPill
-                          active={product.status === "active"}
-                          label={
-                            product.status === "active"
-                              ? "Đang bán"
-                              : product.status
-                          }
-                        />
-                        <Button
-                          className="ml-auto flex-1"
-                          onClick={() => edit(product)}
-                          variant="secondary"
-                        >
-                          Sửa
-                        </Button>
-                        <Button
-                          onClick={async () => {
-                            if (await confirmAction({
-                              confirmLabel: "Ẩn sản phẩm",
-                              message: `Bạn có chắc muốn ẩn “${product.name}”?`,
-                              title: "Xác nhận ẩn sản phẩm",
-                              tone: "danger",
-                            })) {
-                              try {
-                                await archiveProduct(product.id);
-                                await load();
-                                showSuccess("Đã ẩn sản phẩm.");
-                              } catch (reason) {
-                                setError(productArchiveErrorMessage(reason));
-                              }
-                            }
-                          }}
-                          variant="danger"
-                        >
-                          Ẩn
-                        </Button>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
               {!filtered.length ? (
                 <ProductListEmptyState label="Không tìm thấy sản phẩm phù hợp." />
               ) : null}
@@ -1529,6 +1352,7 @@ export function ProductPage() {
           </>
       ) : null}
       <ProductDetailModal
+        key={viewingProduct?.id ?? "closed"}
         canEdit={canUpdateProduct || canDeleteProduct}
         onClose={() => setViewingProduct(null)}
         onEdit={edit}
@@ -1538,6 +1362,7 @@ export function ProductPage() {
         onChange={setQuery}
         onClose={() => setProductSearchOpen(false)}
         onScan={() => {
+          productScanMatchedRef.current = false;
           setProductSearchOpen(false);
           setProductScannerOpen(true);
         }}
@@ -2213,7 +2038,7 @@ export function ProductPage() {
         description="Quét EAN-13 để tìm nhanh sản phẩm trong danh sách."
         onClose={() => {
           setProductScannerOpen(false);
-          setProductSearchOpen(true);
+          if (!productScanMatchedRef.current) setProductSearchOpen(true);
         }}
         onDetected={handleProductEanDetected}
         open={productScannerOpen}
@@ -2392,11 +2217,13 @@ function ProductDetailModal({
   onEdit: (product: Product) => void;
   product: Product | null;
 }) {
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   if (!product) return null;
 
   const hasProductVariants = productUsesVariants(product);
-  const displayedVariants = getActiveProductModeVariants(product);
-  const activeVariants = displayedVariants;
+  const displayedVariants = getProductModeVariants(product);
+  const activeVariants = displayedVariants.filter((variant) => variant.is_active);
+  const selectedVariant = displayedVariants.find((variant) => variant.id === selectedVariantId);
   const totalStock = activeVariants.reduce(
     (sum, variant) => sum + variant.stock_quantity,
     0,
@@ -2430,7 +2257,7 @@ function ProductDetailModal({
       : "bg-slate-400";
 
   return (
-    <Modal
+    <><Modal
       footer={
         <div className="flex w-full justify-end gap-2">
           <Button onClick={onClose} variant="secondary">Đóng</Button>
@@ -2453,7 +2280,7 @@ function ProductDetailModal({
             <div className="min-w-0">
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
                 {primaryImage ? (
-                  <img alt={product.name} className="aspect-[4/3] h-full w-full object-contain p-2 md:aspect-square" src={primaryImage} />
+                  <ProductThumbnail cacheVersion={product.updated_at} thumbnailWidth={768} alt={product.name} className="aspect-[4/3] h-full w-full object-contain p-2 md:aspect-square" src={primaryImage} />
                 ) : (
                   <div className="grid aspect-[4/3] place-items-center text-slate-300 md:aspect-square">
                     <Boxes className="h-14 w-14" />
@@ -2464,7 +2291,7 @@ function ProductDetailModal({
                 <div className="mt-2 flex gap-2 overflow-x-auto pb-1" aria-label="Ảnh sản phẩm">
                   {sortedImages.map((image, index) => (
                     <span className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border bg-white ${index === 0 ? "border-moss-400 ring-2 ring-moss-100" : "border-slate-200"}`} key={image.id}>
-                      <img alt={image.alt_text || `${product.name} ${index + 1}`} className="h-full w-full object-cover" src={image.image_url} />
+                      <ProductThumbnail cacheVersion={product.updated_at} thumbnailWidth={160} alt={image.alt_text || `${product.name} ${index + 1}`} className="h-full w-full object-cover" src={image.image_url} />
                     </span>
                   ))}
                 </div>
@@ -2538,7 +2365,8 @@ function ProductDetailModal({
                         )?.image_url ??
                         primaryImage;
                       return skuImage ? (
-                        <img
+                        <ProductThumbnail thumbnailWidth={160}
+                          cacheVersion={product.updated_at}
                           alt={`${product.name} - ${getVariantLabel(variant, product.variant_attributes)}`}
                           className="h-12 w-12 shrink-0 rounded-xl border border-slate-200 object-cover"
                           src={skuImage}
@@ -2551,6 +2379,12 @@ function ProductDetailModal({
                     })()}
                     <div className="min-w-0">
                       <p className="font-extrabold text-slate-900">{getVariantLabel(variant, product.variant_attributes)}</p>
+                      <button
+                        aria-label={`Xem chi tiết ${getVariantLabel(variant, product.variant_attributes)}`}
+                        className="mt-1 rounded-lg px-1 py-1 text-xs font-extrabold text-moss-700 underline underline-offset-2 hover:bg-moss-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-500"
+                        onClick={() => setSelectedVariantId(variant.id)}
+                        type="button"
+                      >Xem chi tiết</button>
                       {!hasProductVariants && variant.is_default ? (
                         <p className="text-xs font-semibold text-moss-700">Mặc định</p>
                       ) : null}
@@ -2596,6 +2430,11 @@ function ProductDetailModal({
         </div>
       </div>
     </Modal>
+    {selectedVariant ? <ProductVariantDetailModal
+      onClose={() => setSelectedVariantId(null)}
+      product={product}
+      variant={selectedVariant}
+    /> : null}</>
   );
 }
 
@@ -2641,6 +2480,7 @@ function ProductAdminCard({
       category={product.category?.name ?? product.product_type?.name}
       compareAtPrice={comparePrice}
       imageUrl={image}
+      imageVersion={product.updated_at}
       name={product.name}
       onActivate={onView}
       price={minPrice}
