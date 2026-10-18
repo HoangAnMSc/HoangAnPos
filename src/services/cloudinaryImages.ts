@@ -1,8 +1,10 @@
 import {
+  fetchCloudinaryImageResources,
   getCloudinaryPublicId,
   productImageFolder,
   type CloudinaryImageUpload,
 } from "../lib/cloudinary";
+import { getErrorMessage } from "../lib/errors";
 import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { CloudinaryImage } from "../types";
 
@@ -35,6 +37,38 @@ export async function fetchCloudinaryImageRecords() {
   }
 
   return data ?? [];
+}
+
+export async function fetchProductImageLibrary() {
+  const [resources, records] = await Promise.allSettled([
+    fetchCloudinaryImageResources("products"),
+    fetchCloudinaryImageRecords(),
+  ]);
+  const images = new Map<string, string>();
+  if (resources.status === "fulfilled") {
+    for (const resource of resources.value) {
+      const url = (resource.secure_url || resource.url || "").trim();
+      if (url) images.set(resource.public_id || getCloudinaryPublicId(url) || url, url);
+    }
+  }
+  if (records.status === "fulfilled") {
+    for (const record of records.value) {
+      const url = record.url?.trim();
+      if (!url) continue;
+      const publicId = record.public_id || getCloudinaryPublicId(url);
+      const folder = record.folder || publicId?.split("/").slice(0, -1).join("/");
+      if (folder !== productImageFolder && !folder?.startsWith(`${productImageFolder}/`)) continue;
+      const key = publicId || url;
+      if (!images.has(key)) images.set(key, url);
+    }
+  }
+  const warning = [
+    resources.status === "rejected"
+      ? getErrorMessage(resources.reason, "Không tải được ảnh từ Cloudinary.") : "",
+    records.status === "rejected"
+      ? getErrorMessage(records.reason, "Không tải được bản ghi ảnh.") : "",
+  ].filter(Boolean).join(" ");
+  return { images: [...new Set(images.values())], warning };
 }
 
 export async function saveCloudinaryImageRecord(imageUrl: string) {

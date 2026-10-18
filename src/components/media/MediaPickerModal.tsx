@@ -5,12 +5,15 @@ import { Modal } from "../ui/Modal";
 type MediaPickerModalProps = {
   canUploadImage: boolean;
   currentImageUrl: string;
+  error?: string;
+  libraryError?: string;
   libraryImages: string[];
   loading?: boolean;
   multipleUpload?: boolean;
   open: boolean;
   saving?: boolean;
   onClose: () => void;
+  onReload?: () => void;
   onSave: (value: {
     imageUrl: string;
     imageFile: File | null;
@@ -22,10 +25,13 @@ type MediaPickerModalProps = {
 export function MediaPickerModal({
   canUploadImage,
   currentImageUrl,
+  error,
+  libraryError,
   libraryImages,
   loading = false,
   multipleUpload = false,
   onClose,
+  onReload,
   onSave,
   open,
   saving = false,
@@ -111,7 +117,7 @@ export function MediaPickerModal({
           </button>
           <button
             className="rounded-2xl bg-coal px-5 py-3 text-sm font-extrabold text-white shadow-lg disabled:opacity-50"
-            disabled={!canSave || loading || saving}
+            disabled={!canSave || (activeTab === "library" && loading) || saving}
             onClick={handleSave}
             type="button"
           >
@@ -126,6 +132,7 @@ export function MediaPickerModal({
       zIndex={120}
     >
       <div className="space-y-4">
+        {error ? <p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700" role="alert">{error}</p> : null}
         <div className="flex items-center gap-2">
           <button
             className={`rounded-xl border px-4 py-2 text-sm font-extrabold ${activeTab === "library" ? "border-coal bg-coal text-white" : "border-slate-200 bg-white text-slate-950"}`}
@@ -161,6 +168,13 @@ export function MediaPickerModal({
           </button>
         </div>
 
+        {activeTab === "library" && libraryError ? (
+          <div className="space-y-2 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900" role="alert">
+            <p>{libraryError}</p>
+            {onReload ? <button className="font-extrabold underline disabled:opacity-50" disabled={loading || saving} onClick={onReload} type="button">Thử lại</button> : null}
+          </div>
+        ) : null}
+
         {activeTab === "library" ? (
           loading ? (
             <div className="flex min-h-44 items-center justify-center rounded-2xl bg-slate-50 text-sm font-bold text-slate-500">
@@ -191,12 +205,12 @@ export function MediaPickerModal({
                 );
               })}
             </div>
-          ) : (
+          ) : !libraryError ? (
             <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl bg-slate-50 p-5 text-center">
               <ImagePlus className="h-8 w-8 text-slate-400" />
               <p className="mt-3 text-sm font-extrabold">Chưa có ảnh</p>
             </div>
-          )
+          ) : null
         ) : (
           <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
             {draftPreviews.length ? (

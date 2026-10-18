@@ -8,14 +8,14 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import {
-  fetchCloudinaryImageResources,
   getCloudinaryPublicId,
   uploadProductImageAsset,
 } from "../../lib/cloudinary";
 import {
-  fetchCloudinaryImageRecords,
+  fetchProductImageLibrary,
   saveCloudinaryImageAsset,
 } from "../../services/cloudinaryImages";
+import { getErrorMessage } from "../../lib/errors";
 import { MediaPickerModal } from "./MediaPickerModal";
 
 export type CloudinaryImageValue = {
@@ -51,6 +51,8 @@ export function CloudinaryImageField({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [libraryError, setLibraryError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
   const [libraryImages, setLibraryImages] = useState<string[]>([]);
   const canUpload = canAccess("cloudinary-images.upload");
 
@@ -59,28 +61,16 @@ export function CloudinaryImageField({
     let active = true;
     setLoading(true);
     setError("");
-    Promise.all([
-      fetchCloudinaryImageResources("products").catch(() => []),
-      fetchCloudinaryImageRecords().catch(() => []),
-    ])
-      .then(([resources, records]) => {
+    setLibraryError("");
+    fetchProductImageLibrary()
+      .then(({ images, warning }) => {
         if (!active) return;
-        setLibraryImages(
-          Array.from(
-            new Set([
-              ...resources.map((resource) => resource.secure_url),
-              ...records.map((record) => record.url),
-            ]),
-          ).filter(Boolean),
-        );
+        setLibraryImages(images);
+        setLibraryError(warning);
       })
       .catch((reason: unknown) => {
         if (active)
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "Không tải được thư viện Cloudinary.",
-          );
+          setLibraryError(getErrorMessage(reason, "Không tải được thư viện Cloudinary."));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -88,7 +78,7 @@ export function CloudinaryImageField({
     return () => {
       active = false;
     };
-  }, [open]);
+  }, [open, reloadKey]);
 
   const resolvedPublicId = useMemo(
     () => publicId || (imageUrl ? getCloudinaryPublicId(imageUrl) : null),
@@ -113,11 +103,7 @@ export function CloudinaryImageField({
       }
       setOpen(false);
     } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Không thể lưu ảnh Cloudinary.",
-      );
+      setError(getErrorMessage(reason, "Không thể lưu ảnh Cloudinary."));
     } finally {
       setSaving(false);
     }
@@ -309,9 +295,12 @@ export function CloudinaryImageField({
       <MediaPickerModal
         canUploadImage={canUpload}
         currentImageUrl={imageUrl ?? ""}
+        error={error}
+        libraryError={libraryError}
         libraryImages={libraryImages}
         loading={loading}
-        onClose={() => setOpen(false)}
+        onClose={() => { if (!saving) setOpen(false); }}
+        onReload={() => setReloadKey((current) => current + 1)}
         onSave={(value) => void save(value)}
         open={open}
         saving={saving}

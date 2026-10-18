@@ -221,6 +221,50 @@ test("Cloudinary record permission failures are not hidden as missing tables", a
   delete globalThis.testSupabase;
 });
 
+test("product image library keeps usable sources, deduplicates assets and reports loading failures", async () => {
+  const prefix = "hoang-an-pos/products/";
+  const imageUrl = `https://res.cloudinary.com/test/image/upload/v1/${prefix}a.webp`;
+  let records = [{ url: imageUrl.replace("/upload/", "/upload/q_20/"), public_id: `${prefix}a`, folder: "hoang-an-pos/products" },
+    { url: "https://res.cloudinary.com/test/image/upload/v1/hoang-an-pos/payment-qr/private.webp", public_id: "hoang-an-pos/payment-qr/private", folder: "hoang-an-pos/payment-qr" }];
+  let recordError = null;
+  let apiError = false;
+  let resources = [{ secure_url: imageUrl, public_id: `${prefix}a` },
+    { url: imageUrl.replace("a.webp", "b.webp"), public_id: `${prefix}b` }];
+  const originalFetch = globalThis.fetch;
+  globalThis.testSupabase = {
+    auth: { getSession: async () => ({ data: { session: { access_token: "mock-token" } } }) },
+    from: () => ({ select: () => ({ order: async () => ({ data: records, error: recordError }) }) }),
+  };
+  globalThis.fetch = async () => apiError
+    ? Response.json({ ok: false, message: "Cloudinary unavailable" }, { status: 503 })
+    : Response.json({ ok: true, resources });
+  try {
+    const { fetchProductImageLibrary } = await loadSource("src/services/cloudinaryImages.ts", true);
+    const complete = await fetchProductImageLibrary();
+    assert.deepEqual(complete.images, [imageUrl, resources[1].url]);
+    assert.equal(complete.warning, "");
+    apiError = true;
+    const fallback = await fetchProductImageLibrary();
+    assert.deepEqual(fallback.images, [records[0].url]);
+    assert.match(fallback.warning, /Cloudinary unavailable/);
+    recordError = { message: "permission denied for cloudinary_images" };
+    const failed = await fetchProductImageLibrary();
+    assert.deepEqual(failed.images, []);
+    assert.match(failed.warning, /Cloudinary unavailable/);
+    assert.match(failed.warning, /permission denied/);
+    apiError = false;
+    const cloudOnly = await fetchProductImageLibrary();
+    assert.deepEqual(cloudOnly.images, complete.images);
+    assert.match(cloudOnly.warning, /permission denied/);
+    recordError = null;
+    records = []; resources = [];
+    assert.deepEqual(await fetchProductImageLibrary(), { images: [], warning: "" });
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete globalThis.testSupabase;
+  }
+});
+
 test("fresh schema and upgrade remove the obsolete products.image_url update", async () => {
   for (const file of ["supabase/schema.sql", "supabase/migrations/202610170001_fix_cloudinary_image_cleanup.sql"]) {
     const sql = await readFile(file, "utf8");
