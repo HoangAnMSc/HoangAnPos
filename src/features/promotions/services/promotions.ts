@@ -68,6 +68,11 @@ export async function savePromotion(
     priority: input.priority,
     is_stackable: input.is_stackable,
     is_active: input.is_active,
+    buy_variant_id: input.discount_type === "buy_x_get_y" ? input.buy_variant_id : null,
+    buy_quantity: input.buy_quantity ?? 10,
+    gift_variant_id: input.discount_type === "buy_x_get_y" ? input.gift_variant_id : null,
+    gift_quantity: input.gift_quantity ?? 1,
+    repeat_gift: input.repeat_gift ?? true,
   };
   const query = inputId
     ? productEngineClient.from("promotions").update(values).eq("id", inputId)
@@ -121,24 +126,12 @@ export async function savePromotion(
 
 export async function deletePromotion(id: string) {
   requireSupabaseConfig();
-  const redemptions = await productEngineClient
-    .from("promotion_redemptions")
-    .select("id", { count: "exact", head: true })
-    .eq("promotion_id", id);
-  fail(redemptions.error);
-  if ((redemptions.count ?? 0) > 0) {
-    throw new Error(
-      "Chương trình đã có lượt sử dụng nên không thể xóa. Hãy tạm dừng để giữ đúng lịch sử đơn hàng.",
-    );
-  }
-  const { data, error } = await productEngineClient
-    .from("promotions")
-    .delete()
-    .eq("id", id)
-    .select("id")
-    .single();
+  const { data, error } = await productEngineClient.rpc("delete_promotion", {
+    promotion_id_input: id,
+  });
   fail(error);
   if (!data) throw new Error("Không tìm thấy chương trình hoặc bạn không có quyền xóa.");
+  return data;
 }
 
 export async function evaluatePromotions(
@@ -147,11 +140,12 @@ export async function evaluatePromotions(
     variant_id: string;
     unit_price: number;
     quantity: number;
+    is_reward?: boolean;
   }>,
   customerId?: string | null,
   couponCode?: string | null,
 ) {
-  const { data, error } = await productEngineClient.rpc("evaluate_promotions", {
+  const { data, error } = await productEngineClient.rpc("evaluate_promotion_benefits", {
     items_input: items as unknown as Json,
     customer_id_input: customerId,
     coupon_code_input: couponCode,

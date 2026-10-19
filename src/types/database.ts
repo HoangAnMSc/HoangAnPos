@@ -404,6 +404,7 @@ export type Database = {
       };
       orders: {
         Row: {
+          promotion_snapshot?: Json;
           id: string;
           code: string;
           customer_id: string | null;
@@ -433,6 +434,7 @@ export type Database = {
           created_at: string;
         };
         Insert: {
+          promotion_snapshot?: Json;
           id?: string;
           code: string;
           customer_id?: string | null;
@@ -462,6 +464,7 @@ export type Database = {
           created_at?: string;
         };
         Update: {
+          promotion_snapshot?: Json;
           id?: string;
           code?: string;
           customer_id?: string | null;
@@ -1095,6 +1098,7 @@ export type Database = {
           payment_proof_url_input: string | null;
         };
         Returns: {
+          promotion_snapshot?: Json;
           id: string;
           code: string;
           customer_id: string | null;

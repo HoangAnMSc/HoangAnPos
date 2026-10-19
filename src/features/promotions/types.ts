@@ -1,7 +1,7 @@
 import type { Json } from "../../types/database";
 
 export type PromotionTrigger = "automatic" | "coupon";
-export type DiscountType = "percentage" | "fixed_amount" | "free_shipping";
+export type DiscountType = "percentage" | "fixed_amount" | "free_shipping" | "buy_x_get_y";
 export type PromotionCondition = {
   id?: string;
   condition_type: string;
@@ -31,6 +31,12 @@ export type Promotion = {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
+  buy_variant_id?: string | null;
+  buy_quantity?: number;
+  gift_variant_id?: string | null;
+  gift_quantity?: number;
+  repeat_gift?: boolean;
   conditions: PromotionCondition[];
   scopes: PromotionScope[];
   usage_count?: number;
@@ -41,4 +47,17 @@ export type PromotionEvaluation = {
   name: string;
   discount_amount: number;
   free_shipping: boolean;
+  gifts?: PromotionGift[];
+};
+
+export type PromotionGift = {
+  product_id: string;
+  variant_id: string;
+  product_name: string;
+  variant_name: string | null;
+  sku: string;
+  quantity: number;
+  requested_quantity: number;
+  unit_price: number;
+  warning: string | null;
 };

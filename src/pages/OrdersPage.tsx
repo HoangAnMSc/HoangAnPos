@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/Button";
+import { PromotionSummary } from "../components/promotions/PromotionSummary";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorNoticeModal, type ErrorNotice } from "../components/ui/ErrorNoticeModal";
@@ -47,6 +48,8 @@ type InvoiceItem = {
   expiry_date: string | null;
   product_name: string;
   reward_points_cost: number;
+  is_promotion_gift?: boolean;
+  promotion_name?: string | null;
   sku?: string | null;
   variant_key: string | null;
   variant_label: string | null;
@@ -745,6 +748,7 @@ export function OrdersPage() {
                             {item.variant_label}
                           </p>
                         ) : null}
+                        {item.is_promotion_gift ? <p className="mt-1 text-xs font-bold text-emerald-700">Quà tặng · {item.promotion_name ?? "Khuyến mãi"}</p> : null}
                         <p className="mt-1 text-sm font-semibold text-slate-500">
                           {item.reward_points_cost > 0
                             ? `${item.reward_points_cost.toLocaleString("vi-VN")} điểm`
@@ -774,17 +778,7 @@ export function OrdersPage() {
                 <span>Tạm tính</span>
                 <span className="tabular-nums">{formatCurrency(selectedOrder.subtotal)}</span>
               </div>
-              {(selectedOrder.promotions ?? []).map((promotion, index) => (
-                <div
-                  className="mt-2 flex items-start justify-between gap-3 text-sm text-emerald-700"
-                  key={`${promotion.name}-${index}`}
-                >
-                  <span className="min-w-0 font-extrabold">{promotion.name}</span>
-                  <strong className="shrink-0 tabular-nums">
-                    -{formatCurrency(promotion.discount_amount)}
-                  </strong>
-                </div>
-              ))}
+              <PromotionSummary promotions={selectedOrder.promotions ?? []} />
               {selectedOrder.discount > 0 && !selectedOrder.promotions?.length ? (
                 <div className="mt-2 flex items-center justify-between gap-3 text-sm text-emerald-700">
                   <span className="font-extrabold">Khuyến mãi</span>

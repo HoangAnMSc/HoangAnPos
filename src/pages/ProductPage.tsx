@@ -95,6 +95,8 @@ import {
   variantCombinationKey,
 } from "../features/products/utils/variants";
 import { formatCurrency, formatDateTime } from "../lib/format";
+import { fetchPromotions } from "../features/promotions/services/promotions";
+import type { Promotion } from "../features/promotions/types";
 import {
   createVietnamEan13FromSeed,
   isValidEan13,
@@ -2218,6 +2220,25 @@ function ProductDetailModal({
   product: Product | null;
 }) {
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"skus" | "specifications" | "promotions">("skus");
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [promotionError, setPromotionError] = useState("");
+  const [promotionsLoading, setPromotionsLoading] = useState(false);
+  const { canAccess } = useAuth();
+  const canReadPromotions = canAccess("promotions");
+  useEffect(() => {
+    if (!product || tab !== "promotions" || !canReadPromotions) return;
+    let active = true;
+    setPromotionsLoading(true);
+    setPromotionError("");
+    void fetchPromotions().then((items) => {
+      if (active) setPromotions(items);
+    }).catch((reason) => {
+      if (active) setPromotionError(getErrorMessage(reason, "Không tải được khuyến mãi."));
+    }).finally(() => { if (active) setPromotionsLoading(false); });
+    return () => { active = false; };
+  }, [product, tab, canReadPromotions]);
   if (!product) return null;
 
   const hasProductVariants = productUsesVariants(product);
@@ -2236,6 +2257,7 @@ function ProductDetailModal({
     (first, second) => Number(second.is_primary) - Number(first.is_primary),
   );
   const primaryImage =
+    sortedImages.find((image) => image.id === selectedImageId)?.image_url ??
     sortedImages[0]?.image_url ??
     activeVariants.find((variant) => variant.image_url)?.image_url ??
     null;
@@ -2245,6 +2267,15 @@ function ProductDetailModal({
   const priceLabel = minPrice === maxPrice
     ? formatCurrency(minPrice)
     : `${formatCurrency(minPrice)} – ${formatCurrency(maxPrice)}`;
+  const relatedPromotions = promotions.filter((item) => !item.deleted_at && item.is_active
+    && (!item.start_at || new Date(item.start_at).getTime() <= Date.now())
+    && (!item.end_at || new Date(item.end_at).getTime() > Date.now())
+    && (item.discount_type === "buy_x_get_y"
+      ? displayedVariants.some((variant) => variant.id === item.buy_variant_id || variant.id === (item.gift_variant_id ?? item.buy_variant_id))
+      : item.scopes.some((scope) => scope.scope_type === "all"
+        || scope.scope_type === "product" && scope.scope_id === product.id
+        || scope.scope_type === "variant" && displayedVariants.some((variant) => variant.id === scope.scope_id)
+        || scope.scope_type === "category" && [product.category_id, product.product_type_id].includes(scope.scope_id))));
   const statusClassName = product.status === "active"
     ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
     : product.status === "draft"
@@ -2273,16 +2304,17 @@ function ProductDetailModal({
       size="wide"
       title="Chi tiết sản phẩm"
       bodyClassName="bg-slate-50/70"
+      contentClassName="sm:!w-[94vw] sm:!max-w-none"
     >
-      <div className="space-y-4">
-        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_10px_32px_rgba(15,23,42,0.06)]">
-          <div className="grid gap-5 p-4 md:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] md:p-5">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:items-start">
+        <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_10px_32px_rgba(15,23,42,0.06)]">
+          <div className="grid min-w-0 gap-4 p-4">
             <div className="min-w-0">
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
                 {primaryImage ? (
-                  <ProductThumbnail cacheVersion={product.updated_at} thumbnailWidth={768} alt={product.name} className="aspect-[4/3] h-full w-full object-contain p-2 md:aspect-square" src={primaryImage} />
+                  <ProductThumbnail cacheVersion={product.updated_at} thumbnailWidth={768} alt={product.name} className="aspect-[4/3] w-full object-contain p-2 md:aspect-square lg:max-h-[35dvh]" src={primaryImage} />
                 ) : (
-                  <div className="grid aspect-[4/3] place-items-center text-slate-300 md:aspect-square">
+                  <div className="grid aspect-[4/3] place-items-center text-slate-300 md:aspect-square lg:max-h-[35dvh]">
                     <Boxes className="h-14 w-14" />
                   </div>
                 )}
@@ -2290,9 +2322,9 @@ function ProductDetailModal({
               {sortedImages.length > 1 ? (
                 <div className="mt-2 flex gap-2 overflow-x-auto pb-1" aria-label="Ảnh sản phẩm">
                   {sortedImages.map((image, index) => (
-                    <span className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border bg-white ${index === 0 ? "border-moss-400 ring-2 ring-moss-100" : "border-slate-200"}`} key={image.id}>
+                    <button aria-label={`Xem ảnh ${index + 1}`} aria-pressed={image.id === (selectedImageId ?? sortedImages[0]?.id)} onClick={() => setSelectedImageId(image.id)} type="button" className={`relative aspect-square w-1/5 shrink-0 overflow-hidden rounded-xl border bg-white ${image.id === (selectedImageId ?? sortedImages[0]?.id) ? "border-moss-400 ring-2 ring-moss-100" : "border-slate-200"}`} key={image.id}>
                       <ProductThumbnail cacheVersion={product.updated_at} thumbnailWidth={160} alt={image.alt_text || `${product.name} ${index + 1}`} className="h-full w-full object-cover" src={image.image_url} />
-                    </span>
+                    </button>
                   ))}
                 </div>
               ) : null}
@@ -2309,7 +2341,7 @@ function ProductDetailModal({
                       <span className="text-xs font-semibold text-slate-400">{product.product_type.name}</span>
                     ) : null}
                   </div>
-                  <h3 className="mt-2 break-words text-2xl font-black leading-tight text-slate-950 md:text-3xl">{product.name}</h3>
+                  <h3 className="mt-2 break-words text-xl font-black leading-tight text-slate-950 xl:text-2xl">{product.name}</h3>
                   <p className="mt-1 break-all font-mono text-xs font-semibold text-slate-400">/{product.slug}</p>
                 </div>
                 <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-extrabold ring-1 ${statusClassName}`}>
@@ -2320,12 +2352,17 @@ function ProductDetailModal({
 
               <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3">
                 <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Mô tả sản phẩm</p>
-                <p className={`mt-1 whitespace-pre-wrap text-sm leading-6 ${product.description?.trim() ? "text-slate-700" : "italic text-slate-400"}`}>
+                <p className={`mt-1 whitespace-pre-wrap break-words text-sm leading-6 ${product.description?.trim() ? "text-slate-700" : "italic text-slate-400"}`}>
                   {product.description?.trim() || "Sản phẩm chưa có mô tả."}
                 </p>
               </div>
 
-              <dl className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
+            </div>
+          </div>
+        </section>
+
+        <div className="min-w-0 space-y-4">
+              <dl className="grid grid-cols-2 gap-2 xl:grid-cols-4">
                 <ProductDetailMetric emphasis label="Giá bán" value={priceLabel} />
                 <ProductDetailMetric label="Tổng SKU" value={String(displayedVariants.length)} />
                 <ProductDetailMetric label="Tồn trong kho" value={String(totalStock)} />
@@ -2334,23 +2371,25 @@ function ProductDetailModal({
               <p className="mt-3 text-xs font-semibold text-slate-500">
                 <strong className="text-emerald-700">{activeVariants.length}</strong>/{displayedVariants.length} SKU đang được bán
               </p>
-            </div>
-          </div>
-        </section>
 
+          <div aria-label="Thông tin sản phẩm" role="tablist" className="flex gap-1 overflow-x-auto rounded-xl bg-slate-200/70 p-1">
+            {([["skus", "SKU"], ["specifications", "Thông số"], ["promotions", "Khuyến mãi"]] as const).map(([key, label]) => <button id={`product-tab-${key}`} aria-controls={`product-panel-${key}`} aria-selected={tab === key} role="tab" type="button" key={key} onClick={() => setTab(key)} className={`min-w-0 flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold ${tab === key ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:bg-white/60"}`}>{label}</button>)}
+          </div>
+          <div id={`product-panel-${tab}`} role="tabpanel" aria-labelledby={`product-tab-${tab}`}>
+          {tab === "skus" ? <>
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_6px_22px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5">
             <div><h4 className="text-sm font-black text-slate-950">Danh sách SKU</h4><p className="mt-0.5 text-xs font-semibold text-slate-500">Giá bán, tồn kho và mã nhận diện của từng phiên bản.</p></div>
             <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-extrabold text-slate-600">{displayedVariants.length} SKU</span>
           </div>
           {displayedVariants.length ? <>
-            <div className="hidden grid-cols-[minmax(190px,1.2fr)_minmax(140px,.9fr)_120px_90px_110px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,.6fr)_minmax(0,.9fr)] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-slate-500 md:grid">
               <span>Phiên bản</span><span>Mã SKU / EAN-13</span><span>Giá bán</span><span>Tồn kho</span><span>Trạng thái</span>
             </div>
             <div className="divide-y divide-slate-100">
               {displayedVariants.map((variant) => (
                 <div
-                  className="grid gap-2.5 px-4 py-3.5 text-sm md:grid-cols-[minmax(190px,1.2fr)_minmax(140px,.9fr)_120px_90px_110px] md:items-center md:gap-3"
+                  className="grid gap-2.5 px-4 py-3.5 text-sm md:grid-cols-[minmax(0,1.4fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,.6fr)_minmax(0,.9fr)] md:items-center md:gap-3"
                   key={variant.id}
                 >
                   <div className="flex min-w-0 items-center gap-3">
@@ -2378,7 +2417,7 @@ function ProductDetailModal({
                       );
                     })()}
                     <div className="min-w-0">
-                      <p className="font-extrabold text-slate-900">{getVariantLabel(variant, product.variant_attributes)}</p>
+                      <p className="break-words font-extrabold text-slate-900">{getVariantLabel(variant, product.variant_attributes)}</p>
                       <button
                         aria-label={`Xem chi tiết ${getVariantLabel(variant, product.variant_attributes)}`}
                         className="mt-1 rounded-lg px-1 py-1 text-xs font-extrabold text-moss-700 underline underline-offset-2 hover:bg-moss-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss-500"
@@ -2390,22 +2429,23 @@ function ProductDetailModal({
                       ) : null}
                     </div>
                   </div>
-                  <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] items-start gap-2 text-xs font-semibold text-slate-600 md:block">
+                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-start gap-2 text-xs font-semibold text-slate-600 md:block">
                     <span className="font-extrabold text-slate-400 md:hidden">Mã SKU</span>
                     <span className="min-w-0">
                     <p className="truncate" title={variant.sku}>{variant.sku}</p>
                     <p className="truncate text-slate-400" title={variant.barcode ?? undefined}>{variant.barcode || "Chưa có EAN-13"}</p>
                     </span>
                   </div>
-                  <p className="grid grid-cols-[88px_minmax(0,1fr)] gap-2 font-black tabular-nums text-slate-950 md:block"><span className="text-xs font-extrabold text-slate-400 md:hidden">Giá bán</span>{formatCurrency(variant.base_price)}</p>
-                  <p className="grid grid-cols-[88px_minmax(0,1fr)] gap-2 font-extrabold tabular-nums text-slate-800 md:block"><span className="text-xs font-extrabold text-slate-400 md:hidden">Tồn kho</span>{variant.stock_quantity}</p>
-                  <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 md:block"><span className="text-xs font-extrabold text-slate-400 md:hidden">Trạng thái</span><StatusPill active={variant.is_active} label={variant.is_active ? "Đang bán" : "Đã tắt"} /></div>
+                  <p className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2 min-w-0 break-words font-black tabular-nums text-slate-950 md:block"><span className="text-xs font-extrabold text-slate-400 md:hidden">Giá bán</span>{formatCurrency(variant.base_price)}</p>
+                  <p className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2 min-w-0 break-words font-extrabold tabular-nums text-slate-800 md:block"><span className="text-xs font-extrabold text-slate-400 md:hidden">Tồn kho</span>{variant.stock_quantity}</p>
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-2 md:block"><span className="text-xs font-extrabold text-slate-400 md:hidden">Trạng thái</span><StatusPill active={variant.is_active} label={variant.is_active ? "Đang bán" : "Đã tắt"} /></div>
                 </div>
               ))}
             </div>
           </> : <div className="p-8 text-center text-sm font-semibold text-slate-500">Sản phẩm chưa có SKU để hiển thị.</div>}
         </section>
 
+          </> : tab === "specifications" ? <>
         {product.specifications.length ? (
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_22px_rgba(15,23,42,0.04)]">
             <div className="mb-3"><h4 className="text-sm font-black text-slate-950">Thông số sản phẩm</h4><p className="mt-0.5 text-xs font-semibold text-slate-500">Thông tin kỹ thuật và thuộc tính bổ sung.</p></div>
@@ -2422,11 +2462,25 @@ function ProductDetailModal({
                 ))}
             </dl>
           </section>
-        ) : null}
+        ) : <p className="rounded-2xl bg-white p-5 text-sm text-slate-500">Sản phẩm chưa có thông số.</p>}
+          </> : <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+            {!canReadPromotions ? <p className="text-sm text-slate-500">Bạn không có quyền xem khuyến mãi.</p> : promotionsLoading ? <Spinner label="Đang tải khuyến mãi..." /> : promotionError ? <p role="alert" className="text-sm text-red-700">{promotionError}</p> : <>
+              <p className="text-xs text-slate-500">Điều kiện theo khách hàng, số lượng và toàn giỏ được kiểm tra tại POS.</p>
+              {relatedPromotions.length ? relatedPromotions.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3">
+                <p className="font-bold">{item.name}</p>
+                <p className="mt-1 text-sm text-moss-700">{item.discount_type === "buy_x_get_y" ? `Mua ${item.buy_quantity} tặng ${item.gift_quantity} · ${item.repeat_gift === false ? "một lần mỗi đơn" : "lặp theo số lượng mua"}` : item.discount_type === "percentage" ? `Giảm ${item.discount_value}%` : item.discount_type === "fixed_amount" ? `Giảm ${formatCurrency(item.discount_value)}` : "Miễn phí vận chuyển"}</p>
+                {item.discount_type === "buy_x_get_y" ? <p className="mt-1 text-xs font-semibold text-slate-600">{displayedVariants.some((variant) => variant.id === item.buy_variant_id) ? "Có SKU cần mua trong sản phẩm này. " : ""}{displayedVariants.some((variant) => variant.id === (item.gift_variant_id ?? item.buy_variant_id)) ? "Sản phẩm này có SKU được dùng làm quà." : ""}</p> : null}
+                <p className="mt-1 text-xs text-slate-500">{item.trigger_type === "coupon" ? `Mã: ${item.code}` : "Tự động áp dụng"}</p>
+              </div>) : <p className="py-3 text-sm text-slate-500">Sản phẩm chưa có chương trình khuyến mãi đang hoạt động.</p>}
+              <p className="text-xs text-slate-500">Danh sách hiển thị các chương trình đang hoạt động có phạm vi áp dụng cho sản phẩm.</p>
+            </>}
+          </section>}
+          </div>
 
         <div className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-500 sm:flex-row sm:items-center sm:justify-between">
           <span>Tạo lúc <strong className="text-slate-700">{formatDateTime(product.created_at)}</strong></span>
           <span>Cập nhật gần nhất <strong className="text-slate-700">{formatDateTime(product.updated_at)}</strong></span>
+        </div>
         </div>
       </div>
     </Modal>
@@ -2442,7 +2496,7 @@ function ProductDetailMetric({ emphasis = false, label, value }: { emphasis?: bo
   return (
     <div className={`min-w-0 rounded-xl border px-3 py-2.5 ${emphasis ? "border-moss-100 bg-moss-50" : "border-slate-100 bg-slate-50"}`}>
       <dt className={`text-[10px] font-extrabold uppercase tracking-wide ${emphasis ? "text-moss-600" : "text-slate-400"}`}>{label}</dt>
-      <dd className={`mt-0.5 truncate text-base font-black tabular-nums ${emphasis ? "text-moss-800" : "text-slate-950"}`} title={value}>{value}</dd>
+      <dd className={`mt-0.5 break-words text-base font-black tabular-nums ${emphasis ? "text-moss-800" : "text-slate-950"}`} title={value}>{value}</dd>
     </div>
   );
 }

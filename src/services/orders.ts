@@ -4,7 +4,7 @@ import type { CartItem } from "../types";
 import { productEngineClient } from "../features/products/services/client";
 import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
 import { getVariantLabel } from "../features/products/utils/variants";
-import type { ReceiptPromotion } from "../lib/receipt";
+import { receiptPromotionsFromSnapshot, type ReceiptPromotion } from "../lib/receipt";
 
 export type PaymentMethod = "cash" | "transfer";
 
@@ -134,7 +134,7 @@ export async function fetchOrders() {
       productEngineClient.from("orders").select("*").order("created_at", { ascending: false }),
       productEngineClient.from("order_items").select("*"),
       productEngineClient.from("customers").select("id,name,phone,address,points"),
-      productEngineClient.from("promotion_redemptions").select("promotion_id,order_id,discount_amount"),
+      productEngineClient.from("promotion_redemptions").select("promotion_id,order_id,discount_amount,promotion_name,gifts"),
       productEngineClient.from("promotions").select("id,name"),
       fetchEngineProducts(),
     ]);
@@ -149,10 +149,13 @@ export async function fetchOrders() {
     const productsById = new Map(products.map((product) => [product.id, product] as const));
     return (ordersResult.data ?? []).map((order) => ({
       ...order,
-      promotions: (redemptionsResult.data ?? [])
+      promotions: Array.isArray(order.promotion_snapshot) && order.promotion_snapshot.length
+        ? receiptPromotionsFromSnapshot(order.promotion_snapshot)
+        : (redemptionsResult.data ?? [])
         .filter((redemption) => redemption.order_id === order.id)
         .map((redemption): ReceiptPromotion => ({
-          name: promotionNames.get(String(redemption.promotion_id)) ?? "Khuyến mãi",
+          name: String(redemption.promotion_name ?? promotionNames.get(String(redemption.promotion_id)) ?? "Khuyến mãi"),
+          gifts: receiptPromotionsFromSnapshot([redemption])[0].gifts,
           discount_amount: Number(redemption.discount_amount) || 0,
         })),
       customers: (customersResult.data ?? []).find((customer) => customer.id === order.customer_id) ?? null,
@@ -192,7 +195,7 @@ export async function fetchOrderPromotionDetails(orderId: string): Promise<Recei
   requireSupabaseConfig();
   const { data: redemptions, error: redemptionError } = await productEngineClient
     .from("promotion_redemptions")
-    .select("promotion_id,discount_amount")
+    .select("promotion_id,discount_amount,promotion_name,gifts")
     .eq("order_id", orderId);
   if (redemptionError) throw redemptionError;
   const promotionIds = (redemptions ?? []).map((item) => String(item.promotion_id));
@@ -204,7 +207,8 @@ export async function fetchOrderPromotionDetails(orderId: string): Promise<Recei
   if (promotionError) throw promotionError;
   const names = new Map((promotions ?? []).map((item) => [String(item.id), String(item.name)]));
   return (redemptions ?? []).map((item) => ({
-    name: names.get(String(item.promotion_id)) ?? "Khuyến mãi",
+    name: String(item.promotion_name ?? names.get(String(item.promotion_id)) ?? "Khuyến mãi"),
+    gifts: receiptPromotionsFromSnapshot([item])[0].gifts,
     discount_amount: Number(item.discount_amount) || 0,
   }));
 }

@@ -17,12 +17,12 @@ import { formatCurrency, formatIntegerInput, normalizeIntegerInput } from "../li
 
 type Draft = Omit<Promotion, "created_at" | "updated_at" | "usage_count"> & { id: string };
 type CategoryOption = { id: string; name: string };
-type PromotionLifecycle = "active" | "scheduled" | "expired" | "inactive";
+type PromotionLifecycle = "active" | "scheduled" | "expired" | "inactive" | "deleted";
 const emptyDraft = (): Draft => ({
   id: "", name: "", code: null, trigger_type: "coupon", discount_type: "percentage",
   discount_value: 0, max_discount_amount: null, start_at: null, end_at: null,
   total_usage_limit: null, usage_per_customer: null, priority: 0, is_stackable: false,
-  is_active: true, conditions: [], scopes: [{ scope_type: "all", scope_id: null }],
+  is_active: true, buy_variant_id: null, buy_quantity: 10, gift_variant_id: null, gift_quantity: 1, repeat_gift: true, conditions: [], scopes: [{ scope_type: "all", scope_id: null }],
 });
 const vietnamOffsetMs = 7 * 60 * 60 * 1000;
 const vietnamDateTimeInput = (value: string | null) => {
@@ -48,13 +48,15 @@ const vietnamDateTimeLabel = (value: string) => new Intl.DateTimeFormat("vi-VN",
   year: "numeric",
 }).format(new Date(value));
 const triggerLabel = (value: PromotionTrigger) => value === "coupon" ? "Mã giảm giá" : "Tự động";
-const discountLabel = (item: Pick<Promotion, "discount_type" | "discount_value">) =>
+const discountLabel = (item: Pick<Promotion, "discount_type" | "discount_value" | "buy_quantity" | "gift_quantity">) =>
+  item.discount_type === "buy_x_get_y" ? `Mua ${item.buy_quantity} tặng ${item.gift_quantity}` :
   item.discount_type === "percentage" ? `${item.discount_value}%` :
     item.discount_type === "fixed_amount" ? formatCurrency(item.discount_value) : "Miễn phí vận chuyển";
 const promotionLifecycle = (
-  item: Pick<Promotion, "end_at" | "is_active" | "start_at">,
+  item: Pick<Promotion, "end_at" | "is_active" | "start_at" | "deleted_at">,
   now: number,
 ): PromotionLifecycle => {
+  if (item.deleted_at) return "deleted";
   const startAt = item.start_at ? new Date(item.start_at).getTime() : null;
   const endAt = item.end_at ? new Date(item.end_at).getTime() : null;
   if (endAt != null && Number.isFinite(endAt) && endAt <= now) return "expired";
@@ -108,7 +110,7 @@ export function PromotionsPage() {
 
   const filtered = useMemo(() => items.filter((item) => {
     const matchesText = `${item.name} ${item.code ?? ""}`.toLocaleLowerCase("vi").includes(query.trim().toLocaleLowerCase("vi"));
-    return matchesText && (status === "all" || promotionLifecycle(item, now) === status);
+    return matchesText && (status === "all" ? !item.deleted_at : promotionLifecycle(item, now) === status);
   }), [items, now, query, status]);
 
   function edit(item?: Promotion) {
@@ -119,6 +121,7 @@ export function PromotionsPage() {
   }
 
   async function submit() {
+    if (draft.deleted_at) return;
     if (draft.id ? !canUpdatePromotion : !canCreatePromotion) {
       setError("Tài khoản không có quyền lưu chương trình này.");
       return;
@@ -128,12 +131,19 @@ export function PromotionsPage() {
     if (draft.trigger_type === "coupon" && !draft.code?.trim()) return setError("Vui lòng nhập mã voucher.");
     if (draft.discount_type === "percentage" && (draft.discount_value <= 0 || draft.discount_value > 100)) return setError("Phần trăm giảm phải từ 1 đến 100.");
     if (draft.discount_type === "fixed_amount" && draft.discount_value <= 0) return setError("Số tiền giảm phải lớn hơn 0.");
+    if (draft.discount_type === "buy_x_get_y") {
+      if (!draft.buy_variant_id) return setError("Vui lòng chọn SKU cần mua.");
+      if (!Number.isSafeInteger(draft.buy_quantity) || (draft.buy_quantity ?? 0) <= 0) return setError("Số lượng cần mua phải là số nguyên dương.");
+      if (!Number.isSafeInteger(draft.gift_quantity) || (draft.gift_quantity ?? 0) <= 0) return setError("Số lượng quà phải là số nguyên dương.");
+      if (!products.some((product) => product.status === "active" && !product.is_reward && product.variants.some((variant) => variant.is_active && variant.id === draft.buy_variant_id))) return setError("SKU cần mua phải đang bán và không phải hàng đổi điểm.");
+      if (draft.gift_variant_id && !products.some((product) => product.status === "active" && product.variants.some((variant) => variant.is_active && variant.id === draft.gift_variant_id))) return setError("SKU quà tặng phải đang bán.");
+    }
     if (draft.start_at && draft.end_at && draft.start_at >= draft.end_at) return setError("Thời gian kết thúc phải sau thời gian bắt đầu.");
     if (draft.scopes.some((scope) => scope.scope_type !== "all" && !scope.scope_id)) return setError("Vui lòng chọn đầy đủ phạm vi áp dụng.");
     setSaving(true);
     try {
       const wasEditing = Boolean(draft.id);
-      await savePromotion({ ...draft, code: draft.trigger_type === "coupon" ? draft.code!.trim().toUpperCase() : null });
+      await savePromotion({ ...draft, scopes: draft.discount_type === "buy_x_get_y" ? [{ scope_type: "variant", scope_id: draft.buy_variant_id! }] : draft.scopes, code: draft.trigger_type === "coupon" ? draft.code!.trim().toUpperCase() : null });
       setOpen(false);
       await load();
       showSuccess(wasEditing ? "Đã lưu thay đổi chương trình khuyến mãi." : "Đã thêm chương trình khuyến mãi.");
@@ -147,11 +157,11 @@ export function PromotionsPage() {
     setDeleting(true);
     setError("");
     try {
-      await deletePromotion(draft.id);
+      const result = await deletePromotion(draft.id);
       setDeleteConfirmOpen(false);
       setOpen(false);
       await load();
-      showSuccess("Đã xóa chương trình khuyến mãi.");
+      showSuccess(result === "archived" ? "Đã xóa chương trình khỏi danh sách áp dụng và giữ nguyên lịch sử đơn hàng." : "Đã xóa chương trình khuyến mãi.");
     } catch (reason) {
       setDeleteConfirmOpen(false);
       setError(reason instanceof Error ? reason.message : "Không xóa được chương trình.");
@@ -170,7 +180,7 @@ export function PromotionsPage() {
             <p className="mt-0.5 truncate text-xs font-medium text-slate-500">Voucher và khuyến mãi tự động</p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 text-[11px] font-extrabold">
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{items.length} chương trình</span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{items.filter((item) => !item.deleted_at).length} chương trình</span>
             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">{items.filter((item) => promotionLifecycle(item, now) === "active").length} hoạt động</span>
           </div>
         </div>
@@ -238,7 +248,7 @@ export function PromotionsPage() {
           </label>
           <div className="w-28 shrink-0 sm:w-44">
             <Select className="!min-h-12 !py-2 !pl-3 !pr-7" onChange={(event) => setStatus(event.target.value as typeof status)} value={status}>
-              <option value="all">Tất cả</option><option value="active">Đang hoạt động</option><option value="scheduled">Sắp diễn ra</option><option value="expired">Đã hết hạn</option><option value="inactive">Tạm dừng</option>
+              <option value="all">Tất cả</option><option value="active">Đang hoạt động</option><option value="scheduled">Sắp diễn ra</option><option value="expired">Đã hết hạn</option><option value="inactive">Tạm dừng</option><option value="deleted">Đã xóa</option>
             </Select>
           </div>
           {canCreatePromotion ? <Button aria-label="Thêm chương trình" className="h-12 min-h-12 w-12 shrink-0 px-0 sm:w-auto sm:px-4" onClick={() => edit()}>
@@ -247,22 +257,24 @@ export function PromotionsPage() {
         </div>
       </div>
 
-      <Modal footer={<div className="flex w-full items-center gap-2">{draft.id && canDeletePromotion ? <Button aria-label="Xóa chương trình" className="mr-auto px-3" disabled={saving} onClick={() => setDeleteConfirmOpen(true)} variant="danger"><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Xóa</span></Button> : <span className="mr-auto" />}<Button onClick={() => setOpen(false)} variant="secondary">Hủy</Button>{(draft.id ? canUpdatePromotion : canCreatePromotion) ? <Button isLoading={saving} onClick={() => void submit()}>Lưu</Button> : null}</div>} onClose={() => setOpen(false)} open={open} size="xl" title={draft.id ? "Chỉnh sửa chương trình" : "Thêm chương trình"}>
+      <Modal footer={<div className="flex w-full items-center gap-2">{draft.id && !draft.deleted_at && canDeletePromotion ? <Button aria-label="Xóa chương trình" className="mr-auto px-3" disabled={saving} onClick={() => setDeleteConfirmOpen(true)} variant="danger"><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Xóa</span></Button> : <span className="mr-auto" />}<Button onClick={() => setOpen(false)} variant="secondary">Hủy</Button>{!draft.deleted_at && (draft.id ? canUpdatePromotion : canCreatePromotion) ? <Button isLoading={saving} onClick={() => void submit()}>Lưu</Button> : null}</div>} onClose={() => setOpen(false)} open={open} size="xl" title={draft.deleted_at ? "Chương trình đã xóa" : draft.id ? "Chỉnh sửa chương trình" : "Thêm chương trình"}>
         <div className="space-y-4">
           {error ? <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div> : null}
+          <fieldset disabled={Boolean(draft.deleted_at)} className="min-w-0 space-y-4">
+          {draft.deleted_at ? <p className="rounded-xl bg-slate-100 p-3 text-sm text-slate-600">Chương trình đã xóa, không còn áp dụng. Thông tin được giữ để tra cứu lịch sử đơn hàng.</p> : null}
           <FormSection description="Tên, cách kích hoạt và mức ưu đãi." title="Thông tin chung">
             <div className="grid gap-3 sm:grid-cols-2">
               <Input label="Tên chương trình" onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} value={draft.name} />
               <Select label="Cách áp dụng" onChange={(event) => setDraft((current) => ({ ...current, trigger_type: event.target.value as PromotionTrigger, code: event.target.value === "automatic" ? null : current.code }))} value={draft.trigger_type}><option value="coupon">Khách nhập mã voucher</option><option value="automatic">Tự động áp dụng</option></Select>
               {draft.trigger_type === "coupon" ? <Input label="Mã voucher" onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="VD: SUMMER20" value={draft.code ?? ""} /> : null}
-              <Select label="Loại ưu đãi" onChange={(event) => setDraft((current) => ({ ...current, discount_type: event.target.value as DiscountType }))} value={draft.discount_type}><option value="percentage">Giảm theo phần trăm</option><option value="fixed_amount">Giảm số tiền cố định</option><option value="free_shipping">Miễn phí vận chuyển</option></Select>
-              {draft.discount_type !== "free_shipping" ? <Input label={draft.discount_type === "percentage" ? "Mức giảm (%)" : "Số tiền giảm"} inputMode="numeric" onChange={(event) => setDraft((current) => ({ ...current, discount_value: Number(normalizeIntegerInput(event.target.value)) || 0 }))} value={formatIntegerInput(draft.discount_value)} /> : null}
+              <Select label="Loại ưu đãi" onChange={(event) => setDraft((current) => ({ ...current, discount_type: event.target.value as DiscountType }))} value={draft.discount_type}><option value="percentage">Giảm theo phần trăm</option><option value="fixed_amount">Giảm số tiền cố định</option><option value="free_shipping">Miễn phí vận chuyển</option><option value="buy_x_get_y">Mua X tặng Y</option></Select>
+              {["percentage", "fixed_amount"].includes(draft.discount_type) ? <Input label={draft.discount_type === "percentage" ? "Mức giảm (%)" : "Số tiền giảm"} inputMode="numeric" onChange={(event) => setDraft((current) => ({ ...current, discount_value: Number(normalizeIntegerInput(event.target.value)) || 0 }))} value={formatIntegerInput(draft.discount_value)} /> : null}
               {draft.discount_type === "percentage" ? <Input label="Giảm tối đa (để trống nếu không giới hạn)" inputMode="numeric" onChange={(event) => { const value = normalizeIntegerInput(event.target.value); setDraft((current) => ({ ...current, max_discount_amount: value ? Number(value) : null })); }} value={formatIntegerInput(draft.max_discount_amount ?? "")} /> : null}
             </div>
           </FormSection>
 
           <Conditions value={draft.conditions} onChange={(conditions) => setDraft((current) => ({ ...current, conditions }))} />
-          <Scopes categories={categories} products={products} value={draft.scopes} onChange={(scopes) => setDraft((current) => ({ ...current, scopes }))} />
+          {draft.discount_type === "buy_x_get_y" ? <GiftRuleFields draft={draft} products={products} onChange={setDraft} /> : <Scopes categories={categories} products={products} value={draft.scopes} onChange={(scopes) => setDraft((current) => ({ ...current, scopes }))} />}
 
           <FormSection description="Thời gian hiệu lực và giới hạn số lần sử dụng." title="Thời gian & giới hạn">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -273,6 +285,7 @@ export function PromotionsPage() {
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2"><Toggle checked={draft.is_stackable} label="Cho phép cộng dồn ưu đãi" onChange={(checked) => setDraft((current) => ({ ...current, is_stackable: checked }))} /><Toggle checked={draft.is_active} label="Đang hoạt động" onChange={(checked) => setDraft((current) => ({ ...current, is_active: checked }))} /></div>
           </FormSection>
+          </fieldset>
         </div>
       </Modal>
       <Modal
@@ -284,8 +297,8 @@ export function PromotionsPage() {
         zIndex={120}
       >
         <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">
-          <p>Bạn sắp xóa <strong>{draft.name}</strong>. Điều kiện và phạm vi áp dụng của chương trình cũng sẽ bị xóa.</p>
-          <p className="mt-2 text-xs font-semibold text-red-700">Chương trình đã có lượt sử dụng sẽ được giữ lại để bảo toàn lịch sử đơn hàng.</p>
+          <p>Bạn sắp xóa <strong>{draft.name}</strong>. Chương trình sẽ không còn xuất hiện trong danh sách mặc định hoặc áp dụng cho đơn mới.</p>
+          <p className="mt-2 text-xs font-semibold text-red-700">Nếu đã có lượt sử dụng, chương trình sẽ được xóa mềm và ngừng áp dụng; lịch sử đơn hàng được giữ nguyên. Nếu chưa được sử dụng, chương trình sẽ bị xóa hoàn toàn.</p>
         </div>
       </Modal>
     </div>
@@ -293,6 +306,7 @@ export function PromotionsPage() {
 }
 
 const statusPresentation: Record<PromotionLifecycle, { className: string; label: string }> = {
+  deleted: { className: "bg-red-50 text-red-700", label: "Đã xóa" },
   active: { className: "bg-emerald-50 text-emerald-700", label: "Đang hoạt động" },
   scheduled: { className: "bg-amber-50 text-amber-700", label: "Sắp diễn ra" },
   expired: { className: "bg-red-50 text-red-700", label: "Đã hết hạn" },
@@ -386,5 +400,28 @@ function Scopes({ categories, onChange, products, value }: { categories: Categor
       <Button aria-label="Xóa phạm vi" className="px-3" disabled={value.length === 1} onClick={() => onChange(value.filter((_, position) => position !== index))} variant="danger"><Trash2 className="h-4 w-4" /></Button>
     </div>)}</div>
     {!value.some((scope) => scope.scope_type === "all") ? <Button className="mt-3 w-full sm:w-auto" onClick={() => onChange([...value, { scope_type: "product", scope_id: null }])} variant="secondary"><Plus className="h-4 w-4" />Thêm phạm vi</Button> : null}
+  </FormSection>;
+}
+
+function GiftRuleFields({ draft, products, onChange }: { draft: Draft; products: Product[]; onChange: React.Dispatch<React.SetStateAction<Draft>> }) {
+  const options = products.flatMap((product) => product.variants.filter((variant) => variant.is_active && product.status === "active" || [draft.buy_variant_id, draft.gift_variant_id].includes(variant.id)).map((variant) => ({ id: variant.id, label: variantName(product, variant.id), isReward: product.is_reward })));
+  const buy = draft.buy_quantity ?? 10;
+  const gift = draft.gift_quantity ?? 1;
+  return <FormSection title="Hàng mua & quà tặng" description="Mỗi chương trình tính riêng một SKU cần mua. Quà tự thêm và không được tính để sinh thêm quà.">
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Select label="SKU cần mua" value={draft.buy_variant_id ?? ""} onChange={(event) => onChange((current) => ({ ...current, buy_variant_id: event.target.value || null }))}>
+        <option value="">Chọn SKU cần mua</option>{options.filter((item) => !item.isReward).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+      </Select>
+      <Input label="Số lượng cần mua" inputMode="numeric" value={formatIntegerInput(buy)} onChange={(event) => onChange((current) => ({ ...current, buy_quantity: Number(normalizeIntegerInput(event.target.value)) || 0 }))} />
+      <Select label="Quà tặng" value={draft.gift_variant_id ?? ""} onChange={(event) => onChange((current) => ({ ...current, gift_variant_id: event.target.value || null }))}>
+        <option value="">Tặng cùng SKU đã mua</option>{options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+      </Select>
+      <Input label="Số lượng quà mỗi lần" inputMode="numeric" value={formatIntegerInput(gift)} onChange={(event) => onChange((current) => ({ ...current, gift_quantity: Number(normalizeIntegerInput(event.target.value)) || 0 }))} />
+      <Select label="Cách nhận quà" value={draft.repeat_gift === false ? "once" : "repeat"} onChange={(event) => onChange((current) => ({ ...current, repeat_gift: event.target.value === "repeat" }))}>
+        <option value="repeat">Lặp theo bội số lượng mua</option><option value="once">Chỉ nhận một lần mỗi đơn</option>
+      </Select>
+    </div>
+    <p className="mt-3 rounded-xl bg-moss-50 p-3 text-sm font-semibold text-moss-800">{draft.repeat_gift === false ? `Mua từ ${buy} tặng ${gift}, mỗi đơn chỉ nhận một lần.` : `Mua ${buy} tặng ${gift}; mua ${buy * 2} tặng ${gift * 2}; mua ${buy * 2 + Math.floor(buy / 2)} tặng ${gift * 2}.`}</p>
+    <p className="mt-2 text-xs text-slate-500">Khi thiếu quà, tặng số lượng còn đủ tồn kho và tại quầy, thông báo phần thiếu và vẫn cho thanh toán.</p>
   </FormSection>;
 }

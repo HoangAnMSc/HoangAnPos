@@ -38,6 +38,11 @@ type EngineDatabase = {
     };
     Views: Record<string, never>;
     Functions: {
+      delete_promotion: { Args: { promotion_id_input: string }; Returns: string };
+      evaluate_promotion_benefits: {
+        Args: { items_input: Json; customer_id_input?: string | null; coupon_code_input?: string | null };
+        Returns: import("../../promotions/types").PromotionEvaluation[];
+      };
       save_product_engine: { Args: { payload: Json }; Returns: string };
       soft_delete_product: {
         Args: { product_id_input: string };

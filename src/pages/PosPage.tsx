@@ -33,6 +33,7 @@ import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
 import { ProductThumbnail } from "../components/products/ProductThumbnail";
 import { ConfigurableProductCard } from "../components/products/ConfigurableProductCard";
 import { Button } from "../components/ui/Button";
+import { PromotionSummary } from "../components/promotions/PromotionSummary";
 import { ConfigNotice } from "../components/ui/ConfigNotice";
 import { ErrorNoticeModal } from "../components/ui/ErrorNoticeModal";
 import { Input } from "../components/ui/Input";
@@ -51,6 +52,7 @@ import {
 } from "../lib/format";
 import { normalizeNullableText } from "../lib/text";
 import {
+  receiptPromotionsFromSnapshot,
   getReceiptPaperSize,
   printPosReceipt,
   saveReceiptPaperSize,
@@ -830,7 +832,6 @@ export function PosPage() {
   useEffect(() => {
     let active = true;
     const items = cart
-      .filter((item) => !item.product.is_reward)
       .map((item) => {
         const attributes = item.product.attributes && typeof item.product.attributes === "object" && !Array.isArray(item.product.attributes) ? item.product.attributes : {};
         return {
@@ -838,6 +839,7 @@ export function PosPage() {
           variant_id: item.variant?.id ?? item.variant?.linked_values?._variant_id ?? String(attributes._defaultVariantId ?? ""),
           unit_price: item.product.price,
           quantity: item.quantity,
+          is_reward: item.product.is_reward,
         };
       })
       .filter((item) => item.variant_id);
@@ -850,7 +852,7 @@ export function PosPage() {
           const discount_amount = Math.min(Math.max(Number(result.discount_amount) || 0, 0), remaining);
           remaining -= discount_amount;
           return { ...result, discount_amount };
-        }).filter((result) => result.discount_amount > 0 || result.free_shipping));
+        }).filter((result) => result.discount_amount > 0 || result.free_shipping || Boolean(result.gifts?.length)));
       })
       .catch(() => { if (active) setAppliedPromotions([]); });
     return () => { active = false; };
@@ -1428,14 +1430,9 @@ export function PosPage() {
       });
       const completedItems = [...cart];
       const completedCustomer = selectedCustomer;
-      let completedPromotions: ReceiptPromotion[] = appliedPromotions.map(
-        ({ name, discount_amount }) => ({ name, discount_amount }),
-      );
-      try {
+      let completedPromotions: ReceiptPromotion[] = receiptPromotionsFromSnapshot(order.promotion_snapshot);
+      if (!Array.isArray(order.promotion_snapshot)) {
         completedPromotions = await fetchOrderPromotionDetails(order.id);
-      } catch {
-        // The sale already succeeded. Keep the evaluated detail as a safe
-        // fallback if receipt read policies have not been migrated yet.
       }
 
       updateActiveBill((bill) => createEmptyBill(bill.id));
@@ -2338,12 +2335,7 @@ export function PosPage() {
                         </span>
                       </div>
 
-                      {appliedPromotions.map((promotion) => (
-                        <div className="flex items-center justify-between gap-4 text-emerald-700" key={promotion.promotion_id}>
-                          <span className="min-w-0 truncate text-sm font-extrabold">{promotion.name}</span>
-                          <span className="shrink-0 text-right text-sm font-extrabold tabular-nums">-{formatCurrency(promotion.discount_amount)}</span>
-                        </div>
-                      ))}
+                      <PromotionSummary promotions={appliedPromotions} />
 
                       <div className="flex items-center justify-between gap-4">
                         <span className="text-sm font-extrabold text-slate-600">
@@ -2679,17 +2671,7 @@ export function PosPage() {
                 <span>Tạm tính</span>
                 <span className="tabular-nums">{formatCurrency(subtotal)}</span>
               </div>
-              {appliedPromotions.map((promotion) => (
-                <div
-                  className="mt-2 flex items-start justify-between gap-3 text-sm text-emerald-700"
-                  key={promotion.promotion_id}
-                >
-                  <span className="min-w-0 font-extrabold">{promotion.name}</span>
-                  <strong className="shrink-0 tabular-nums">
-                    -{formatCurrency(promotion.discount_amount)}
-                  </strong>
-                </div>
-              ))}
+              <PromotionSummary promotions={appliedPromotions} />
               <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
                 <span className="font-black text-slate-900">Cần thu</span>
                 <span className="text-lg font-black tabular-nums text-moss-800">
@@ -3090,12 +3072,7 @@ export function PosPage() {
                 value={couponCode}
               />
               <div className="self-end rounded-xl bg-moss-50 px-3 py-2.5 text-sm text-moss-900">
-                {appliedPromotions.length ? appliedPromotions.map((promotion) => (
-                  <div className="flex items-center justify-between gap-3" key={promotion.promotion_id}>
-                    <span className="min-w-0 truncate font-bold">{promotion.name}</span>
-                    <strong className="shrink-0">-{formatCurrency(promotion.discount_amount)}</strong>
-                  </div>
-                )) : <span className="font-bold text-moss-700">Chưa có ưu đãi</span>}
+                {appliedPromotions.length ? <PromotionSummary promotions={appliedPromotions} /> : <span className="font-bold text-moss-700">Chưa có ưu đãi</span>}
               </div>
             </div>
 
@@ -3338,17 +3315,7 @@ export function PosPage() {
               </p>
               {completedSale.promotions.length ? (
                 <div className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 text-sm">
-                  {completedSale.promotions.map((promotion, index) => (
-                    <div
-                      className="flex items-start justify-between gap-3 text-emerald-700"
-                      key={`${promotion.name}-${index}`}
-                    >
-                      <span className="min-w-0 text-left font-bold">{promotion.name}</span>
-                      <strong className="shrink-0 tabular-nums">
-                        -{formatCurrency(promotion.discount_amount)}
-                      </strong>
-                    </div>
-                  ))}
+                  <PromotionSummary promotions={completedSale.promotions} />
                 </div>
               ) : null}
             </div>

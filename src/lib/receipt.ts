@@ -1,4 +1,5 @@
 import type { CartItem, Customer, Order } from "../types";
+import type { PromotionGift } from "../features/promotions/types";
 
 type ReceiptInput = {
   customer: Customer | null;
@@ -7,12 +8,25 @@ type ReceiptInput = {
   pointsBalance?: number | null;
   paperSize?: ReceiptPaperSize;
   promotions?: ReceiptPromotion[];
+  includePromotionGifts?: boolean;
 };
 
 export type ReceiptPromotion = {
   name: string;
   discount_amount: number;
+  gifts?: PromotionGift[];
+  free_shipping?: boolean;
 };
+
+export function receiptPromotionsFromSnapshot(value: unknown): ReceiptPromotion[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => ({
+    name: String(item.name ?? "Khuyến mãi"),
+    discount_amount: Number(item.discount_amount) || 0,
+    free_shipping: Boolean(item.free_shipping),
+    gifts: Array.isArray(item.gifts) ? item.gifts : [],
+  }));
+}
 
 export type ReceiptPaperSize = "58mm" | "80mm";
 const receiptPaperStorageKey = "hoang-an-pos:receipt-paper-size";
@@ -28,7 +42,7 @@ export function saveReceiptPaperSize(size: ReceiptPaperSize) {
 
 type SavedReceiptInput = {
   customer: { address?: string | null; name: string; phone: string | null; points?: number } | null;
-  items: Array<{ product_name: string; variant_label?: string | null; quantity: number; unit_price: number; reward_points_cost?: number }>;
+  items: Array<{ product_name: string; variant_label?: string | null; quantity: number; unit_price: number; reward_points_cost?: number; is_promotion_gift?: boolean; promotion_name?: string | null }>;
   order: Order;
   promotions?: ReceiptPromotion[];
 };
@@ -52,14 +66,16 @@ function dateTime(value: string) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())} · ${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
 }
 
-export function printPosReceipt({ customer, items, order, paperSize = getReceiptPaperSize(), pointsBalance, promotions = [] }: ReceiptInput) {
+export function printPosReceipt({ customer, items, order, paperSize = getReceiptPaperSize(), pointsBalance, promotions = [], includePromotionGifts = true }: ReceiptInput) {
   const isCompact = paperSize === "58mm";
   const pageMargin = isCompact ? "3mm" : "4mm";
   const bodyWidth = isCompact ? "52mm" : "72mm";
   const customerPointsBalance = pointsBalance ?? (
     customer ? Math.max(customer.points - order.points_redeemed + order.points_earned, 0) : null
   );
-  const totalItemQuantity = items.reduce(
+  const giftRows = includePromotionGifts ? promotions.flatMap((promotion) => (promotion.gifts ?? [])
+    .filter((gift) => gift.quantity > 0).map((gift) => ({ ...gift, promotion_name: promotion.name }))) : [];
+  const totalItemQuantity = giftRows.reduce((sum, gift) => sum + gift.quantity, 0) + items.reduce(
     (sum, item) => sum + Math.max(Number(item.quantity) || 0, 0),
     0,
   );
@@ -73,7 +89,7 @@ export function printPosReceipt({ customer, items, order, paperSize = getReceipt
         <td class="number">${item.product.is_reward && order.points_redeemed > 0 ? `${money(item.product.reward_points_cost * item.quantity)} điểm` : money(item.product.price * item.quantity)}</td>
       </tr>`
     )
-    .join("");
+    .join("") + giftRows.map((gift) => `<tr><td>${escapeHtml(gift.product_name)}${gift.variant_name ? `<br><small>${escapeHtml(gift.variant_name)}</small>` : ""}<br><small>Quà tặng · ${escapeHtml(gift.promotion_name)}</small></td><td class="number">${gift.quantity}</td><td class="number">0</td><td class="number">0</td></tr>`).join("");
   const frame = document.createElement("iframe");
   frame.style.cssText = "position:fixed;width:0;height:0;border:0;right:0;bottom:0";
   frame.setAttribute("aria-hidden", "true");
@@ -160,7 +176,7 @@ export function printSavedReceipt({ customer, items, order, promotions = [] }: S
     items: items.map((item) => ({
       product: {
         is_reward: (item.reward_points_cost ?? 0) > 0,
-        name: item.product_name,
+        name: item.is_promotion_gift ? `${item.product_name} · Quà tặng (${item.promotion_name ?? "Khuyến mãi"})` : item.product_name,
         price: item.unit_price,
         reward_points_cost: item.reward_points_cost ?? 0,
       },
@@ -177,6 +193,7 @@ export function printSavedReceipt({ customer, items, order, promotions = [] }: S
     })) as unknown as CartItem[],
     order,
     promotions,
+    includePromotionGifts: false,
     pointsBalance: customer && "points" in customer ? Number(customer.points) : null,
   });
 }
