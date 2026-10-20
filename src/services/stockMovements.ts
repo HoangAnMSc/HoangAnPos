@@ -2,6 +2,7 @@ import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import { productEngineClient } from "../features/products/services/client";
 import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
 import type { Json } from "../types/database";
+import { throwStockExpiryError } from "./stockExpiry";
 
 export type StockMovement = {
   id: string;
@@ -104,10 +105,18 @@ export async function issueVariantStock(
   return data;
 }
 
-export type VariantStockLine = { variantId: string; quantity: number };
+export type VariantStockLine = { variantId: string; quantity: number; hasExpiry?: boolean };
 
-export async function receiveVariantStocks(lines: VariantStockLine[]) {
+export async function receiveVariantStocks(lines: VariantStockLine[], requestId?: string) {
   requireSupabaseConfig();
+  if (requestId) {
+    const { data, error } = await productEngineClient.rpc("receive_stock_with_expiry", {
+      items_input: lines.map((line) => ({ variant_id: line.variantId, quantity: Math.floor(line.quantity), has_expiry: Boolean(line.hasExpiry) })) as Json,
+      request_id_input: requestId,
+    });
+    throwStockExpiryError(error);
+    return data;
+  }
   const { data, error } = await productEngineClient.rpc("bulk_receive_variant_stock", {
     items_input: lines.map((line) => ({ variant_id: line.variantId, quantity: Math.floor(line.quantity) })) as Json,
   });

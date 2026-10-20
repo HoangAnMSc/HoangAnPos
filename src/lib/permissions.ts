@@ -297,6 +297,16 @@ export const permissionGroups = [
         label: "Thực hiện quy đổi",
         description: "Quy đổi tồn giữa hai biến thể theo thiết lập đã lưu và ghi lịch sử.",
       },
+      {
+        key: "warehouse.expiry.manage",
+        label: "Bổ sung, sửa và xóa HSD",
+        description: "Gắn hoặc xóa HSD cho hàng đang tồn, phân bổ từng hạn sử dụng mà không thay đổi số lượng tồn kho.",
+      },
+      {
+        key: "warehouse.expiry.settings",
+        label: "Cài đặt cảnh báo HSD",
+        description: "Thay đổi số ngày còn lại để tô màu cảnh báo trong danh sách HSD.",
+      },
     ],
   },
   {

@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Boxes, ClipboardCheck, History, PackageMinus, PackagePlus } from "lucide-react";
+import { ArrowLeftRight, Boxes, CalendarDays, ClipboardCheck, History, PackageMinus, PackagePlus } from "lucide-react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { WarehouseHistoryModal } from "../components/warehouse/WarehouseHistoryModal";
 import { Button } from "../components/ui/Button";
@@ -9,8 +9,9 @@ import { InventoryPage } from "./InventoryPage";
 import { StockMovementPage } from "./StockMovementPage";
 import { WarehousePage } from "./WarehousePage";
 import { StockConversionPage } from "./StockConversionPage";
+import { StockExpiryPage } from "./StockExpiryPage";
 
-type WarehouseAction = "products" | "audits" | "inventory" | "in" | "out" | "conversion";
+type WarehouseAction = "products" | "audits" | "inventory" | "in" | "out" | "conversion" | "expiry";
 
 export function WarehouseHubPage() {
   const { canAccess } = useAuth();
@@ -63,6 +64,14 @@ export function WarehouseHubPage() {
       iconTone: "bg-teal-600/90 text-white",
       glowTone: "bg-teal-300/55",
       allowed: canAccess("warehouse.conversion.configure") || canAccess("warehouse.conversion.execute"),
+    },
+    {
+      key: "expiry" as const,
+      label: "HSD",
+      icon: CalendarDays,
+      iconTone: "bg-moss-600/90 text-white",
+      glowTone: "bg-moss-300/55",
+      allowed: canAccess("warehouse"),
     },
   ].filter((action) => action.allowed);
   const requested = searchParams.get("tab") as WarehouseAction | null;
@@ -123,6 +132,7 @@ export function WarehouseHubPage() {
       <StockMovementPage onClose={() => selectAction(null)} open={active === "out"} type="out" />
       <WarehouseHistoryModal onClose={closeHistory} open={historyOpen} />
       <StockConversionPage onClose={() => selectAction(null)} open={active === "conversion"} />
+      <StockExpiryPage onClose={() => selectAction(null)} open={active === "expiry"} />
     </div>
   );
 }

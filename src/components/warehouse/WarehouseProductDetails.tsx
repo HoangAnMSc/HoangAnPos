@@ -7,13 +7,13 @@ type WarehouseProductDetailsProps = {
   variantValues?: VariantDisplayValue[];
   ean13?: string | null;
   imageUrl?: string | null;
-  children: ReactNode;
+  children?: ReactNode;
   meta?: ReactNode;
 };
 
 export function WarehouseProductDetails({ name, variantValues, ean13, imageUrl, children, meta }: WarehouseProductDetailsProps) {
   return (
-    <div className="grid grid-cols-[44px_minmax(0,1fr)_64px] items-center gap-2.5 sm:grid-cols-[48px_minmax(0,1fr)_80px] sm:gap-3">
+    <div className={`grid items-center gap-2.5 sm:gap-3 ${children == null ? "grid-cols-[44px_minmax(0,1fr)] sm:grid-cols-[48px_minmax(0,1fr)]" : "grid-cols-[44px_minmax(0,1fr)_64px] sm:grid-cols-[48px_minmax(0,1fr)_80px]"}`}>
       <span className="grid h-11 w-11 place-items-center overflow-hidden rounded-lg bg-slate-100 text-slate-400 sm:h-12 sm:w-12">
         {imageUrl ? <img alt="" className="h-full w-full object-contain p-1" src={imageUrl} /> : <Boxes className="h-5 w-5" />}
       </span>
@@ -28,7 +28,7 @@ export function WarehouseProductDetails({ name, variantValues, ean13, imageUrl, 
         <p className="mt-1.5 text-[11px] font-medium tabular-nums leading-4 text-slate-500 [overflow-wrap:anywhere]">EAN-13: {ean13 || "Chưa có mã"}</p>
         {meta ? <div className="mt-1.5">{meta}</div> : null}
       </div>
-      <div className="min-w-0">{children}</div>
+      {children == null ? null : <div className="min-w-0">{children}</div>}
     </div>
   );
 }

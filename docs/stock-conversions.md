@@ -28,6 +28,7 @@ Quản trị viên có sẵn hai quyền. Quyền của các vai trò đang có 
 Backend kiểm tra lại quyền, sản phẩm/biến thể đang hoạt động, tỷ lệ và tồn mới nhất. Trừ nguồn, cộng đích, cập nhật lô và ghi lịch sử trong một giao dịch. Gửi lại cùng mã thao tác không trừ tồn lần nữa.
 Giá bán, giá vốn và cấu hình sản phẩm không bị sửa. Các dòng lịch sử kho có lý do **Quy đổi** và cùng mã tham chiếu.
 Khi chuyển lô, lô nhận dùng hạn sớm nhất trong các lô nguồn đã dùng; nếu có phần hàng không rõ hạn thì lô nhận không tự gán hạn.
+Sau khi cài thêm [Quản lý HSD](stock-expiry.md), danh sách HSD theo dõi riêng từng ngày và số lượng được chuyển, kể cả nhiều HSD trong một lần quy đổi. Chiều đóng gói chỉ gộp đủ đơn vị trong cùng một ngày HSD.
 
 ## Kiểm tra
 

@@ -61,7 +61,7 @@ test("stock conversion upgrade, permissions, atomic inventory and idempotent ret
     `);
     const schema = await readSql("../supabase/schema.sql");
     assert.ok(schema.includes(migration), "Fresh installations include the original conversion upgrade");
-    assert.ok(schema.endsWith(managementUpgrade), "Fresh installations include exactly the tested management upgrade");
+    assert.ok(schema.includes(managementUpgrade), "Fresh installations include exactly the tested management upgrade");
     // Start with the old database, insert real existing data, then apply the upgrade.
     const conversionStart = schema.indexOf("-- Stock conversion feature: additive migration for fresh installations.");
     assert.ok(conversionStart > 0);

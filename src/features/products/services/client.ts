@@ -36,9 +36,29 @@ type EngineDatabase = {
       inventory_audit_lines: Table<BaseRow>;
       stock_movements: Table<BaseRow>;
       stock_conversions: Table<BaseRow>;
+      stock_expiry_settings: Table<BaseRow>;
     };
     Views: Record<string, never>;
     Functions: {
+      list_stock_expiry: { Args: Record<string, never>; Returns: import("../../../lib/stockExpiry").ExpiryVariantState[] };
+      prepare_stock_expiry: { Args: { variant_id_input: string }; Returns: import("../../../lib/stockExpiry").ExpiryVariantState };
+      set_stock_expiry: {
+        Args: { variant_id_input: string; lots_input: Json; allocations_input: Json; request_id_input: string };
+        Returns: number;
+      };
+      clear_stock_expiry: {
+        Args: { variant_id_input: string; lots_input: Json; request_id_input: string };
+        Returns: number;
+      };
+      receive_stock_with_expiry: { Args: { items_input: Json; request_id_input: string }; Returns: number };
+      assign_stock_expiry: {
+        Args: { lot_id_input: string; expected_updated_at_input: string; allocations_input: Json; request_id_input: string };
+        Returns: string;
+      };
+      save_stock_expiry_settings: {
+        Args: { warning_days_input: number; expected_updated_at_input: string };
+        Returns: import("../../../services/stockExpiry").StockExpirySettings;
+      };
       save_stock_conversion: {
         Args: { product_id_input: string; variant_a_id_input: string; quantity_a_input: number; variant_b_id_input: string; quantity_b_input: number; conversion_id_input: string | null; expected_updated_at_input: string | null };
         Returns: import("../../../services/stockConversions").StockConversion;
