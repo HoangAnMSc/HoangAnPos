@@ -1,4 +1,4 @@
-import { Boxes, ClipboardCheck, History, PackageMinus, PackagePlus } from "lucide-react";
+import { ArrowLeftRight, Boxes, ClipboardCheck, History, PackageMinus, PackagePlus } from "lucide-react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { WarehouseHistoryModal } from "../components/warehouse/WarehouseHistoryModal";
 import { Button } from "../components/ui/Button";
@@ -8,8 +8,9 @@ import { useAuth } from "../contexts/AuthContext";
 import { InventoryPage } from "./InventoryPage";
 import { StockMovementPage } from "./StockMovementPage";
 import { WarehousePage } from "./WarehousePage";
+import { StockConversionPage } from "./StockConversionPage";
 
-type WarehouseAction = "products" | "audits" | "inventory" | "in" | "out";
+type WarehouseAction = "products" | "audits" | "inventory" | "in" | "out" | "conversion";
 
 export function WarehouseHubPage() {
   const { canAccess } = useAuth();
@@ -54,6 +55,14 @@ export function WarehouseHubPage() {
       iconTone: "bg-rose-500/90 text-white",
       glowTone: "bg-rose-300/55",
       allowed: canAccess("warehouse.stock-out"),
+    },
+    {
+      key: "conversion" as const,
+      label: "Quy đổi",
+      icon: ArrowLeftRight,
+      iconTone: "bg-teal-600/90 text-white",
+      glowTone: "bg-teal-300/55",
+      allowed: canAccess("warehouse.conversion.configure") || canAccess("warehouse.conversion.execute"),
     },
   ].filter((action) => action.allowed);
   const requested = searchParams.get("tab") as WarehouseAction | null;
@@ -113,6 +122,7 @@ export function WarehouseHubPage() {
       <StockMovementPage onClose={() => selectAction(null)} open={active === "in"} type="in" />
       <StockMovementPage onClose={() => selectAction(null)} open={active === "out"} type="out" />
       <WarehouseHistoryModal onClose={closeHistory} open={historyOpen} />
+      <StockConversionPage onClose={() => selectAction(null)} open={active === "conversion"} />
     </div>
   );
 }

@@ -12,6 +12,7 @@ export type StockMovement = {
   reason: string | null;
   actor_name: string;
   created_at: string;
+  reference_type?: string | null;
   products: { name: string; sku: string | null } | null;
 };
 

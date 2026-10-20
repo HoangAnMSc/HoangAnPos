@@ -287,6 +287,16 @@ export const permissionGroups = [
         label: "Xuất hàng khỏi kho",
         description: "Xuất nhiều SKU, trừ số lượng tồn và ghi nhận lý do.",
       },
+      {
+        key: "warehouse.conversion.configure",
+        label: "Thiết lập quy đổi",
+        description: "Thêm, sửa, xóa thiết lập; chọn sản phẩm, cặp biến thể và tỷ lệ quy đổi hai chiều.",
+      },
+      {
+        key: "warehouse.conversion.execute",
+        label: "Thực hiện quy đổi",
+        description: "Quy đổi tồn giữa hai biến thể theo thiết lập đã lưu và ghi lịch sử.",
+      },
     ],
   },
   {

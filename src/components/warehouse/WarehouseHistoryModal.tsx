@@ -36,6 +36,15 @@ const filters: { key: HistoryFilter; label: string }[] = [
 ];
 
 function getMovementDisplay(movement: StockMovement) {
+  if (movement.reference_type === "stock_conversion") {
+    return {
+      Icon: movement.quantity < 0 ? ArrowUpFromLine : ArrowDownToLine,
+      iconClassName: "bg-teal-50 text-teal-700",
+      label: "Quy đổi",
+      quantity: movement.quantity > 0 ? `+${movement.quantity}` : String(movement.quantity),
+      quantityClassName: movement.quantity < 0 ? "text-red-700" : "text-emerald-700",
+    };
+  }
   switch (movement.movement_type) {
     case "in":
       return {

@@ -35,9 +35,22 @@ type EngineDatabase = {
       inventory_audits: Table<BaseRow>;
       inventory_audit_lines: Table<BaseRow>;
       stock_movements: Table<BaseRow>;
+      stock_conversions: Table<BaseRow>;
     };
     Views: Record<string, never>;
     Functions: {
+      save_stock_conversion: {
+        Args: { product_id_input: string; variant_a_id_input: string; quantity_a_input: number; variant_b_id_input: string; quantity_b_input: number; conversion_id_input: string | null; expected_updated_at_input: string | null };
+        Returns: import("../../../services/stockConversions").StockConversion;
+      };
+      execute_stock_conversion: {
+        Args: { conversion_id_input: string; reversed_input: boolean; quantity_input: number; request_id_input: string; expected_updated_at_input: string; note_input: string };
+        Returns: import("../../../services/stockConversions").StockConversionResult;
+      };
+      delete_stock_conversion: {
+        Args: { conversion_id_input: string; expected_updated_at_input: string };
+        Returns: string;
+      };
       delete_promotion: { Args: { promotion_id_input: string }; Returns: string };
       evaluate_promotion_benefits: {
         Args: { items_input: Json; customer_id_input?: string | null; coupon_code_input?: string | null };
