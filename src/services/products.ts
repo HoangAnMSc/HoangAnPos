@@ -2,10 +2,12 @@ import { requireSupabaseConfig, supabase } from "../lib/supabase";
 import type { Product, ProductBatch } from "../types";
 import type { Json } from "../types/database";
 import { fetchProducts as fetchEngineProducts } from "../features/products/services/productEngine";
+import type { VariantDisplayValue } from "../features/products/types";
 import {
   getActiveProductModeVariants,
   formatVariantValueLabel,
   getVariantLabel,
+  getVariantDisplayValues,
 } from "../features/products/utils/variants";
 import { productEngineClient } from "../features/products/services/client";
 
@@ -40,7 +42,11 @@ export type ReceiveStockInput = {
 export type InventoryCountProduct = Pick<
   Product,
   "category" | "expiry_date" | "id" | "image_url" | "is_active" | "name" | "sku"
->;
+> & {
+  product_name?: string;
+  variant_values?: VariantDisplayValue[];
+  variant_sku?: string;
+};
 
 export type DeleteProductResult = {
   mode: "deleted" | "soft-deleted" | "hidden";
@@ -157,6 +163,7 @@ export async function fetchProducts(engineData?: Awaited<ReturnType<typeof fetch
         _defaultVariantId: defaultVariant?.id,
         _variantAttributeIds: product.variant_attributes.map((attribute) => attribute.id),
         _variants: variants.map((variant) => ({
+          display_values: getVariantDisplayValues(variant, product.variant_attributes),
           display_label: variant.value_ids.map((id) => {
             const item = valuesById.get(id);
             return item ? formatVariantValueLabel(item.value.label, item.attribute.unit) : "";
@@ -243,6 +250,9 @@ export async function fetchInventoryCountProducts(): Promise<InventoryCountProdu
         return {
           id: variant.id,
           name: variantSuffix ? `${product.name} · ${variantSuffix}` : product.name,
+          product_name: product.name,
+          variant_values: getVariantDisplayValues(variant, product.variant_attributes),
+          variant_sku: variant.sku,
           sku: variant.barcode ?? variant.sku,
           category: product.category?.name ?? null,
           image_url: variant.image_url ?? primaryImage,

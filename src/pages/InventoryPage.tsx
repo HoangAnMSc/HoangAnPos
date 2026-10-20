@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Barcode, Boxes, CheckCircle2, ClipboardCheck, Search } from "lucide-react";
+import { Barcode, ClipboardCheck, Search } from "lucide-react";
 import { Ean13ScannerModal } from "../components/products/Ean13ScannerModal";
+import { WarehouseProductDetails } from "../components/warehouse/WarehouseProductDetails";
 import { Button } from "../components/ui/Button";
 import { Modal } from "../components/ui/Modal";
 import { Spinner } from "../components/ui/Spinner";
@@ -51,7 +52,7 @@ export function InventoryPage({ open, onClose }: Props) {
 
   const normalizedQuery = query.trim().toLocaleLowerCase("vi");
   const visibleProducts = useMemo(() => products.filter((product) => !normalizedQuery ||
-    [product.name, product.sku, getProductEan13Value(product)].filter(Boolean).some((value) => String(value).toLocaleLowerCase("vi").includes(normalizedQuery))), [normalizedQuery, products]);
+    [product.name, product.variant_sku, product.sku, getProductEan13Value(product)].filter(Boolean).some((value) => String(value).toLocaleLowerCase("vi").includes(normalizedQuery))), [normalizedQuery, products]);
   const countedProducts = useMemo(() => products.filter((product) => hasInventoryCount(counts[product.id])), [counts, products]);
 
   async function requestClose() {
@@ -89,16 +90,18 @@ export function InventoryPage({ open, onClose }: Props) {
   return <>
     <Modal bodyClassName="!p-0" footer={<div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto"><Button disabled={submitting} onClick={() => void requestClose()} variant="secondary">Hủy</Button>{canSubmit ? <Button disabled={!countedProducts.length} isLoading={submitting} onClick={() => void submit()}><ClipboardCheck className="h-4 w-4" />Hoàn tất ({countedProducts.length})</Button> : null}</div>} onClose={() => void requestClose()} open={open} size="xl" title="Tạo phiên kiểm kê">
       <div className="sticky top-0 z-10 border-b border-slate-100 bg-white px-4 py-3 sm:px-6">
-        <div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold text-slate-500">Nhập số lượng thực tế cho các sản phẩm đã kiểm.</p><strong className="shrink-0 text-sm tabular-nums text-moss-700">{countedProducts.length}/{products.length}</strong></div>
-        <div className="mt-3 flex gap-2"><label className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl bg-slate-100 px-3"><Search className="h-4 w-4 text-slate-400" /><input className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none" onChange={(event) => setQuery(event.target.value)} placeholder="Tìm sản phẩm, SKU, EAN-13..." value={query} /></label>{canCount ? <Button className="!min-h-11 !px-3" onClick={() => setScannerOpen(true)} variant="secondary"><Barcode className="h-4 w-4" /><span className="hidden sm:inline">Quét mã</span></Button> : null}</div>
+        <div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold text-slate-500">Nhập số lượng thực tế cho các sản phẩm đã kiểm.</p><strong className="shrink-0 text-xs tabular-nums text-moss-700">{countedProducts.length}/{products.length} đã nhập</strong></div>
+        <div aria-label="Tiến độ kiểm kê" aria-valuemax={products.length || 1} aria-valuemin={0} aria-valuenow={countedProducts.length} className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar"><div className="h-full rounded-full bg-moss-400 transition-all" style={{ width: `${products.length ? countedProducts.length / products.length * 100 : 0}%` }} /></div>
+        <div className="mt-3 flex gap-2"><label className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl bg-slate-100 px-3"><Search className="h-4 w-4 text-slate-400" /><input className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none" onChange={(event) => setQuery(event.target.value)} placeholder="Tìm sản phẩm..." value={query} /></label>{canCount ? <Button className="!min-h-11 !px-3" onClick={() => setScannerOpen(true)} variant="secondary"><Barcode className="h-4 w-4" /><span className="hidden sm:inline">Quét mã</span></Button> : null}</div>
+        <div aria-hidden="true" className="mt-3 flex items-center justify-between gap-3 text-[11px] font-bold text-slate-500"><span>Sản phẩm</span><span className="w-16 text-center sm:w-20">SL thực tế</span></div>
       </div>
       <div className="space-y-2 bg-slate-50/70 p-3 sm:p-4">
         {loading ? <div className="p-10"><Spinner label="Đang tải sản phẩm..." /></div> : visibleProducts.map((product) => {
           const counted = hasInventoryCount(counts[product.id]);
-          return <article className={`grid grid-cols-[44px_minmax(0,1fr)_88px] items-center gap-3 rounded-xl border p-2.5 transition sm:grid-cols-[48px_minmax(0,1fr)_110px] ${counted ? "border-moss-200 bg-moss-50" : "border-slate-200 bg-white"}`} key={product.id}>
-            <span className="grid h-11 w-11 place-items-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">{product.image_url ? <img alt="" className="h-full w-full object-contain p-1" src={product.image_url} /> : <Boxes className="h-5 w-5" />}</span>
-            <div className="min-w-0"><div className="flex items-center gap-1.5"><p className="truncate text-sm font-extrabold text-slate-950">{product.name}</p>{counted ? <CheckCircle2 className="h-4 w-4 shrink-0 text-moss-600" /> : null}</div><p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">{product.sku || "Chưa có SKU"} · EAN {getProductEan13Value(product)}</p></div>
-            <input aria-label={`Số lượng thực tế ${product.name}`} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-2 text-center text-base font-black tabular-nums outline-none focus:border-moss-400 focus:ring-2 focus:ring-moss-100" disabled={!canCount} id={`inventory-count-${product.id}`} inputMode="numeric" onChange={(event) => { setCounts((current) => ({ ...current, [product.id]: normalizeIntegerInput(event.target.value) })); setError(""); }} placeholder="0" value={formatIntegerInput(counts[product.id] ?? "")} />
+          return <article className={`rounded-xl border p-3 transition ${counted ? "border-moss-200 bg-moss-50" : "border-slate-200 bg-white"}`} key={product.id}>
+            <WarehouseProductDetails ean13={getProductEan13Value(product)} imageUrl={product.image_url} name={product.product_name ?? product.name} variantValues={product.variant_values}>
+              <input aria-label={`Số lượng thực tế ${product.name}`} className={`h-11 w-full rounded-xl border bg-white px-1 text-center text-base font-black tabular-nums outline-none focus:border-moss-400 focus:ring-2 focus:ring-moss-100 ${counted ? "border-moss-400" : "border-slate-200"}`} disabled={!canCount} id={`inventory-count-${product.id}`} inputMode="numeric" onChange={(event) => { setCounts((current) => ({ ...current, [product.id]: normalizeIntegerInput(event.target.value) })); setError(""); }} placeholder="—" value={formatIntegerInput(counts[product.id] ?? "")} />
+            </WarehouseProductDetails>
           </article>;
         })}
         {!loading && !visibleProducts.length ? <p className="p-8 text-center text-sm font-semibold text-slate-500">Không tìm thấy sản phẩm phù hợp.</p> : null}

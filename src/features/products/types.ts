@@ -89,6 +89,12 @@ export type VariantValue = {
   is_active: boolean;
 };
 
+export type VariantDisplayValue = {
+  id: string;
+  label: string;
+  color?: string;
+};
+
 export type VariantAttribute = {
   id: string;
   product_id: string;

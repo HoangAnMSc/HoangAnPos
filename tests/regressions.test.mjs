@@ -44,6 +44,28 @@ test("EAN-13 preserves leading zeros and rejects overlong scans", async () => {
   assert.equal(isValidEan13(code.slice(0, 12) + ((Number(code[12]) + 1) % 10)), false);
 });
 
+test("variant display values retain units, slash-containing labels and real color metadata", async () => {
+  const { getVariantDisplayValues, getVariantLabel } = await loadSource("src/features/products/utils/variants.ts");
+  const attributes = [
+    { display_type: "color_circle", values: [{ id: "green", label: "Xanh rêu", metadata: { hex: " #596842 " } }] },
+    { display_type: "text_button", unit: "ml", values: [{ id: "volume", label: "1.200 ml", metadata: { hex: "#000000" } }] },
+    { display_type: "text_button", values: [{ id: "pattern", label: "Sọc xanh / trắng", metadata: {} }] },
+    { display_type: "color", values: [{ id: "invalid-color", label: "Màu khác", metadata: { hex: "invalid" } }] },
+    { display_type: "text_button", unit: "g", values: [{ id: "weight", label: "500", metadata: {} }] },
+  ];
+  const variant = { value_ids: ["green", "volume", "pattern", "invalid-color", "weight", "missing"] };
+  assert.deepEqual(getVariantDisplayValues(variant, attributes), [
+    { id: "green", label: "Xanh rêu", color: "#596842" },
+    { id: "volume", label: "1.200 ml" },
+    { id: "pattern", label: "Sọc xanh / trắng" },
+    { id: "invalid-color", label: "Màu khác" },
+    { id: "weight", label: "500 g" },
+  ]);
+  assert.equal(getVariantLabel(variant, attributes), "Xanh rêu / 1.200 ml / Sọc xanh / trắng / Màu khác / 500 g");
+  assert.deepEqual(getVariantDisplayValues({ value_ids: [] }, attributes), []);
+  assert.equal(getVariantLabel({ value_ids: [] }, attributes), "Mặc định");
+});
+
 function catalogDatabase(tables, requests, rpcCalls) {
   return {
     from(table) {

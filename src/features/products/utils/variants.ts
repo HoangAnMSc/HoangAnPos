@@ -3,6 +3,7 @@ import type {
   ProductVariant,
   VariantAttribute,
   VariantDraft,
+  VariantDisplayValue,
   VariantSelection,
 } from "../types";
 
@@ -211,22 +212,32 @@ export function isVariantValueAvailable(
   );
 }
 
+export function getVariantDisplayValues(
+  variant: Pick<ProductVariant, "value_ids">,
+  attributes: VariantAttribute[],
+): VariantDisplayValue[] {
+  const values = new Map(
+    attributes.flatMap((attribute) =>
+      attribute.values.map((value) => {
+        const color = value.metadata?.hex?.trim();
+        const isColor = attribute.display_type === "color" || attribute.display_type === "color_circle";
+        return [value.id, {
+          id: value.id,
+          label: formatVariantValueLabel(value.label, attribute.unit),
+          ...(isColor && color && /^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i.test(color) ? { color } : {}),
+        }] as const;
+      }),
+    ),
+  );
+  return variant.value_ids.flatMap((id) => {
+    const value = values.get(id);
+    return value?.label ? [value] : [];
+  });
+}
+
 export function getVariantLabel(
   variant: Pick<ProductVariant, "value_ids">,
   attributes: VariantAttribute[],
 ) {
-  const values = new Map(
-    attributes.flatMap((attribute) =>
-      attribute.values.map((value) => [
-        value.id,
-        formatVariantValueLabel(value.label, attribute.unit),
-      ] as const),
-    ),
-  );
-  return (
-    variant.value_ids
-      .map((id) => values.get(id))
-      .filter(Boolean)
-      .join(" / ") || "Mặc định"
-  );
+  return getVariantDisplayValues(variant, attributes).map((value) => value.label).join(" / ") || "Mặc định";
 }
