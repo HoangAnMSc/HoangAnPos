@@ -255,8 +255,13 @@ export const permissionGroups = [
     label: "Kho",
     path: "/warehouse",
     icon: Warehouse,
-    description: "Xem sản phẩm trong kho, lịch sử kiểm kê và thực hiện nhập xuất kho.",
+    description: "Truy cập kho, xem sản phẩm và các chức năng được phân quyền.",
     actions: [
+      {
+        key: "warehouse.audit.view",
+        label: "Xem lịch sử kiểm kê",
+        description: "Xem danh sách, chi tiết và kết quả đối chiếu của các phiên kiểm kê.",
+      },
       {
         key: "warehouse.audit.delete",
         label: "Xóa phiên kiểm kê",
@@ -264,18 +269,8 @@ export const permissionGroups = [
       },
       {
         key: "inventory",
-        label: "Sử dụng kiểm kê kho",
-        description: "Cho phép truy cập chức năng tạo và xem phiên kiểm kê kho.",
-      },
-      {
-        key: "inventory.count",
-        label: "Nhập số lượng kiểm kê",
-        description: "Quét mã và nhập số lượng thực tế của các sản phẩm trong một phiên kiểm kê.",
-      },
-      {
-        key: "inventory.submit",
-        label: "Hoàn tất phiên kiểm kê",
-        description: "Xác nhận và lưu kết quả của một phiên kiểm kê.",
+        label: "Tạo phiên kiểm kê",
+        description: "Mở phiên, quét mã, nhập số lượng thực tế và hoàn tất kiểm kê.",
       },
       {
         key: "products.receive-stock",
@@ -298,9 +293,24 @@ export const permissionGroups = [
         description: "Quy đổi tồn giữa hai biến thể theo thiết lập đã lưu và ghi lịch sử.",
       },
       {
-        key: "warehouse.expiry.manage",
-        label: "Bổ sung, sửa và xóa HSD",
-        description: "Gắn hoặc xóa HSD cho hàng đang tồn, phân bổ từng hạn sử dụng mà không thay đổi số lượng tồn kho.",
+        key: "warehouse.expiry.view",
+        label: "Xem HSD",
+        description: "Xem danh sách, chi tiết hạn sử dụng và số lượng từng phần hàng.",
+      },
+      {
+        key: "warehouse.expiry.create",
+        label: "Thêm HSD",
+        description: "Gắn hạn sử dụng cho phần hàng chưa có HSD.",
+      },
+      {
+        key: "warehouse.expiry.update",
+        label: "Sửa HSD",
+        description: "Thay đổi ngày và phân bổ số lượng của phần hàng đã có HSD.",
+      },
+      {
+        key: "warehouse.expiry.delete",
+        label: "Xóa HSD",
+        description: "Xóa hạn sử dụng của phần hàng đang tồn, giữ nguyên số lượng tồn kho.",
       },
       {
         key: "warehouse.expiry.settings",
@@ -461,8 +471,16 @@ export function getPermissionGroupKeys(group: PermissionGroup) {
   return [group.key, ...group.actions.map((action) => action.key)];
 }
 
+export const stockExpiryWritePermissionKeys = ["warehouse.expiry.create", "warehouse.expiry.update", "warehouse.expiry.delete", "warehouse.expiry.settings"] as const;
+
 export function normalizeRolePermissions(permissions: string[]) {
   const selected = new Set(permissions);
+
+  if (selected.has("inventory.count") || selected.has("inventory.submit")) selected.add("inventory");
+  if (selected.has("warehouse.expiry.manage")) {
+    ["warehouse.expiry.view", "warehouse.expiry.create", "warehouse.expiry.update", "warehouse.expiry.delete"].forEach((permission) => selected.add(permission));
+  }
+  if (stockExpiryWritePermissionKeys.some((permission) => selected.has(permission))) selected.add("warehouse.expiry.view");
 
   if (selected.has("cash-management.view-all")) {
     selected.add("cash-management.history.view");

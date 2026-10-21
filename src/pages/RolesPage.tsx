@@ -16,6 +16,7 @@ import {
   getPermissionGroupKeys,
   normalizeRolePermissions,
   permissionGroups,
+  stockExpiryWritePermissionKeys,
   superAdminPermissionKeys,
 } from "../lib/permissions";
 import {
@@ -127,7 +128,7 @@ function RoleEditorModal({
     setForm((current) => {
       const selected = current.permissions.includes(permission);
       const nextPermissions = selected
-        ? current.permissions.filter((item) => item !== permission)
+        ? current.permissions.filter((item) => item !== permission && !(permission === "warehouse.expiry.view" && stockExpiryWritePermissionKeys.some((key) => key === item)))
         : [...current.permissions, permission];
 
       return {

@@ -61,9 +61,12 @@ export function summarizeStockExpiry(lots: ExpiryLot[], warningDays: number, tod
   const dated = groups.filter((group) => group.date);
   const unknownLots = groups.filter((group) => !group.date).flatMap((group) => group.lots);
   const pending = groups.filter((group) => group.status === "pending").reduce((sum, group) => sum + group.quantity, 0);
+  const unknownQuantity = unknownLots.reduce((sum, lot) => sum + lot.remaining_quantity, 0);
+  const displayGroups: ExpiryGroup[] = [...dated];
+  if (unknownQuantity > 0) displayGroups.push({ key: "undated", date: null, status: "untracked", quantity: unknownQuantity, lots: unknownLots });
   return {
-    groups, dated, unknownLots, pending,
-    unknownQuantity: unknownLots.reduce((sum, lot) => sum + lot.remaining_quantity, 0),
+    groups, displayGroups, dated, unknownLots, pending, unknownQuantity,
+    datedQuantity: dated.reduce((sum, group) => sum + group.quantity, 0),
     status: dated[0]?.status ?? (pending > 0 ? "pending" : "untracked") as ExpiryStatus,
   };
 }

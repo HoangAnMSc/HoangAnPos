@@ -7,7 +7,7 @@ import { ErrorNoticeModal } from "../components/ui/ErrorNoticeModal";
 import { Modal } from "../components/ui/Modal";
 import { SearchInput } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
-import { WarehouseProductDetails } from "../components/warehouse/WarehouseProductDetails";
+import { InventoryProductRow } from "../components/warehouse/InventoryProductRow";
 import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
@@ -19,7 +19,9 @@ import { fetchProducts } from "../services/products";
 import type { Product } from "../types";
 
 const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" });
-function differenceLabel(value: number) { return value < 0 ? `Thiếu ${Math.abs(value)}` : value > 0 ? `Thừa ${value}` : "Khớp"; }
+const auditDetailDateFormatter = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+const auditDetailTimeFormatter = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" });
+function differenceLabel(value: number) { return value < 0 ? "Thiếu" : value > 0 ? "Thừa" : "Khớp"; }
 function differenceTone(value: number): "amber" | "green" | "red" { const status = getInventoryDifferenceStatus(value); return status === "short" ? "red" : status === "over" ? "amber" : "green"; }
 
 type WarehousePageProps = { mode: "products" | "audits" };
@@ -28,6 +30,7 @@ type WarehouseProduct = Product & { product_name?: string; variant_values?: Vari
 
 export function WarehousePage({ mode }: WarehousePageProps) {
   const { canAccess } = useAuth();
+  const canViewAudits = canAccess("warehouse.audit.view");
   const { confirmAction, showSuccess } = useActionNotice();
   const [audits, setAudits] = useState<InventoryAuditSession[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -42,6 +45,10 @@ export function WarehousePage({ mode }: WarehousePageProps) {
   const { clearErrorNotice, errorNotice, showErrorNotice } = useErrorNotice();
 
   const load = useCallback(async () => {
+    if (mode === "audits" && !canViewAudits) {
+      setAudits([]); setSelectedAuditId(""); setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       if (mode === "products") setProducts(await fetchProducts());
@@ -52,7 +59,7 @@ export function WarehousePage({ mode }: WarehousePageProps) {
     } catch (requestError) {
       showErrorNotice(requestError instanceof Error ? requestError.message : "Không tải được dữ liệu kho.", mode === "products" ? "Không tải được sản phẩm" : "Không tải được lịch sử kiểm kê");
     } finally { setLoading(false); }
-  }, [mode, showErrorNotice]);
+  }, [canViewAudits, mode, showErrorNotice]);
   useEffect(() => { void load(); }, [load]);
 
   const inventoryRows = useMemo<WarehouseProduct[]>(() => products.flatMap((product) => {
@@ -78,7 +85,7 @@ export function WarehousePage({ mode }: WarehousePageProps) {
     const displayEan13 = product?.ean13 ?? (isValidEan13(line.ean13) ? normalizeEan13Input(line.ean13) : undefined);
     return { ...line, canCompare, product, systemStock, displayEan13, difference: line.counted - systemStock };
   }) ?? [], [rowsById, selectedAudit]);
-  const comparisonStats = useMemo(() => comparisonRows.reduce((stats, row) => ({ matched: stats.matched + +(row.difference === 0), short: stats.short + +(row.difference < 0), over: stats.over + +(row.difference > 0) }), { matched: 0, short: 0, over: 0 }), [comparisonRows]);
+  const comparisonStats = useMemo(() => comparisonRows.reduce((stats, row) => ({ matched: stats.matched + +(row.canCompare && row.difference === 0), short: stats.short + +(row.canCompare && row.difference < 0), over: stats.over + +(row.canCompare && row.difference > 0), unknown: stats.unknown + +!row.canCompare }), { matched: 0, short: 0, over: 0, unknown: 0 }), [comparisonRows]);
   const auditMismatchById = useMemo(() => new Map(audits.map((audit) => [audit.id, audit.lines.some((line) => {
     const product = line.productId ? rowsById.get(line.productId) : undefined;
     const systemStock = line.systemStock ?? product?.stock;
@@ -104,7 +111,7 @@ export function WarehousePage({ mode }: WarehousePageProps) {
   const visibleStock = useMemo(() => visibleProducts.reduce((sum, product) => sum + Math.max(0, product.stock), 0), [visibleProducts]);
 
   async function removeAudit() {
-    if (!selectedAudit || !canAccess("warehouse.audit.delete")) return;
+    if (!selectedAudit || !canViewAudits || !canAccess("warehouse.audit.delete")) return;
     const confirmed = await confirmAction({ title: "Xóa phiên kiểm kê", message: "Phiên kiểm kê sẽ bị xóa vĩnh viễn và không thể khôi phục.", confirmLabel: "Xóa phiên", tone: "danger" });
     if (!confirmed) return;
     setDeleting(true);
@@ -119,6 +126,8 @@ export function WarehousePage({ mode }: WarehousePageProps) {
     if (typeof input.showPicker === "function") input.showPicker();
     else input.click();
   }
+
+  if (mode === "audits" && !canViewAudits) return null;
 
   return <>
     {mode === "products" ? <section aria-label="Danh sách sản phẩm trong kho">
@@ -172,20 +181,25 @@ export function WarehousePage({ mode }: WarehousePageProps) {
       </div>}
     </section> : null}
 
-    <Modal footer={<div className="flex w-full justify-between gap-2"><div>{canAccess("warehouse.audit.delete") ? <Button isLoading={deleting} onClick={() => void removeAudit()} variant="danger"><Trash2 className="h-4 w-4" />Xóa phiên</Button> : null}</div><Button onClick={() => setSelectedAuditId("")} variant="secondary">Đóng</Button></div>} onClose={() => setSelectedAuditId("")} open={mode === "audits" && Boolean(selectedAudit)} size="lg" title="Chi tiết phiên kiểm kê">
-      {selectedAudit ? <div className="space-y-4">
-        <div><p className="font-extrabold text-slate-950">{dateTimeFormatter.format(new Date(selectedAudit.createdAt))}</p><p className="mt-1 text-sm font-semibold text-slate-500 [overflow-wrap:anywhere]">Thực hiện bởi {selectedAudit.staffName}</p></div>
-        <div className="flex flex-wrap gap-1.5"><Badge tone="neutral">{comparisonRows.length} đã kiểm</Badge><Badge tone="green">{comparisonStats.matched} khớp</Badge><Badge tone="red">{comparisonStats.short} thiếu</Badge><Badge tone="amber">{comparisonStats.over} thừa</Badge></div>
-        <div aria-hidden="true" className="flex items-center justify-between gap-3 px-3 text-[11px] font-bold text-slate-500"><span>Sản phẩm</span><span className="w-16 text-center sm:w-20">Đã đếm</span></div>
-        <div className="space-y-2">{comparisonRows.map((row) => <article className="rounded-xl border border-slate-200 bg-white p-3" key={row.productId ?? `${selectedAudit.id}-${row.ean13}`}>
-          <WarehouseProductDetails ean13={row.displayEan13} imageUrl={row.product?.image_url} meta={<div className="space-y-1.5">
-            <p className="text-[11px] font-semibold text-slate-500">Tồn lúc kiểm: <strong className="tabular-nums text-slate-700">{row.canCompare ? row.systemStock : "—"}</strong></p>
-            <Badge className="max-w-full !px-2 !py-0.5 text-[10px] leading-4 [overflow-wrap:anywhere]" tone={row.canCompare ? differenceTone(row.difference) : "neutral"}>{row.canCompare ? differenceLabel(row.difference) : "Không đối chiếu"}</Badge>
-          </div>} name={row.product?.product_name ?? row.product?.name ?? row.productName} variantValues={row.product?.variant_values}>
-            <p className="flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-1 py-2 text-center text-base font-black tabular-nums text-slate-900 [overflow-wrap:anywhere]"><span className="min-w-0"><span className="sr-only">Đã đếm: </span>{row.counted}</span></p>
-          </WarehouseProductDetails>
+    <Modal bodyClassName="!p-0" footer={<div className="flex w-full justify-between gap-2"><div>{canAccess("warehouse.audit.delete") ? <Button isLoading={deleting} onClick={() => void removeAudit()} variant="danger"><Trash2 className="h-4 w-4" />Xóa phiên</Button> : null}</div><Button className={canAccess("warehouse.audit.delete") ? "" : "w-full sm:w-auto"} onClick={() => setSelectedAuditId("")} variant="secondary">Đóng</Button></div>} onClose={() => setSelectedAuditId("")} open={mode === "audits" && Boolean(selectedAudit)} size="lg" title="Chi tiết phiên kiểm kê">
+      {selectedAudit ? <>
+        <div className="sticky top-0 z-10 border-b border-slate-100 bg-white px-4 py-2.5 sm:px-6">
+          <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold leading-5 text-slate-500"><span>{auditDetailDateFormatter.format(new Date(selectedAudit.createdAt))} · {auditDetailTimeFormatter.format(new Date(selectedAudit.createdAt))}</span><span aria-hidden="true">·</span><span className="min-w-0 [overflow-wrap:break-word]">{selectedAudit.staffName}</span></div>
+          <div aria-label="Tổng kết phiên kiểm kê" className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-semibold text-slate-500">{comparisonRows.length} sản phẩm</span>
+            <Badge className="gap-1 !rounded-md !px-2 !py-0.5" tone="green"><strong className="tabular-nums">{comparisonStats.matched}</strong> Khớp</Badge>
+            <Badge className="gap-1 !rounded-md !px-2 !py-0.5" tone="amber"><strong className="tabular-nums">{comparisonStats.over}</strong> Thừa</Badge>
+            <Badge className="gap-1 !rounded-md !px-2 !py-0.5" tone="red"><strong className="tabular-nums">{comparisonStats.short}</strong> Thiếu</Badge>
+            {comparisonStats.unknown ? <Badge className="gap-1 !rounded-md !px-2 !py-0.5" tone="neutral"><strong className="tabular-nums">{comparisonStats.unknown}</strong> Không đối chiếu</Badge> : null}
+          </div>
+          <div aria-hidden="true" className="mt-2.5 flex items-center justify-between gap-3 text-[11px] font-bold text-slate-500"><span>Sản phẩm</span><span className="w-16 text-center sm:w-20">Trạng thái</span></div>
+        </div>
+        <div className="divide-y divide-slate-100 bg-white">{comparisonRows.map((row) => <article className="px-4 py-2.5 sm:px-6 sm:py-3" key={row.productId ?? `${selectedAudit.id}-${row.ean13}`}>
+          <InventoryProductRow ean13={row.displayEan13} imageUrl={row.product?.image_url} meta={<p className="text-[11px] font-medium leading-4 text-slate-500">Đã đếm: <span className="tabular-nums">{row.counted}</span><span className="mx-1.5">·</span><span className="inline-block">Tồn lúc kiểm: <span className="tabular-nums">{row.canCompare ? row.systemStock : "—"}</span></span></p>} name={row.product?.product_name ?? row.product?.name ?? row.productName} variantValues={row.product?.variant_values}>
+            <Badge aria-label={row.canCompare ? `Trạng thái: ${differenceLabel(row.difference)}` : "Không đối chiếu"} className="min-h-9 w-full justify-center !rounded-lg !px-1.5 !py-2 text-center leading-4" tone={row.canCompare ? differenceTone(row.difference) : "neutral"}>{row.canCompare ? differenceLabel(row.difference) : "Chưa rõ"}</Badge>
+          </InventoryProductRow>
         </article>)}</div>
-      </div> : null}
+      </> : null}
     </Modal>
     <ErrorNoticeModal notice={errorNotice} onClose={clearErrorNotice} />
   </>;

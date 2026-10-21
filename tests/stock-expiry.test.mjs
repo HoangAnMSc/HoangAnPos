@@ -36,6 +36,30 @@ test("HSD groups same dates across receipts and handles business-day boundaries 
   assert.equal(summary.status,"valid", "Pending entry cannot hide a known HSD color");
   assert.equal(summary.unknownQuantity,7);
   assert.equal(summary.pending,3);
+  assert.equal(summary.datedQuantity,13);
+  assert.equal(summary.displayGroups.length,2);
+  assert.equal(summary.displayGroups[1].quantity,7);
+  assert.deepEqual(summary.displayGroups[1].lots.map((lot) => lot.tracks_expiry),[true,false]);
+  assert.equal(summary.groups.length,3,"Display grouping preserves the separate tracking choices");
+  assert.equal(JSON.stringify(lots),before);
+
+  const partial = summarizeStockExpiry([
+    { id:"dated", expiry_date:"2026-12-28", remaining_quantity:1, tracks_expiry:true },
+    { id:"remainder", expiry_date:null, remaining_quantity:1, tracks_expiry:true },
+  ],30,"2026-12-10");
+  assert.equal(partial.datedQuantity,1);
+  assert.equal(partial.unknownQuantity,1);
+  const cleared = summarizeStockExpiry([
+    { id:"cleared", expiry_date:null, remaining_quantity:1, tracks_expiry:false },
+    { id:"remainder", expiry_date:null, remaining_quantity:1, tracks_expiry:true },
+    { id:"sold-out", expiry_date:"2026-12-28", remaining_quantity:0, tracks_expiry:true },
+  ],30,"2026-12-10");
+  assert.equal(cleared.datedQuantity,0);
+  assert.equal(cleared.unknownQuantity,2);
+  assert.equal(cleared.displayGroups.length,1);
+  assert.equal(cleared.displayGroups[0].date,null);
+  assert.equal(cleared.displayGroups[0].quantity,2);
+  assert.equal(cleared.displayGroups[0].lots.length,2);
 });
 
 test("PostgreSQL expiry upgrade preserves data and accounts for receipts, sales, returns, conversion and edits", async (t) => {
@@ -58,7 +82,7 @@ test("PostgreSQL expiry upgrade preserves data and accounts for receipts, sales,
     const schema = await sqlFile("schema.sql");
     assert.ok(schema.includes(upgrade), "Fresh installs include exactly the tested expiry upgrade");
     assert.ok(schema.includes(cancellationUpgrade), "Fresh installs include exactly the tested cancellation upgrade");
-    assert.ok(schema.endsWith(managementUpgrade), "Fresh installs include exactly the tested HSD management upgrade");
+    assert.ok(schema.includes(managementUpgrade), "Fresh installs include exactly the tested HSD management upgrade");
     await db.exec(schema.slice(0, schema.indexOf("-- Stock expiry feature: additive migration for fresh installations.")));
     for (const [id, role] of [[admin,"admin"],[viewer,"expiry-view"],[manager,"expiry-manage"],[cashier,"expiry-cashier"]]) {
       await db.query("insert into auth.users(id,email) values($1,$2)", [id,`${role}@test.invalid`]);
@@ -391,6 +415,30 @@ test("PostgreSQL expiry upgrade preserves data and accounts for receipts, sales,
       const current = await listed(id);
       assert.equal(current.stock_quantity,15);
       assert.deepEqual(current.lots.map((lot) => [lot.expiry_date,lot.remaining_quantity,lot.tracks_expiry]),[[await date(18),6,true],[await date(20),4,true],[null,5,true]]);
+      assert.deepEqual(await originalState(),original);
+      await assertBalanced();
+    }));
+
+    await t.test("two units partially dated then cleared retain two undated units and can be dated together again", () => scenario(admin,async () => {
+      await receive(pack,2,false);
+      const original = await originalState();
+      const firstDate = await date(10);
+      await setDates(pack,(await listed(pack)).lots,[{expiry_date:firstDate,quantity:1}]);
+      const partial = await listed(pack);
+      assert.equal(partial.stock_quantity,2);
+      assert.equal(partial.lots.filter((lot) => lot.expiry_date===firstDate).reduce((sum,lot) => sum+lot.remaining_quantity,0),1);
+      assert.equal(partial.lots.filter((lot) => !lot.expiry_date).reduce((sum,lot) => sum+lot.remaining_quantity,0),1);
+      await clearDates(pack,partial.lots.filter((lot) => lot.expiry_date===firstDate));
+      const cleared = await listed(pack);
+      assert.equal(cleared.stock_quantity,2);
+      assert.ok(cleared.lots.every((lot) => !lot.expiry_date));
+      assert.equal(cleared.lots.reduce((sum,lot) => sum+lot.remaining_quantity,0),2);
+      assert.deepEqual(cleared.lots.map((lot) => lot.tracks_expiry).sort(),[false,true]);
+      const nextDate = await date(20);
+      await setDates(pack,cleared.lots,[{expiry_date:nextDate,quantity:2}]);
+      const dated = await listed(pack);
+      assert.ok(dated.lots.every((lot) => lot.expiry_date===nextDate));
+      assert.equal(dated.lots.reduce((sum,lot) => sum+lot.remaining_quantity,0),2);
       assert.deepEqual(await originalState(),original);
       await assertBalanced();
     }));

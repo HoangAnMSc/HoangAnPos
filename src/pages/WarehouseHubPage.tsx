@@ -31,7 +31,7 @@ export function WarehouseHubPage() {
       icon: History,
       iconTone: "bg-violet-500/90 text-white",
       glowTone: "bg-violet-300/55",
-      allowed: canAccess("warehouse") || canAccess("inventory"),
+      allowed: canAccess("warehouse.audit.view"),
     },
     {
       key: "inventory" as const,
@@ -39,7 +39,7 @@ export function WarehouseHubPage() {
       icon: ClipboardCheck,
       iconTone: "bg-sky-500/90 text-white",
       glowTone: "bg-sky-300/55",
-      allowed: canAccess("inventory") && canAccess("inventory.count") && canAccess("inventory.submit"),
+      allowed: canAccess("inventory"),
     },
     {
       key: "in" as const,
@@ -71,7 +71,7 @@ export function WarehouseHubPage() {
       icon: CalendarDays,
       iconTone: "bg-moss-600/90 text-white",
       glowTone: "bg-moss-300/55",
-      allowed: canAccess("warehouse"),
+      allowed: canAccess("warehouse.expiry.view"),
     },
   ].filter((action) => action.allowed);
   const requested = searchParams.get("tab") as WarehouseAction | null;
