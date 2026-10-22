@@ -2,11 +2,26 @@ import { createClient } from "@supabase/supabase-js";
 import WebSocket from "ws";
 
 function getSupabaseConfig() {
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)?.trim();
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
   if (!supabaseUrl || !serviceRoleKey) {
     return null;
+  }
+
+  let legacyRole;
+  try {
+    legacyRole = JSON.parse(Buffer.from(serviceRoleKey.split(".")[1] || "", "base64url").toString()).role;
+  } catch {
+    // New secret keys are opaque strings, rather than legacy JWTs.
+  }
+
+  if (serviceRoleKey.startsWith("sb_publishable_") || legacyRole === "anon") {
+    throw new Error("Cấu hình Supabase trên máy chủ đang dùng khóa công khai. Cần thay bằng Secret key hoặc service_role key của cùng dự án Supabase.");
+  }
+  // This checks the key type only; Supabase still validates the credential.
+  if (!serviceRoleKey.startsWith("sb_secret_") && legacyRole !== "service_role") {
+    throw new Error("Khóa Supabase phía máy chủ chưa hợp lệ. Cần cấu hình Secret key hoặc service_role key thật của dự án.");
   }
 
   return { serviceRoleKey, supabaseUrl };
@@ -119,11 +134,20 @@ export async function userIsSuperAdmin(admin, user) {
 }
 
 export async function authorizeApiRequest(request, permissions) {
-  const admin = getAdminClient();
+  let admin;
+  try {
+    admin = getAdminClient();
+  } catch (configError) {
+    return {
+      message: configError instanceof Error ? configError.message : "Cấu hình Supabase trên máy chủ chưa hợp lệ.",
+      ok: false,
+      status: 500,
+    };
+  }
 
   if (!admin) {
     return {
-      message: "Can cau hinh SUPABASE_SERVICE_ROLE_KEY cho API quan tri.",
+      message: "Máy chủ chưa được cấu hình kết nối quản trị Supabase. Vui lòng liên hệ quản trị viên.",
       ok: false,
       status: 500,
     };
