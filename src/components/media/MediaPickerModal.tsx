@@ -178,18 +178,6 @@ export function MediaPickerModal({
           </button>
         </div>
 
-        {activeTab === "library" && selectedUrl ? (
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-            <ProductThumbnail
-              alt="Ảnh đang chọn"
-              className="h-48 w-full object-contain p-2"
-              loading="eager"
-              src={selectedUrl}
-              thumbnailWidth={768}
-            />
-          </div>
-        ) : null}
-
         {activeTab === "library" && libraryError ? (
           <div className="space-y-2 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900" role="alert">
             <p>{libraryError}</p>
