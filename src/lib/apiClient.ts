@@ -29,7 +29,7 @@ export async function authenticatedFetch(input: RequestInfo | URL, init: Request
 
   const { data, error } = await supabase.auth.refreshSession();
   if (error || !data.session) {
-    await supabase.auth.signOut({ scope: "local" });
+    // Supabase clears revoked sessions itself; transient refresh errors must keep the saved session.
     return firstResponse;
   }
 

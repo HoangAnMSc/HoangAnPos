@@ -74,6 +74,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let currentSessionUser: User | null | undefined;
+    let receivedAuthEvent = false;
 
     if (!isSupabaseConfigured) {
       setAuthLoading(false);
@@ -82,15 +84,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
+    function applySession(sessionUser: User | null) {
+      if (!mounted || currentSessionUser === sessionUser) return;
+      currentSessionUser = sessionUser;
+      setUser(sessionUser);
+      setProfileLoading(Boolean(sessionUser));
+      if (!sessionUser) setProfile(null);
+    }
+
     async function hydrateSession() {
       try {
         const { data } = await supabase.auth.getSession();
-        const sessionUser = data.session?.user ?? null;
-
-        if (mounted) {
-          setUser(sessionUser);
-          setProfileLoading(Boolean(sessionUser));
-        }
+        if (!receivedAuthEvent) applySession(data.session?.user ?? null);
+      } catch {
+        // Auth events can still restore the session after a temporary connection failure.
       } finally {
         if (mounted) {
           setAuthLoading(false);
@@ -103,15 +110,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      const sessionUser = session?.user ?? null;
-      setUser(sessionUser);
-
-      if (!sessionUser) {
-        setProfile(null);
-        setProfileLoading(false);
-      } else {
-        setProfileLoading(true);
-      }
+      receivedAuthEvent = true;
+      applySession(session?.user ?? null);
+      if (mounted) setAuthLoading(false);
     });
 
     return () => {

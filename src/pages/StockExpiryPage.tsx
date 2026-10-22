@@ -236,7 +236,14 @@ export function StockExpiryPage({ open, onClose }: Props) {
               <ProductInfo product={row.product} variant={row.variant} /><ChevronRight aria-hidden="true" className="h-4 w-4 text-slate-500" />
             </button>
             <div className="space-y-1.5 px-3 pb-3 text-xs font-semibold">
-              <div className="flex flex-wrap items-center justify-between gap-2"><span>{nearest ? <>HSD <strong>{expiryDateLabel(nearest.date)}</strong>{row.dated.length > 1 ? <span className="ml-1.5 text-slate-500">+{row.dated.length - 1} HSD</span> : null}</> : row.stock <= 0 ? "Chưa có tồn kho" : "Chưa có HSD"}</span><span className="whitespace-nowrap">Tồn <strong className="text-sm tabular-nums">{row.stock}</strong></span></div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span>{nearest ? <>
+                  HSD <strong>{expiryDateLabel(nearest.date)}</strong>
+                  {nearest.date && (row.status === "warning" || row.status === "valid") ? <span className="ml-1.5 inline-block font-bold tabular-nums">· {remainingLabel(nearest.date, today)}</span> : null}
+                  {row.dated.length > 1 ? <span className="ml-1.5 text-slate-500">+{row.dated.length - 1} HSD</span> : null}
+                </> : row.stock <= 0 ? "Chưa có tồn kho" : "Chưa có HSD"}</span>
+                <span className="whitespace-nowrap">Tồn <strong className="text-sm tabular-nums">{row.stock}</strong></span>
+              </div>
               <div className="flex flex-wrap items-center justify-between gap-2"><ExpiryQuantities row={row} />{canAdd && row.undatedQuantity > 0 ? <Button aria-label={`Nhập HSD ${row.product.name}`} className="!min-h-8 !px-2 !py-1 !text-xs" disabled={saving} onClick={() => void editExpiry(row)} variant="secondary">Nhập HSD</Button> : null}</div>
             </div>
           </article>;
