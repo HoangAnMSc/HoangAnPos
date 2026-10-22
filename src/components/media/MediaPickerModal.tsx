@@ -1,6 +1,9 @@
 import { type ChangeEvent, useEffect, useState } from "react";
 import { Check, ImagePlus, Upload } from "lucide-react";
 import { Modal } from "../ui/Modal";
+import { ProductThumbnail } from "../products/ProductThumbnail";
+
+const libraryPageSize = 24;
 
 type MediaPickerModalProps = {
   canUploadImage: boolean;
@@ -40,12 +43,14 @@ export function MediaPickerModal({
   const [draftFiles, setDraftFiles] = useState<File[]>([]);
   const [draftPreviews, setDraftPreviews] = useState<string[]>([]);
   const [selectedUrl, setSelectedUrl] = useState(currentImageUrl);
+  const [libraryPage, setLibraryPage] = useState(0);
 
   useEffect(() => {
     setActiveTab("library");
     setDraftFiles([]);
     setDraftPreviews([]);
     setSelectedUrl(currentImageUrl);
+    setLibraryPage(0);
   }, [currentImageUrl, open]);
 
   useEffect(
@@ -61,10 +66,14 @@ export function MediaPickerModal({
       : selectedUrl
         ? 1
         : 0;
-  const canSave =
-    draftFiles.length > 0 ||
-    selectedUrl !== currentImageUrl ||
-    Boolean(selectedUrl);
+  const canSave = activeTab === "upload"
+    ? canUploadImage && draftFiles.length > 0
+    : selectedUrl !== currentImageUrl || Boolean(selectedUrl);
+  // Keep the current photo usable even when the remote library is unavailable.
+  const images = [...new Set([currentImageUrl, ...libraryImages].filter(Boolean))];
+  const pageCount = Math.max(1, Math.ceil(images.length / libraryPageSize));
+  const page = Math.min(libraryPage, pageCount - 1);
+  const visibleImages = images.slice(page * libraryPageSize, (page + 1) * libraryPageSize);
 
   function clearDraftFiles() {
     setDraftFiles([]);
@@ -85,6 +94,7 @@ export function MediaPickerModal({
   }
 
   function handleSave() {
+    if (!canSave || saving) return;
     if (activeTab === "upload" && draftFiles.length) {
       onSave({
         imageFile: draftFiles[0] ?? null,
@@ -117,7 +127,7 @@ export function MediaPickerModal({
           </button>
           <button
             className="rounded-2xl bg-coal px-5 py-3 text-sm font-extrabold text-white shadow-lg disabled:opacity-50"
-            disabled={!canSave || (activeTab === "library" && loading) || saving}
+            disabled={!canSave || saving}
             onClick={handleSave}
             type="button"
           >
@@ -128,7 +138,7 @@ export function MediaPickerModal({
       onClose={onClose}
       open={open}
       size="md"
-      title="Thêm ảnh"
+      title={currentImageUrl ? "Xem / đổi ảnh" : "Thêm ảnh"}
       zIndex={120}
     >
       <div className="space-y-4">
@@ -168,6 +178,18 @@ export function MediaPickerModal({
           </button>
         </div>
 
+        {activeTab === "library" && selectedUrl ? (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+            <ProductThumbnail
+              alt="Ảnh đang chọn"
+              className="h-48 w-full object-contain p-2"
+              loading="eager"
+              src={selectedUrl}
+              thumbnailWidth={768}
+            />
+          </div>
+        ) : null}
+
         {activeTab === "library" && libraryError ? (
           <div className="space-y-2 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900" role="alert">
             <p>{libraryError}</p>
@@ -176,41 +198,58 @@ export function MediaPickerModal({
         ) : null}
 
         {activeTab === "library" ? (
-          loading ? (
-            <div className="flex min-h-44 items-center justify-center rounded-2xl bg-slate-50 text-sm font-bold text-slate-500">
-              Đang tải thư viện Cloudinary...
-            </div>
-          ) : libraryImages.length ? (
-            <div className="grid max-h-[52dvh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
-              {libraryImages.map((imageUrl) => {
-                const selected = selectedUrl === imageUrl;
-                return (
-                  <button
-                    className={`relative aspect-square overflow-hidden rounded-xl border-2 bg-slate-100 ${selected ? "border-moss-500" : "border-transparent hover:border-slate-300"}`}
-                    key={imageUrl}
-                    onClick={() => setSelectedUrl(imageUrl)}
-                    type="button"
-                  >
-                    <img
-                      alt="Ảnh Cloudinary"
-                      className="h-full w-full object-cover"
-                      src={imageUrl}
-                    />
-                    <span
-                      className={`absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border ${selected ? "border-moss-500 bg-coal text-white" : "border-slate-300 bg-white text-transparent"}`}
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : !libraryError ? (
-            <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl bg-slate-50 p-5 text-center">
-              <ImagePlus className="h-8 w-8 text-slate-400" />
-              <p className="mt-3 text-sm font-extrabold">Chưa có ảnh</p>
-            </div>
-          ) : null
+          <>
+            {loading ? (
+              <div className="flex min-h-44 items-center justify-center rounded-2xl bg-slate-50 text-sm font-bold text-slate-500">
+                Đang tải thư viện Cloudinary...
+              </div>
+            ) : null}
+            {images.length ? (
+              <>
+                <div className="max-h-[52dvh] overflow-y-auto pr-1">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {visibleImages.map((imageUrl, index) => {
+                      const selected = selectedUrl === imageUrl;
+                      return (
+                        <button
+                          aria-label={`Chọn ảnh ${page * libraryPageSize + index + 1}`}
+                          aria-pressed={selected}
+                          className={`relative block aspect-square w-full min-w-0 overflow-hidden rounded-xl border-2 bg-slate-100 ${selected ? "border-moss-500" : "border-transparent hover:border-slate-300"}`}
+                          key={imageUrl}
+                          onClick={() => setSelectedUrl(imageUrl)}
+                          type="button"
+                        >
+                          <ProductThumbnail
+                            alt="Ảnh Cloudinary"
+                            className="absolute inset-0 h-full w-full object-cover"
+                            src={imageUrl}
+                            thumbnailWidth={256}
+                          />
+                          <span
+                            className={`absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border ${selected ? "border-moss-500 bg-coal text-white" : "border-slate-300 bg-white text-transparent"}`}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {pageCount > 1 ? (
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <button className="font-bold disabled:opacity-40" disabled={page === 0} onClick={() => setLibraryPage(page - 1)} type="button">Trang trước</button>
+                    <span>Trang {page + 1} / {pageCount}</span>
+                    <button className="font-bold disabled:opacity-40" disabled={page + 1 >= pageCount} onClick={() => setLibraryPage(page + 1)} type="button">Trang sau</button>
+                  </div>
+                ) : null}
+              </>
+            ) : !loading && !libraryError ? (
+              <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl bg-slate-50 p-5 text-center">
+                <ImagePlus className="h-8 w-8 text-slate-400" />
+                <p className="mt-3 text-sm font-extrabold">Chưa có ảnh</p>
+              </div>
+            ) : null}
+          </>
         ) : (
           <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
             {draftPreviews.length ? (
@@ -219,7 +258,9 @@ export function MediaPickerModal({
                   <img
                     alt={`Ảnh xem trước ${index + 1}`}
                     className="aspect-square w-full rounded-xl object-cover"
+                    decoding="async"
                     key={previewUrl}
+                    loading="lazy"
                     src={previewUrl}
                   />
                 ))}

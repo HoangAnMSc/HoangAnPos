@@ -451,8 +451,9 @@ test("local Cloudinary API honors the query-string scope and checks deletion aut
   process.env.CLOUDINARY_API_SECRET = "test-secret";
   globalThis.testApiAuth = { ok: true, admin: {}, user: {} };
   let externalCalls = 0;
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (url) => {
     externalCalls++;
+    assert.equal(new URL(url).searchParams.get("prefix"), "hoang-an-pos/payment-qr/", "List only the authorized folder upstream");
     return Response.json({ resources: [
       { public_id: "hoang-an-pos/products/a" },
       { public_id: "hoang-an-pos/payment-qr/b" },
@@ -475,6 +476,59 @@ test("local Cloudinary API honors the query-string scope and checks deletion aut
     const denied = await call({ method: "POST", body: { publicId: "hoang-an-pos/products/a" } });
     assert.equal(denied.status, 403);
     assert.equal(externalCalls, 1, "Forbidden deletion must never reach Cloudinary");
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const key of ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"]) {
+      if (previousEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = previousEnv[key];
+    }
+    delete globalThis.testApiAuth;
+  }
+});
+
+test("Cloudinary library paginates its folder and keeps credential failures separate from user authentication", async () => {
+  const { default: handler } = await loadSource("api/cloudinary-images.js", false, true);
+  const previousEnv = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.CLOUDINARY_CLOUD_NAME = "test-cloud";
+  process.env.CLOUDINARY_API_KEY = "test-key";
+  process.env.CLOUDINARY_API_SECRET = "test-secret";
+  globalThis.testApiAuth = { ok: true, admin: {}, user: {} };
+  const call = async (request) => {
+    let body;
+    const response = { statusCode: 200, setHeader() {}, end(value) { body = JSON.parse(value); } };
+    await handler(request, response);
+    return { status: response.statusCode, body };
+  };
+  try {
+    let calls = 0;
+    globalThis.fetch = async (url, init) => {
+      const params = new URL(url).searchParams;
+      assert.equal(params.get("prefix"), "hoang-an-pos/products/");
+      assert.ok(init.signal instanceof AbortSignal);
+      calls++;
+      if (calls === 1) return Response.json({ resources: [{ public_id: "hoang-an-pos/products/a" }], next_cursor: "page-2" });
+      assert.equal(params.get("next_cursor"), "page-2");
+      return Response.json({ resources: [{ public_id: "hoang-an-pos/products/b" }, { public_id: "private/hidden" }] });
+    };
+    const library = await call({ method: "GET", url: "/api/cloudinary-images?scope=products" });
+    assert.equal(calls, 2);
+    assert.deepEqual(library.body.resources.map((image) => image.public_id), ["hoang-an-pos/products/a", "hoang-an-pos/products/b"]);
+    globalThis.fetch = async () => Response.json({ error: { message: "unknown api_key" } }, { status: 401 });
+    for (const request of [
+      { method: "GET", url: "/api/cloudinary-images?scope=products" },
+      { method: "POST", body: { publicId: "hoang-an-pos/products/a" } },
+    ]) {
+      const failure = await call(request);
+      assert.equal(failure.status, 502, "Upstream credentials must not trigger a Supabase token refresh");
+      assert.equal(failure.body.ok, false);
+      assert.match(failure.body.message, /Cấu hình Cloudinary không hợp lệ/);
+    }
+    process.env.CLOUDINARY_API_KEY = "your-api-key";
+    globalThis.fetch = async () => { throw new Error("Sample credentials must never reach Cloudinary"); };
+    const unconfigured = await call({ method: "GET", url: "/api/cloudinary-images?scope=products" });
+    assert.equal(unconfigured.status, 500);
+    assert.match(unconfigured.body.message, /Chưa cấu hình kết nối Cloudinary/);
   } finally {
     globalThis.fetch = originalFetch;
     for (const key of ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"]) {

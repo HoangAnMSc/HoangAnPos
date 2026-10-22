@@ -1,4 +1,5 @@
 import { Boxes } from "lucide-react";
+import { ProductThumbnail } from "../products/ProductThumbnail";
 import type { ReactNode } from "react";
 import type { VariantDisplayValue } from "../../features/products/types";
 
@@ -15,7 +16,7 @@ export function InventoryProductRow({ name, variantValues, ean13, imageUrl, chil
   return (
     <div className="grid grid-cols-[44px_minmax(0,1fr)] items-start gap-2 sm:grid-cols-[48px_minmax(0,1fr)] sm:gap-2.5">
       <span className="grid h-16 w-11 place-items-center overflow-hidden rounded-lg text-slate-400 sm:w-12">
-        {imageUrl ? <img alt="" className="h-full w-full object-contain" src={imageUrl} /> : <Boxes className="h-7 w-7" />}
+        {imageUrl ? <ProductThumbnail alt="" className="h-full w-full object-contain" src={imageUrl} thumbnailWidth={128} /> : <Boxes className="h-7 w-7" />}
       </span>
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_64px] items-start gap-x-2 gap-y-1 sm:grid-cols-[minmax(0,1fr)_80px] sm:gap-x-2.5">
         <p className="col-span-2 min-w-0 text-sm font-bold leading-5 text-slate-950 [overflow-wrap:break-word]">{name}</p>

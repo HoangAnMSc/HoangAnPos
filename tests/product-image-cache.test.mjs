@@ -62,6 +62,35 @@ test("simultaneous cards share one image download", async () => {
   });
 });
 
+test("large image grids bound simultaneous downloads and continue after a failed image", async () => {
+  await withImageCache(async () => {
+    const { loadCachedProductImage } = await loadCache();
+    let active = 0, peak = 0;
+    const requests = [];
+    globalThis.fetch = async (url) => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => requests.push(resolve));
+      active--;
+      if (new URL(url).pathname === "/0.webp") throw new Error("Image unavailable");
+      return new Response("image", { headers: { "Content-Type": "image/webp" } });
+    };
+    const images = Array.from({ length: 12 }, (_, index) => loadCachedProductImage(`https://images.test/${index}.webp`));
+    // Release each batch as the next queued downloads acquire their slots.
+    for (let completed = 0; completed < images.length;) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const batch = requests.splice(0);
+      completed += batch.length;
+      batch.forEach((resolve) => resolve());
+    }
+    const results = await Promise.all(images);
+    assert.equal(peak, 4);
+    assert.equal(results[0], null);
+    assert.ok(results.slice(1).every((blob) => blob instanceof Blob));
+    assert.equal(active, 0);
+  });
+});
+
 test("cache failures and invalid image responses preserve the normal image fallback", async () => {
   await withImageCache(async ({ cache }) => {
     const { loadCachedProductImage } = await loadCache();

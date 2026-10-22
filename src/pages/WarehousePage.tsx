@@ -8,6 +8,7 @@ import { Modal } from "../components/ui/Modal";
 import { SearchInput } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
 import { InventoryProductRow } from "../components/warehouse/InventoryProductRow";
+import { ProductThumbnail } from "../components/products/ProductThumbnail";
 import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
@@ -144,7 +145,7 @@ export function WarehousePage({ mode }: WarehousePageProps) {
         {visibleProducts.map((product) => {
           const stockTone = product.stock <= 0 ? "bg-red-50 text-red-700" : product.stock <= 5 ? "bg-amber-50 text-amber-700" : "bg-moss-50 text-moss-700";
           return <article className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 transition hover:bg-slate-50 sm:grid-cols-[48px_minmax(0,1fr)_110px] sm:px-6" key={product.id}>
-            <span className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">{product.image_url ? <img alt="" className="h-full w-full object-contain p-1" src={product.image_url} /> : <Boxes className="h-5 w-5" />}</span>
+            <span className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">{product.image_url ? <ProductThumbnail alt="" className="h-full w-full object-contain p-1" src={product.image_url} thumbnailWidth={128} /> : <Boxes className="h-5 w-5" />}</span>
             <div className="min-w-0"><p className="truncate text-sm font-extrabold text-slate-950">{product.name}</p><p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">{product.sku || "Chưa có SKU"}{getProductEan13Value(product) ? ` · EAN ${getProductEan13Value(product)}` : ""}</p></div>
             <div className={`min-w-20 rounded-xl px-2 py-1.5 text-center ${stockTone}`}><span className="block text-[9px] font-black uppercase tracking-wide">Tồn kho</span><strong className="text-sm tabular-nums">{product.stock} sản phẩm</strong></div>
           </article>;

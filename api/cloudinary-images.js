@@ -42,11 +42,14 @@ async function readJsonBody(request) {
 }
 
 function getCloudinaryConfig() {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
+  const apiKey = process.env.CLOUDINARY_API_KEY?.trim();
+  const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
 
-  if (!cloudName || !apiKey || !apiSecret) {
+  if (
+    !cloudName || !apiKey || !apiSecret ||
+    cloudName === "your-cloud-name" || apiKey === "your-api-key" || apiSecret === "your-api-secret"
+  ) {
     return null;
   }
 
@@ -106,7 +109,7 @@ export default async function handler(request, response) {
   if (!config) {
     sendJson(response, 500, {
       message:
-        "Missing CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, or CLOUDINARY_API_SECRET.",
+        "Chưa cấu hình kết nối Cloudinary trên máy chủ. Vui lòng liên hệ quản trị viên.",
       ok: false,
     });
     return;
@@ -263,6 +266,7 @@ async function listCloudinaryImages(
       const params = new URLSearchParams({
         direction: "desc",
         max_results: "500",
+        prefix: allowedPrefixes[0],
       });
 
       if (nextCursor) {
@@ -272,6 +276,7 @@ async function listCloudinaryImages(
       const cloudinaryResponse = await fetch(
         `https://api.cloudinary.com/v1_1/${cloudName}/resources/image/upload?${params.toString()}`,
         {
+          signal: AbortSignal.timeout(10000),
           headers: {
             Authorization: createBasicAuthHeader(apiKey, apiSecret),
           },
@@ -280,8 +285,10 @@ async function listCloudinaryImages(
       const data = await cloudinaryResponse.json();
 
       if (!cloudinaryResponse.ok || data.error) {
-        sendJson(response, cloudinaryResponse.status || 500, {
-          message: data.error?.message || "Cloudinary list request failed.",
+        // Cloudinary credentials are server configuration, not the user's login.
+        // Forwarding its 401 would make the client refresh a valid Supabase session.
+        sendJson(response, cloudinaryUpstreamStatus(cloudinaryResponse.status), {
+          message: cloudinaryErrorMessage(data.error?.message),
           ok: false,
         });
         return;
@@ -309,6 +316,17 @@ async function listCloudinaryImages(
       ok: false,
     });
   }
+}
+
+function cloudinaryErrorMessage(message) {
+  if (/unknown api_key|invalid api_key/i.test(message ?? "")) {
+    return "Cấu hình Cloudinary không hợp lệ. Vui lòng liên hệ quản trị viên để kiểm tra kết nối thư viện ảnh.";
+  }
+  return message || "Cloudinary list request failed.";
+}
+
+function cloudinaryUpstreamStatus(status) {
+  return status === 401 || status === 403 || status < 400 ? 502 : status;
 }
 
 async function deleteCloudinaryImage(
@@ -339,8 +357,8 @@ async function deleteCloudinaryImage(
     const data = await cloudinaryResponse.json();
 
     if (!cloudinaryResponse.ok || data.error) {
-      sendJson(response, cloudinaryResponse.status || 500, {
-        message: data.error?.message || "Cloudinary delete request failed.",
+      sendJson(response, cloudinaryUpstreamStatus(cloudinaryResponse.status), {
+        message: cloudinaryErrorMessage(data.error?.message),
         ok: false,
         result: data.result,
       });

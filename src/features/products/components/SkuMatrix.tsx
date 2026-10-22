@@ -1,6 +1,7 @@
 import { AlertTriangle, Barcode, Boxes, ChevronRight, Search, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CloudinaryImageField } from "../../../components/media/CloudinaryImageField";
+import { ProductThumbnail } from "../../../components/products/ProductThumbnail";
 import { Ean13PickerModal } from "../../../components/products/Ean13PickerModal";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
@@ -307,10 +308,11 @@ export function SkuMatrix({
           >
             <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-moss-50 text-moss-700 ring-1 ring-slate-100">
               {variant.image_url || fallbackImageUrl ? (
-                <img
+                <ProductThumbnail
                   alt={getVariantLabel(variant as never, attributes)}
                   className="h-full w-full object-cover"
                   src={variant.image_url ?? fallbackImageUrl ?? ""}
+                  thumbnailWidth={128}
                 />
               ) : (
                 <Boxes className="h-5 w-5" />

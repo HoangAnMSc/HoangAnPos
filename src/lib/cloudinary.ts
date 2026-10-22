@@ -8,7 +8,7 @@ export const productImageFolder = "hoang-an-pos/products";
 export const invoicePaymentProofFolder = "hoang-an-pos/payment-proofs";
 export const attendanceReconciliationFolder =
   "hoang-an-pos/cash-reconciliation";
-export const isCloudinaryConfigured = Boolean(cloudName);
+export const isCloudinaryConfigured = Boolean(cloudName && cloudName !== "your-cloud-name");
 
 export type CloudinaryImageScope = "invoices" | "payment-qr" | "products";
 
@@ -171,7 +171,7 @@ function isDeleteTokenUsable(expiresAt?: string | null) {
 }
 
 async function deleteCloudinaryImageByToken(deleteToken: string) {
-  if (!cloudName) {
+  if (!isCloudinaryConfigured) {
     throw new Error("Chưa cấu hình CLOUDINARY_CLOUD_NAME.");
   }
 
@@ -276,7 +276,7 @@ async function uploadMedia(
   folder: string,
   resourceType: "image" | "video",
 ): Promise<CloudinaryImageUpload> {
-  if (!cloudName) {
+  if (!isCloudinaryConfigured) {
     throw new Error(
       "Chưa cấu hình Cloudinary. Hãy điền CLOUDINARY_CLOUD_NAME trong file .env.",
     );

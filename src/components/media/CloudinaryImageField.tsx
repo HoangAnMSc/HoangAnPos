@@ -5,7 +5,7 @@ import {
   Images,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   getCloudinaryPublicId,
@@ -17,6 +17,7 @@ import {
 } from "../../services/cloudinaryImages";
 import { getErrorMessage } from "../../lib/errors";
 import { MediaPickerModal } from "./MediaPickerModal";
+import { ProductThumbnail } from "../products/ProductThumbnail";
 
 export type CloudinaryImageValue = {
   imageUrl: string;
@@ -54,10 +55,11 @@ export function CloudinaryImageField({
   const [libraryError, setLibraryError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [libraryImages, setLibraryImages] = useState<string[]>([]);
+  const loadedLibrary = useRef<{ key: number; expiresAt: number } | null>(null);
   const canUpload = canAccess("cloudinary-images.upload");
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || (loadedLibrary.current?.key === reloadKey && loadedLibrary.current.expiresAt > Date.now())) return;
     let active = true;
     setLoading(true);
     setError("");
@@ -67,6 +69,7 @@ export function CloudinaryImageField({
         if (!active) return;
         setLibraryImages(images);
         setLibraryError(warning);
+        if (!warning) loadedLibrary.current = { key: reloadKey, expiresAt: Date.now() + 60_000 };
       })
       .catch((reason: unknown) => {
         if (active)
@@ -126,7 +129,7 @@ export function CloudinaryImageField({
             >
               <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
                 {imageUrl ? (
-                  <img alt={label} className="h-full w-full object-cover" src={imageUrl} />
+                  <ProductThumbnail alt={label} className="h-full w-full object-cover" src={imageUrl} thumbnailWidth={128} />
                 ) : (
                   <ImageIcon className="h-5 w-5" />
                 )}
@@ -160,10 +163,11 @@ export function CloudinaryImageField({
             >
               <span className="grid aspect-square w-full place-items-center overflow-hidden bg-slate-100 text-slate-400">
                 {imageUrl ? (
-                  <img
+                  <ProductThumbnail
                     alt={label}
                     className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                     src={imageUrl}
+                    thumbnailWidth={256}
                   />
                 ) : (
                   <span className="grid h-11 w-11 place-items-center rounded-full bg-white text-slate-600 shadow-sm ring-1 ring-slate-200 transition group-hover:text-moss-700 group-hover:ring-moss-300">
@@ -205,7 +209,7 @@ export function CloudinaryImageField({
             >
               <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-50 text-slate-800">
                 {imageUrl ? (
-                  <img alt={label || "Ảnh sản phẩm"} className="h-full w-full object-cover" src={imageUrl} />
+                  <ProductThumbnail alt={label || "Ảnh sản phẩm"} className="h-full w-full object-cover" src={imageUrl} thumbnailWidth={128} />
                 ) : (
                   <ImageIcon className="h-5 w-5" />
                 )}
@@ -255,10 +259,11 @@ export function CloudinaryImageField({
                 className={`grid shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-100 text-slate-400 ${compact ? "h-8 w-8" : "h-12 w-12"}`}
               >
                 {imageUrl ? (
-                  <img
+                  <ProductThumbnail
                     alt={label}
                     className="h-full w-full object-cover"
                     src={imageUrl}
+                    thumbnailWidth={128}
                   />
                 ) : (
                   <ImageIcon className="h-5 w-5" />
@@ -292,19 +297,21 @@ export function CloudinaryImageField({
           ) : null}
         </div>
       )}
-      <MediaPickerModal
-        canUploadImage={canUpload}
-        currentImageUrl={imageUrl ?? ""}
-        error={error}
-        libraryError={libraryError}
-        libraryImages={libraryImages}
-        loading={loading}
-        onClose={() => { if (!saving) setOpen(false); }}
-        onReload={() => setReloadKey((current) => current + 1)}
-        onSave={(value) => void save(value)}
-        open={open}
-        saving={saving}
-      />
+      {open ? (
+        <MediaPickerModal
+          canUploadImage={canUpload}
+          currentImageUrl={imageUrl ?? ""}
+          error={error}
+          libraryError={libraryError}
+          libraryImages={libraryImages}
+          loading={loading}
+          onClose={() => { if (!saving) setOpen(false); }}
+          onReload={() => setReloadKey((current) => current + 1)}
+          onSave={(value) => void save(value)}
+          open={open}
+          saving={saving}
+        />
+      ) : null}
     </>
   );
 }

@@ -16,10 +16,14 @@ export function ProductThumbnail({ src, thumbnailWidth = 384, cacheVersion = "",
     let cancelled = false;
     let objectUrl: string | undefined;
     const load = async () => {
-      const blob = await loadCachedProductImage(optimized, cacheVersion);
-      if (cancelled) return;
-      objectUrl = blob ? URL.createObjectURL(blob) : undefined;
-      setLoaded({ key, url: objectUrl ?? optimized });
+      try {
+        const blob = await loadCachedProductImage(optimized, cacheVersion);
+        if (cancelled) return;
+        objectUrl = blob ? URL.createObjectURL(blob) : undefined;
+        setLoaded({ key, url: objectUrl ?? optimized });
+      } catch {
+        if (!cancelled) setLoaded({ key, url: optimized });
+      }
     };
     const observer = !eager && typeof IntersectionObserver !== "undefined"
       ? new IntersectionObserver((entries) => {
@@ -44,7 +48,10 @@ export function ProductThumbnail({ src, thumbnailWidth = 384, cacheVersion = "",
     ref={imageRef}
     src={loaded?.key === key ? loaded.url : undefined}
     onError={(event) => {
-      if (optimized !== src) setFailedSource(src);
+      if (optimized && loaded?.key === key && loaded.url !== optimized) {
+        // A corrupt cached blob should retry the delivery URL before the original.
+        setLoaded({ key, url: optimized });
+      } else if (optimized !== src) setFailedSource(src);
       onError?.(event);
     }}
   />;

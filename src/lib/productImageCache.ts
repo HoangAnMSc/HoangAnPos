@@ -1,5 +1,22 @@
 const cacheName = "hoang-an-pos-product-images-v1";
 const pendingImages = new Map<string, Promise<Blob | null>>();
+const waitingDownloads: Array<() => void> = [];
+const maxConcurrentDownloads = 4;
+let activeDownloads = 0;
+
+async function acquireDownloadSlot() {
+  if (activeDownloads < maxConcurrentDownloads) {
+    activeDownloads += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => waitingDownloads.push(resolve));
+}
+
+function releaseDownloadSlot() {
+  const next = waitingDownloads.shift();
+  if (next) next();
+  else activeDownloads -= 1;
+}
 
 async function readProductImage(source: string, version: string): Promise<Blob | null> {
   if (!("caches" in globalThis) || !/^https?:\/\//i.test(source)) return null;
@@ -13,6 +30,7 @@ async function readProductImage(source: string, version: string): Promise<Blob |
   } catch {
     // Private browsing or a full cache must not prevent images from displaying.
   }
+  await acquireDownloadSlot();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
@@ -38,6 +56,7 @@ async function readProductImage(source: string, version: string): Promise<Blob |
     return null;
   } finally {
     clearTimeout(timeout);
+    releaseDownloadSlot();
   }
 }
 
