@@ -164,6 +164,7 @@ export type Product = {
 
 export type VariantDraft = Omit<ProductVariant, "id" | "product_id"> & {
   id?: string;
+  expected_stock_quantity?: number;
 };
 export type VariantSelection = Record<string, string>;
 

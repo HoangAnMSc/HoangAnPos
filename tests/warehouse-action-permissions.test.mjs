@@ -47,7 +47,7 @@ test("warehouse permission upgrade preserves data and enforces each HSD operatio
       grant usage on schema auth to anon,authenticated,service_role;
       grant execute on all functions in schema auth to anon,authenticated,service_role;`);
     const schema=await readSql("schema.sql"), upgrade=await readSql("migrations/202610210002_warehouse_action_permissions.sql");
-    assert.equal(schema.slice(schema.lastIndexOf(marker)).trim(),upgrade.trim());
+    assert.equal(schema.slice(schema.lastIndexOf(marker),schema.lastIndexOf(marker)+upgrade.trim().length),upgrade.trim());
     await db.exec(schema.slice(0,schema.lastIndexOf(marker)));
     for(const [code,id] of Object.entries(ids))await db.query("insert into auth.users(id,email) values($1,$2)",[id,`${code}@test.invalid`]);
     const role = async (code,permissions) => db.query("insert into public.app_roles(code,name,permissions) values($1,$1,$2)",[code,permissions]);

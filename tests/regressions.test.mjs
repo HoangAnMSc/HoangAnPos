@@ -225,7 +225,8 @@ test("product drafts recover legacy data and remain separate by product and acco
     values.set(account, JSON.stringify(newDraft));
     assert.deepEqual(drafts.readProductEditorDraft(account), newDraft, "Old single-key drafts must remain recoverable");
     drafts.writeProductEditorDraft(account, newDraft);
-    const edited = { ...newDraft, form: { ...newDraft.form, id: "product-a", name: "Đang sửa" }, open: false };
+    const edited = { ...newDraft, form: { ...newDraft.form, id: "product-a", name: "Đang sửa",
+      variants: [{ id: "sku-a", stock_quantity: 3, expected_stock_quantity: 5 }] }, open: false };
     drafts.writeProductEditorDraft(account, edited);
     assert.deepEqual(drafts.findProductEditorDraft(account), newDraft);
     assert.deepEqual(drafts.findProductEditorDraft(account, "product-a"), edited);
@@ -255,7 +256,7 @@ test("switching a simple SKU to combinations retains identity, barcode and stock
   const { mergeGeneratedVariants } = await loadSource("src/features/products/utils/variants.ts");
   const original = {
     id: "existing-sku", sku: "SKU-1", barcode: "8931234567897", base_price: 50000,
-    cost_price: 25000, stock_quantity: 7, shelf_quantity: 7, compare_at_price: null,
+    cost_price: 25000, stock_quantity: 7, expected_stock_quantity: 7, shelf_quantity: 7, compare_at_price: null,
     weight: null, is_default: true, is_active: true, value_ids: [],
     image_url: null, cloudinary_public_id: null,
   };
@@ -268,6 +269,7 @@ test("switching a simple SKU to combinations retains identity, barcode and stock
   assert.equal(generated[0].id, original.id);
   assert.equal(generated[0].barcode, original.barcode);
   assert.equal(generated[0].stock_quantity, 7);
+  assert.equal(generated[0].expected_stock_quantity, 7);
   assert.equal(generated[0].base_price, 50000);
   assert.equal(generated[0].is_default, false);
   assert.deepEqual(generated[0].value_ids, ["red"]);
@@ -341,6 +343,9 @@ test("save checks current barcode data before RPC, including reservations invisi
     assert.equal(rpcCalls[0].payload.variants[0].barcode, "0012345678905");
     await saveProduct({ ...input, id: archivedBarcode.product_id, variants: [{ id: archivedBarcode.id, sku: archivedBarcode.sku, barcode: archivedBarcode.barcode }] });
     assert.equal(rpcCalls[1].payload.variants[0].id, archivedBarcode.id, "Editing an existing SKU may keep its own barcode");
+    await saveProduct({ ...input, id: archivedBarcode.product_id, variants: [{ id: archivedBarcode.id, sku: archivedBarcode.sku,
+      barcode: archivedBarcode.barcode, stock_quantity:3, expected_stock_quantity:5 }] });
+    assert.equal(rpcCalls[2].payload.variants[0].expected_stock_quantity,5,"The original stock baseline must reach the database unchanged");
   } finally { delete globalThis.testSupabase; }
 });
 

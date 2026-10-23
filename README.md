@@ -135,6 +135,12 @@ Sau khi thay đổi biến môi trường, hãy redeploy. API quản lý nhân v
 
 ## Các lệnh thường dùng
 
+Chạy `supabase/migrations/202610230001_product_stock_concurrency.sql` trong SQL Editor
+trước khi triển khai giao diện mới để chặn biểu mẫu sản phẩm cũ ghi đè tồn vừa bán,
+hoàn đơn, nhập hoặc quy đổi. Migration giữ nguyên dữ liệu và lịch sử hiện có;
+không tự cộng bù những điều chỉnh sai trước đây. Xem phân tích sự cố tại
+`docs/order-stock-incident-2026-10-23.md`.
+
 Nếu database đã cài Product Engine, chạy migration
 `supabase/migrations/202610170001_fix_cloudinary_image_cleanup.sql` trong SQL Editor
 để sửa lỗi dọn liên kết sau khi xóa ảnh Cloudinary. Migration này giữ nguyên dữ liệu.

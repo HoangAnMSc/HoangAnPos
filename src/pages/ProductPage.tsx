@@ -131,7 +131,7 @@ function productSaveErrorMessage(message: string) {
   if (message.includes("product_variants_barcode_key")) {
     return "EAN-13 đã được sử dụng bởi SKU khác, kể cả SKU đã ẩn. Hãy chọn mã khác rồi lưu lại.";
   }
-  for (const tag of ["VARIANT_HAS_STOCK", "STOCK_PERMISSION_DENIED", "PRODUCT_DELETED"]) {
+  for (const tag of ["VARIANT_HAS_STOCK", "STOCK_PERMISSION_DENIED", "STOCK_CHANGED", "PRODUCT_DELETED"]) {
     if (message.includes(tag)) {
       return message.replace(new RegExp(`^.*${tag}:\\s*`), "");
     }
@@ -740,9 +740,9 @@ export function ProductPage() {
       specifications: product.specifications,
       variant_attributes: product.variant_attributes,
       variants: usesVariants
-        ? modeVariants.map((variant) => ({ ...variant, is_default: false }))
+        ? modeVariants.map((variant) => ({ ...variant, expected_stock_quantity: variant.stock_quantity, is_default: false }))
         : modeVariants[0]
-          ? [{ ...modeVariants[0], is_default: true, value_ids: [] }]
+          ? [{ ...modeVariants[0], expected_stock_quantity: modeVariants[0].stock_quantity, is_default: true, value_ids: [] }]
           : emptyInput().variants,
       images: [...product.images].sort(
         (first, second) => Number(second.is_primary) - Number(first.is_primary),
