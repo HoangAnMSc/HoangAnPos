@@ -16,6 +16,20 @@ export type InventoryAuditSession = {
 };
 
 export type InventoryDifferenceStatus = "matched" | "over" | "short";
+export type InventoryAuditStatus = "matched" | "mismatched" | "unknown";
+
+export function getInventoryAuditStatus(
+  lines: InventoryAuditLine[],
+  currentStock?: (productId: string) => number | undefined,
+): InventoryAuditStatus {
+  let hasUnknown = lines.length === 0;
+  for (const line of lines) {
+    const systemStock = line.systemStock ?? (line.productId ? currentStock?.(line.productId) : undefined);
+    if (systemStock === undefined) hasUnknown = true;
+    else if (line.counted !== systemStock) return "mismatched";
+  }
+  return hasUnknown ? "unknown" : "matched";
+}
 
 export function hasInventoryCount(value?: string) {
   return value !== undefined && value.trim() !== "";

@@ -12,7 +12,7 @@ import { ProductThumbnail } from "../components/products/ProductThumbnail";
 import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
 import { useErrorNotice } from "../hooks/useErrorNotice";
-import { getInventoryDifferenceStatus, type InventoryAuditSession } from "../lib/inventoryAudits";
+import { getInventoryAuditStatus, getInventoryDifferenceStatus, type InventoryAuditSession } from "../lib/inventoryAudits";
 import { getProductEan13Value, isValidEan13, normalizeEan13Input } from "../lib/productDisplay";
 import type { VariantDisplayValue } from "../features/products/types";
 import { deleteInventoryAudit, fetchInventoryAudits } from "../services/inventoryAudits";
@@ -87,11 +87,9 @@ export function WarehousePage({ mode }: WarehousePageProps) {
     return { ...line, canCompare, product, systemStock, displayEan13, difference: line.counted - systemStock };
   }) ?? [], [rowsById, selectedAudit]);
   const comparisonStats = useMemo(() => comparisonRows.reduce((stats, row) => ({ matched: stats.matched + +(row.canCompare && row.difference === 0), short: stats.short + +(row.canCompare && row.difference < 0), over: stats.over + +(row.canCompare && row.difference > 0), unknown: stats.unknown + +!row.canCompare }), { matched: 0, short: 0, over: 0, unknown: 0 }), [comparisonRows]);
-  const auditMismatchById = useMemo(() => new Map(audits.map((audit) => [audit.id, audit.lines.some((line) => {
-    const product = line.productId ? rowsById.get(line.productId) : undefined;
-    const systemStock = line.systemStock ?? product?.stock;
-    return systemStock === undefined || line.counted !== systemStock;
-  })])), [audits, rowsById]);
+  const auditStatusById = useMemo(() => new Map(audits.map((audit) => [audit.id,
+    getInventoryAuditStatus(audit.lines, (productId) => rowsById.get(productId)?.stock),
+  ])), [audits, rowsById]);
   const dateFilteredAudits = useMemo(() => audits.filter((audit) => {
     if (!auditDate) return true;
     const date = new Date(audit.createdAt);
@@ -100,10 +98,10 @@ export function WarehousePage({ mode }: WarehousePageProps) {
   }), [auditDate, audits]);
   const auditFilterCounts = useMemo(() => ({
     all: dateFilteredAudits.length,
-    matched: dateFilteredAudits.filter((audit) => !auditMismatchById.get(audit.id)).length,
-    mismatched: dateFilteredAudits.filter((audit) => auditMismatchById.get(audit.id)).length,
-  }), [auditMismatchById, dateFilteredAudits]);
-  const visibleAudits = useMemo(() => dateFilteredAudits.filter((audit) => auditFilter === "all" || (auditFilter === "mismatched" ? auditMismatchById.get(audit.id) : !auditMismatchById.get(audit.id))), [auditFilter, auditMismatchById, dateFilteredAudits]);
+    matched: dateFilteredAudits.filter((audit) => auditStatusById.get(audit.id) === "matched").length,
+    mismatched: dateFilteredAudits.filter((audit) => auditStatusById.get(audit.id) === "mismatched").length,
+  }), [auditStatusById, dateFilteredAudits]);
+  const visibleAudits = useMemo(() => dateFilteredAudits.filter((audit) => auditFilter === "all" || auditStatusById.get(audit.id) === auditFilter), [auditFilter, auditStatusById, dateFilteredAudits]);
   const auditDateLabel = auditDate ? auditDate.split("-").reverse().join("/") : "Chọn ngày kiểm kê";
   const totalStock = useMemo(() => inventoryRows.reduce((sum, row) => sum + Math.max(0, row.stock), 0), [inventoryRows]);
   const categories = useMemo(() => Array.from(new Set(inventoryRows.map((product) => product.category?.trim() || "Chưa phân loại"))).sort((a, b) => a.localeCompare(b, "vi")), [inventoryRows]);
@@ -176,8 +174,11 @@ export function WarehousePage({ mode }: WarehousePageProps) {
       </div>
       {loading ? <div className="p-12"><Spinner label="Đang tải lịch sử kiểm kê..." /></div> : !audits.length ? <div className="p-5"><EmptyState description="Các phiên hoàn tất sẽ xuất hiện tại đây." icon={ClipboardCheck} title="Chưa có phiên kiểm kê" /></div> : !visibleAudits.length ? <div className="p-5"><EmptyState description="Không có phiên kiểm kê thuộc trạng thái này." icon={ClipboardCheck} title="Không có kết quả" /></div> : <div className="divide-y divide-slate-100">
         {visibleAudits.map((audit) => {
-          const mismatched = auditMismatchById.get(audit.id) ?? false;
-          return <button className="grid w-full grid-cols-[42px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50 sm:px-6" key={audit.id} onClick={() => setSelectedAuditId(audit.id)} type="button"><span aria-label={mismatched ? "Có chênh lệch" : "Đã khớp"} className={`grid h-10 w-10 place-items-center rounded-xl ${mismatched ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`}>{mismatched ? <AlertCircle className="h-5 w-5" strokeWidth={2.5} /> : <CheckCircle2 className="h-5 w-5" strokeWidth={2.5} />}</span><span className="min-w-0"><strong className="block text-sm leading-5 text-slate-950 [overflow-wrap:anywhere]">{dateTimeFormatter.format(new Date(audit.createdAt))}</strong><span className="mt-1 block text-xs font-semibold leading-5 text-slate-500 [overflow-wrap:anywhere]">Thực hiện bởi {audit.staffName}</span><span className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold"><span className="text-slate-500">{audit.lines.length} sản phẩm</span><span className={mismatched ? "text-red-600" : "text-emerald-600"}>{mismatched ? "Có chênh lệch" : "Đã khớp"}</span></span></span><ChevronRight className="h-4 w-4 self-center text-slate-400" /></button>;
+          const status = auditStatusById.get(audit.id) ?? "unknown";
+          const statusLabel = status === "matched" ? "Đã khớp" : status === "mismatched" ? "Có chênh lệch" : "Chưa đủ dữ liệu";
+          const statusTone = status === "matched" ? "text-emerald-600" : status === "mismatched" ? "text-red-600" : "text-slate-500";
+          const iconTone = status === "matched" ? "bg-emerald-50" : status === "mismatched" ? "bg-red-50" : "bg-slate-100";
+          return <button className="grid w-full grid-cols-[42px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50 sm:px-6" key={audit.id} onClick={() => setSelectedAuditId(audit.id)} type="button"><span aria-label={statusLabel} className={`grid h-10 w-10 place-items-center rounded-xl ${iconTone} ${statusTone}`}>{status === "matched" ? <CheckCircle2 className="h-5 w-5" strokeWidth={2.5} /> : <AlertCircle className="h-5 w-5" strokeWidth={2.5} />}</span><span className="min-w-0"><strong className="block text-sm leading-5 text-slate-950 [overflow-wrap:anywhere]">{dateTimeFormatter.format(new Date(audit.createdAt))}</strong><span className="mt-1 block text-xs font-semibold leading-5 text-slate-500 [overflow-wrap:anywhere]">Thực hiện bởi {audit.staffName}</span><span className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold"><span className="text-slate-500">{audit.lines.length} sản phẩm</span><span className={statusTone}>{statusLabel}</span></span></span><ChevronRight className="h-4 w-4 self-center text-slate-400" /></button>;
         })}
       </div>}
     </section> : null}
@@ -195,6 +196,7 @@ export function WarehousePage({ mode }: WarehousePageProps) {
           </div>
           <div aria-hidden="true" className="mt-2.5 flex items-center justify-between gap-3 text-[11px] font-bold text-slate-500"><span>Sản phẩm</span><span className="w-16 text-center sm:w-20">Trạng thái</span></div>
         </div>
+        {!comparisonRows.length ? <div className="p-5"><EmptyState description="Không có dữ liệu sản phẩm để đối chiếu phiên kiểm kê này." icon={ClipboardCheck} title="Phiên kiểm kê chưa có chi tiết" /></div> : null}
         <div className="divide-y divide-slate-100 bg-white">{comparisonRows.map((row) => <article className="px-4 py-2.5 sm:px-6 sm:py-3" key={row.productId ?? `${selectedAudit.id}-${row.ean13}`}>
           <InventoryProductRow ean13={row.displayEan13} imageUrl={row.product?.image_url} meta={<p className="text-[11px] font-medium leading-4 text-slate-500">Đã đếm: <span className="tabular-nums">{row.counted}</span><span className="mx-1.5">·</span><span className="inline-block">Tồn lúc kiểm: <span className="tabular-nums">{row.canCompare ? row.systemStock : "—"}</span></span></p>} name={row.product?.product_name ?? row.product?.name ?? row.productName} variantValues={row.product?.variant_values}>
             <Badge aria-label={row.canCompare ? `Trạng thái: ${differenceLabel(row.difference)}` : "Không đối chiếu"} className="min-h-9 w-full justify-center !rounded-lg !px-1.5 !py-2 text-center leading-4" tone={row.canCompare ? differenceTone(row.difference) : "neutral"}>{row.canCompare ? differenceLabel(row.difference) : "Chưa rõ"}</Badge>
