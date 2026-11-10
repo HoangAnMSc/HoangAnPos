@@ -61,7 +61,7 @@ function FundCard({ description, icon: Icon, label, tone, value }: FundCardProps
 }
 
 export function CashManagementPage({ embedded = false, onCashBalanceChange }: { embedded?: boolean; onCashBalanceChange?: (value: number) => void }) {
-  const { canAccess } = useAuth();
+  const { canAccess, isAdmin } = useAuth();
   const { showSuccess } = useActionNotice();
   const [searchParams, setSearchParams] = useSearchParams();
   const [sessions, setSessions] = useState<CashDrawerSession[]>([]);
@@ -120,7 +120,7 @@ export function CashManagementPage({ embedded = false, onCashBalanceChange }: { 
     [sessions]
   );
   const revenue = cashInDrawer + transferAmount;
-  const adjustmentBlocked = Boolean(activeSession && openSessionRequiresReconciliation);
+  const adjustmentBlocked = Boolean(activeSession && openSessionRequiresReconciliation && !isAdmin);
 
   useEffect(() => {
     onCashBalanceChange?.(cashInDrawer);

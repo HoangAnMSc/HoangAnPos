@@ -8,6 +8,11 @@ import { receiptPromotionsFromSnapshot, type ReceiptPromotion } from "../lib/rec
 
 export type PaymentMethod = "cash" | "transfer";
 
+function notifyFinancialSync() {
+  window.dispatchEvent(new Event("pos-financial-sync"));
+  try { window.localStorage.setItem("pos-financial-sync", String(Date.now())); } catch { /* Storage may be unavailable in private mode. */ }
+}
+
 export type CreateSaleInput = {
   cart: CartItem[];
   cashReceived: number;
@@ -120,8 +125,7 @@ export async function createSale({
     throw new Error("Supabase không trả về hóa đơn sau khi thanh toán.");
   }
 
-  window.dispatchEvent(new Event("pos-financial-sync"));
-  try { window.localStorage.setItem("pos-financial-sync", String(Date.now())); } catch { /* Storage may be unavailable in private mode. */ }
+  notifyFinancialSync();
 
   return result.data;
 }
@@ -246,7 +250,20 @@ export async function cancelOrder(orderId: string, reason: string) {
     throw new Error("Không nhận được kết quả hủy hóa đơn.");
   }
 
+  notifyFinancialSync();
   return data;
+}
+
+export async function cancelOrders(orderIds: string[], reason: string) {
+  requireSupabaseConfig();
+  if (!orderIds.length) return 0;
+  const { data, error } = await supabase.rpc("cancel_pos_orders", {
+    order_ids_input: orderIds,
+    reason_input: reason.trim(),
+  });
+  if (error) throw error;
+  notifyFinancialSync();
+  return Number(data ?? 0);
 }
 
 export async function deleteOrders(orderIds: string[], reason: string) {
@@ -265,6 +282,7 @@ export async function deleteOrders(orderIds: string[], reason: string) {
     throw error;
   }
 
+  notifyFinancialSync();
   return Number(data ?? 0);
 }
 
@@ -283,8 +301,7 @@ export async function restoreCancelledOrders(orderIds: string[]) {
     throw error;
   }
 
-  window.dispatchEvent(new Event("pos-financial-sync"));
-  try { window.localStorage.setItem("pos-financial-sync", String(Date.now())); } catch { /* Storage may be unavailable in private mode. */ }
+  notifyFinancialSync();
 
   return Number(data ?? 0);
 }

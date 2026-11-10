@@ -27,6 +27,7 @@ import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { PageContainer } from "../components/ui/Page";
 import { Spinner } from "../components/ui/Spinner";
+import { PayrollExportModal } from "../components/attendance/PayrollExportModal";
 import { useAuth } from "../contexts/AuthContext";
 import { useActionNotice } from "../contexts/ActionNoticeContext";
 import {
@@ -688,6 +689,7 @@ export function AttendancePage() {
     useState<AttendanceExportFormat>("excel");
   const [exportLoading, setExportLoading] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [payrollModalOpen, setPayrollModalOpen] = useState(false);
   const [exportMonthKey, setExportMonthKey] = useState(() =>
     getVietnamMonthKey(),
   );
@@ -724,7 +726,6 @@ export function AttendancePage() {
   const canExportAttendance = canAccess("attendance.export");
   const displayName = profile?.full_name || user?.email || "Nhân viên";
   const isClockedIn = Boolean(openRecord && !openRecord.clock_out_at);
-  const isTodayCompleted = Boolean(openRecord?.clock_out_at);
   const clockInLocation = getClockInLocation(openRecord);
   const allExportEmployeesSelected =
     exportEmployees.length > 0 &&
@@ -822,6 +823,34 @@ export function AttendancePage() {
   }, [loadOpenRecord]);
 
   useEffect(() => {
+    if (!confirmClockOutOpen || !requiresCashReconciliation || submitting) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const session = await fetchOwnOpenCashDrawerSession();
+        if (active) setClockOutCashSession(session);
+      } catch {
+        // Keep the last successful read; closing still validates the live balance.
+      }
+    };
+    const onRefresh = () => void refresh();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === "pos-financial-sync") onRefresh();
+    };
+    const interval = window.setInterval(onRefresh, 10_000);
+    window.addEventListener("focus", onRefresh);
+    window.addEventListener("pos-financial-sync", onRefresh);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onRefresh);
+      window.removeEventListener("pos-financial-sync", onRefresh);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [confirmClockOutOpen, requiresCashReconciliation, submitting]);
+
+  useEffect(() => {
     if (activeTab === "history") {
       void loadHistory();
     } else if (activeTab === "team-history") {
@@ -863,10 +892,13 @@ export function AttendancePage() {
 
   const monthDays = useMemo(() => getMonthDays(monthKey), [monthKey]);
   const calendarSlots = useMemo(() => getCalendarSlots(monthDays), [monthDays]);
-  const historyByDay = useMemo(
-    () => new Map(historyRecords.map((record) => [record.work_date, record])),
-    [historyRecords],
-  );
+  const historyByDay = useMemo(() => {
+    const grouped = new Map<string, AttendanceRecord[]>();
+    [...historyRecords].sort((a, b) => a.clock_in_at.localeCompare(b.clock_in_at)).forEach((record) => {
+      grouped.set(record.work_date, [...(grouped.get(record.work_date) ?? []), record]);
+    });
+    return grouped;
+  }, [historyRecords]);
   const allHistoryMatrix = useMemo(() => {
     const employeeMap = new Map(
       allHistoryEmployees.map(
@@ -878,12 +910,13 @@ export function AttendancePage() {
     );
     const recordsByEmployee = new Map<
       string,
-      Map<string, AttendanceHistoryRecord>
+      Map<string, AttendanceHistoryRecord[]>
     >();
     allHistoryRecords.forEach((record) => {
       const employeeRecords =
-        recordsByEmployee.get(record.user_id) ?? new Map();
-      employeeRecords.set(record.work_date, record);
+        recordsByEmployee.get(record.user_id) ?? new Map<string, AttendanceHistoryRecord[]>();
+      employeeRecords.set(record.work_date, [...(employeeRecords.get(record.work_date) ?? []), record]
+        .sort((a, b) => a.clock_in_at.localeCompare(b.clock_in_at)));
       recordsByEmployee.set(record.user_id, employeeRecords);
     });
     const normalizedSearch = employeeSearch.trim().toLocaleLowerCase("vi");
@@ -896,26 +929,21 @@ export function AttendancePage() {
           : true,
       )
       .map(([employeeId, employeeName]) => {
-        const employeeRecords = recordsByEmployee.get(employeeId) ?? new Map();
+        const employeeRecords = recordsByEmployee.get(employeeId) ?? new Map<string, AttendanceHistoryRecord[]>();
         return {
           employeeId,
           employeeName,
           records: monthDays.map((workDate) => ({
-            record: employeeRecords.get(workDate) ?? null,
+            records: employeeRecords.get(workDate) ?? [],
             workDate,
           })),
-          totalShifts: employeeRecords.size,
+          totalShifts: [...employeeRecords.values()].reduce((total, records) => total + records.length, 0),
         };
       });
   }, [allHistoryEmployees, allHistoryRecords, employeeSearch, monthDays]);
 
   async function handleClockIn() {
     if (!canClock || !user?.id) {
-      return;
-    }
-
-    if (isTodayCompleted) {
-      setError("Hôm nay đã chấm công và tan làm. Không thể chấm công lần hai.");
       return;
     }
 
@@ -999,8 +1027,7 @@ export function AttendancePage() {
     if (
       (!canClock && !isClockedIn) ||
       openLoading ||
-      submitting ||
-      isTodayCompleted
+      submitting
     ) {
       return;
     }
@@ -1484,13 +1511,7 @@ export function AttendancePage() {
             <>
               <div className="flex justify-center pt-4">
                 <button
-                  aria-label={
-                    isTodayCompleted
-                      ? "Đã tan làm"
-                      : isClockedIn
-                        ? "Tan làm"
-                        : "Chấm công"
-                  }
+                  aria-label={isClockedIn ? "Tan làm" : "Chấm công"}
                   className={`flex h-44 w-44 flex-col items-center justify-center rounded-full text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 ${
                     isClockedIn
                       ? "bg-gradient-to-b from-red-500 to-red-800 shadow-[0_0_0_12px_rgba(239,68,68,0.16),0_22px_45px_rgba(127,29,29,0.24)]"
@@ -1498,25 +1519,20 @@ export function AttendancePage() {
                   }`}
                   disabled={
                     (!canClock && !isClockedIn) ||
-                    submitting ||
-                    isTodayCompleted
+                    submitting
                   }
                   onClick={handleClockButton}
                   type="button"
                 >
                   {submitting ? (
                     <RotateCcw className="h-9 w-9 animate-spin" />
-                  ) : isClockedIn || isTodayCompleted ? (
+                  ) : isClockedIn ? (
                     <LogOut className="h-10 w-10" />
                   ) : (
                     <Fingerprint className="h-10 w-10" />
                   )}
                   <span className="mt-3 text-lg font-extrabold">
-                    {isTodayCompleted
-                      ? "Đã tan làm"
-                      : isClockedIn
-                        ? "Tan làm"
-                        : "Vào ca"}
+                    {isClockedIn ? "Tan làm" : "Vào ca"}
                   </span>
                 </button>
               </div>
@@ -1531,9 +1547,7 @@ export function AttendancePage() {
                 <p className="mt-2 text-xs font-semibold text-coal/45">
                   {isClockedIn
                     ? "Nhấn tan làm để kết thúc ca."
-                    : isTodayCompleted
-                      ? "Hôm nay đã hoàn thành ca."
-                      : "Cần bật định vị để chấm công."}
+                    : "Cần bật định vị để vào ca mới. Một ngày có thể làm nhiều ca."}
                 </p>
               </div>
 
@@ -1760,7 +1774,7 @@ export function AttendancePage() {
                       );
                     }
 
-                    const record = historyByDay.get(workDate) ?? null;
+                    const records = historyByDay.get(workDate) ?? [];
                     const dayKind = getDayKind(workDate);
                     const dayTone =
                       dayKind === "saturday"
@@ -1782,8 +1796,9 @@ export function AttendancePage() {
                           </span>
                         </div>
 
-                        {record ? (
+                        {records.length ? records.map((record) => (
                           <button
+                            key={record.id}
                             aria-label={`Xem ca ngày ${getDayNumber(workDate)}, vào ${formatTime(record.clock_in_at)}, tan ${formatTime(record.clock_out_at)}`}
                             className={`mt-1.5 w-full rounded-lg px-0.5 py-1.5 text-center text-[10px] font-black leading-4 tabular-nums transition hover:-translate-y-0.5 hover:shadow-sm sm:px-1.5 sm:text-xs ${record.clock_out_at ? "bg-emerald-100 text-emerald-950 ring-1 ring-emerald-200" : "bg-amber-100 text-amber-950 ring-1 ring-amber-200"}`}
                             onClick={() => openHistoryAttendanceDetail(record)}
@@ -1798,7 +1813,7 @@ export function AttendancePage() {
                                 : "Đang chạy"}
                             </span>
                           </button>
-                        ) : (
+                        )) : (
                           <p className="mt-4 text-center text-[9px] font-semibold text-coal/25 sm:text-[10px]">
                             Không có ca
                           </p>
@@ -1920,7 +1935,7 @@ export function AttendancePage() {
                             {employee.totalShifts} ca trong tháng
                           </span>
                         </th>
-                        {employee.records.map(({ record, workDate }) => {
+                        {employee.records.map(({ records, workDate }) => {
                           const dayKind = getDayKind(workDate);
                           const cellTone =
                             dayKind === "saturday"
@@ -1933,15 +1948,16 @@ export function AttendancePage() {
                               className={`h-[58px] w-12 min-w-12 border-b border-r border-slate-200 p-1 align-middle sm:h-[62px] sm:w-[54px] sm:min-w-[54px] ${cellTone}`}
                               key={workDate}
                               title={
-                                record
-                                  ? `${employee.employeeName} · ${formatShortDate(workDate)} · ${formatTime(record.clock_in_at)}–${formatTime(record.clock_out_at)}`
+                                records.length
+                                  ? `${employee.employeeName} · ${formatShortDate(workDate)} · ${records.length} ca`
                                   : `${employee.employeeName} · ${formatShortDate(workDate)} · Không có ca`
                               }
                             >
-                              {record ? (
+                              {records.length ? records.map((record) => (
                                 <button
+                                  key={record.id}
                                   aria-label={`Xem chi tiết ca của ${employee.employeeName} ngày ${getDayNumber(workDate)}`}
-                                  className={`w-full rounded-md px-0.5 py-1 text-[9px] font-black leading-3.5 transition hover:-translate-y-0.5 hover:shadow-md ${record.clock_out_at ? "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-200" : "bg-amber-100 text-amber-900 ring-1 ring-amber-200"}`}
+                                  className={`mb-1 w-full rounded-md px-0.5 py-1 text-[9px] font-black leading-3.5 transition hover:-translate-y-0.5 hover:shadow-md ${record.clock_out_at ? "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-200" : "bg-amber-100 text-amber-900 ring-1 ring-amber-200"}`}
                                   onClick={() =>
                                     openTeamAttendanceDetail(
                                       employee.employeeName,
@@ -1959,7 +1975,7 @@ export function AttendancePage() {
                                       : "Đang chạy"}
                                   </span>
                                 </button>
-                              ) : (
+                              )) : (
                                 <span className="text-coal/20">—</span>
                               )}
                             </td>
@@ -2276,6 +2292,9 @@ export function AttendancePage() {
         title="Xuất dữ liệu chấm công"
       >
         <div className="space-y-5">
+          <Button className="w-full" disabled={exportLoading || !exportEmployees.length || exporting} onClick={() => setPayrollModalOpen(true)} variant="secondary">
+            <Banknote className="h-5 w-5" />Xuất phiếu lương PNG
+          </Button>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-extrabold text-coal">
@@ -2391,6 +2410,14 @@ export function AttendancePage() {
           ) : null}
         </div>
       </Modal>
+
+      {payrollModalOpen && canExportAttendance ? <PayrollExportModal
+        employees={exportEmployees}
+        initialMonthKey={exportMonthKey}
+        initialEmployeeId={exportEmployees.find((employee) => selectedExportEmployeeIds.has(employee.id))?.id ?? exportEmployees[0]?.id ?? ""}
+        onClose={() => setPayrollModalOpen(false)}
+        onExported={() => showSuccess("Đã xuất phiếu lương PNG.")}
+      /> : null}
 
       <Modal
         footer={

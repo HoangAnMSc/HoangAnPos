@@ -262,11 +262,15 @@ export async function deleteCashReconciliation(checkId: string) {
 
 export async function adjustCashDrawerBalance(cashAmount: number) {
   requireSupabaseConfig();
+  if (!Number.isFinite(cashAmount) || cashAmount < 0) throw new Error("Nhập số tiền két hợp lệ.");
   const { error } = await supabase.rpc("adjust_cash_drawer_balance", {
     cash_amount_input: Math.max(cashAmount, 0),
   });
   if (error) {
-    if (/close the open cash drawer/i.test(error.message)) throw new Error("Hãy chốt ca và hoàn tất đối soát két trước khi điều chỉnh quỹ.");
+    if (/only an admin can adjust/i.test(error.message)) throw new Error("Chỉ admin được điều chỉnh tiền két khi nhân viên đang mở ca.");
+    if (/close the open cash drawer/i.test(error.message)) throw new Error("Cần cập nhật migration điều chỉnh tiền két khi đang mở ca.");
     throw error;
   }
+  window.dispatchEvent(new Event("pos-financial-sync"));
+  try { window.localStorage.setItem("pos-financial-sync", String(Date.now())); } catch { /* Storage may be unavailable in private mode. */ }
 }

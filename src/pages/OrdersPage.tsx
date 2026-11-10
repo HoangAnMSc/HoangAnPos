@@ -31,6 +31,7 @@ import { printSavedReceipt } from "../lib/receipt";
 import type { ReceiptPromotion } from "../lib/receipt";
 import {
   cancelOrder,
+  cancelOrders,
   deleteOrders,
   fetchOrderPromotionDetails,
   fetchOrders,
@@ -301,12 +302,12 @@ export function OrdersPage() {
 
     setDeleting(true);
     try {
-      await deleteOrders(selected.map((order) => order.id), deleteReason);
+      const deletedCount = await deleteOrders(selected.map((order) => order.id), deleteReason);
       if (selectedOrder && selectedOrderIds.has(selectedOrder.id)) setSelectedOrder(null);
       setSelectedOrderIds(new Set());
       setActiveList("deleted");
       await loadOrders();
-      showSuccess(`Đã chuyển ${selected.length} hóa đơn vào mục Đã xóa.`);
+      showSuccess(`Đã chuyển ${deletedCount} hóa đơn vào mục Đã xóa.`);
     } catch (requestError) {
       setErrorNotice({ message: getErrorMessage(requestError, "Không xóa được hóa đơn."), title: "Xóa hóa đơn thất bại" });
     } finally {
@@ -398,11 +399,11 @@ export function OrdersPage() {
     }
     setCancelling(true);
     try {
-      await Promise.all(selected.map((order) => cancelOrder(order.id, reason)));
+      const cancelledCount = await cancelOrders(selected.map((order) => order.id), reason);
       setSelectedOrderIds(new Set());
       setActiveList("cancelled");
       await loadOrders();
-      showSuccess(`Đã hủy ${selected.length} hóa đơn và hoàn lại tồn kho.`);
+      showSuccess(`Đã hủy ${cancelledCount} hóa đơn và hoàn lại tồn kho.`);
     } catch (requestError) {
       await loadOrders();
       setSelectedOrderIds(new Set());

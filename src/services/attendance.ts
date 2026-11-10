@@ -87,7 +87,7 @@ function createAttendanceError(error: SupabaseErrorLike) {
     message.includes("clock_in_attendance")
   ) {
     return new Error(
-      "Supabase chưa có hàm chấm công mới. Hãy chạy lại supabase/schema.sql trong Supabase SQL Editor.",
+      "Supabase chưa có hàm chấm công mới. Hãy cập nhật migration chấm công tương ứng trong Supabase SQL Editor.",
     );
   }
 
@@ -114,22 +114,6 @@ function getMonthRange(monthKey: string) {
   };
 }
 
-function getVietnamDateKey(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-  }).formatToParts(date);
-  const year =
-    parts.find((part) => part.type === "year")?.value ??
-    String(date.getFullYear());
-  const month = parts.find((part) => part.type === "month")?.value ?? "01";
-  const day = parts.find((part) => part.type === "day")?.value ?? "01";
-
-  return `${year}-${month}-${day}`;
-}
-
 export async function fetchOpenAttendanceRecord(userId: string) {
   requireSupabaseConfig();
 
@@ -146,22 +130,7 @@ export async function fetchOpenAttendanceRecord(userId: string) {
     throw openRequest.error;
   }
 
-  if (openRequest.data) {
-    return openRequest.data;
-  }
-
-  const { data, error } = await supabase
-    .from("attendance_records")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("work_date", getVietnamDateKey())
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+  return openRequest.data;
 }
 
 export async function fetchAttendanceRecords(userId: string, monthKey: string) {
@@ -296,19 +265,21 @@ export async function fetchAttendanceRecordsForExport(
   }
 
   const range = getMonthRange(monthKey);
-  const { data, error } = await supabase
-    .from("attendance_records")
-    .select("*")
-    .in("user_id", userIds)
-    .gte("work_date", range.start)
-    .lt("work_date", range.end)
-    .order("clock_in_at", { ascending: true });
-
-  if (error) {
-    throw error;
+  const records: AttendanceRecord[] = [];
+  while (true) {
+    const { data, error } = await supabase
+      .from("attendance_records")
+      .select("*")
+      .in("user_id", userIds)
+      .gte("work_date", range.start)
+      .lt("work_date", range.end)
+      .order("clock_in_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(records.length, records.length + 499);
+    if (error) throw error;
+    if (!data?.length) return records;
+    records.push(...data);
   }
-
-  return data ?? [];
 }
 
 export async function clockInAttendance(input: ClockInAttendanceInput) {

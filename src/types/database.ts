@@ -994,6 +994,10 @@ export type Database = {
         Args: { cash_amount_input: number };
         Returns: undefined;
       };
+      cancel_pos_orders: {
+        Args: { order_ids_input: string[]; reason_input: string };
+        Returns: number;
+      };
       clock_in_attendance: {
         Args: {
           accuracy_input: number | null;
